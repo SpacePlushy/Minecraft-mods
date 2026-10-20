@@ -7,7 +7,8 @@
 	"entrypoints": {
 		"fabric-client-gametest": [
 			"io.palmisano.rocket.test.SmokeClientGameTest",
-			"io.palmisano.rocket.test.RocketPlacementClientGameTest"
+			"io.palmisano.rocket.test.RocketPlacementClientGameTest",
+			"io.palmisano.rocket.test.RocketFlightClientGameTest"
 		]
 	},
 	"depends": {
