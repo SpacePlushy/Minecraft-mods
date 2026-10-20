@@ -1,0 +1,26 @@
+{
+	"schemaVersion": 1,
+	"id": "drone",
+	"version": "${version}",
+	"name": "Drone",
+	"description": "A rideable quadcopter that flies like a real camera drone.",
+	"authors": [
+		"Frankie Palmisano"
+	],
+	"icon": "assets/drone/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"io.palmisano.drone.DroneMod"
+		],
+		"client": [
+			"io.palmisano.drone.client.DroneClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

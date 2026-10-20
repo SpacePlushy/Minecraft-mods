@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "drone-test",
+	"version": "1.0.0",
+	"name": "Drone Tests",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"io.palmisano.drone.test.SmokeClientGameTest"
+		]
+	},
+	"depends": {
+		"drone": "*"
+	}
+}
