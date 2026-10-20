@@ -17,22 +17,23 @@ The drone mod is **playable (v1)**. Plan `docs/superpowers/plans/2026-10-19-dron
 | Plan step | State |
 |---|---|
 | Tasks 1–6 (scaffold, flight physics, textures, entity/item/render, rider input + flight gametests) | ✅ done, all tests green |
-| **Final whole-branch review** (superpowers:executing-plans "Final Review") | ⏭ **next** |
-| Task 7: Frankie play-tests with `./gradlew runClient`; tune `FlightTuning.DEFAULT` | after the review; needs Frankie |
+| Final whole-branch review (superpowers:executing-plans "Final Review") | ✅ done: 3 Important fixed test-first (dismount now brakes from real speed, client view interpolates like boats, descend no longer latches with Toggle Sprint), a flaky placement gametest fixed, 7 minors deferred (listed in the progress file) |
+| **Task 7: Frankie play-tests with `./gradlew runClient`; tune `FlightTuning.DEFAULT`** | ⏭ **next; needs Frankie** |
 | Finish: merge `drone-v1` → `main`, push, `gh repo edit --default-branch main` | last (superpowers:finishing-a-development-branch) |
 | Optional: install into Frankie's real game | only if Frankie asks (see the bottom of this file) |
 
 **To resume with the superpowers workflow:**
 1. Set up the machine (next section) and run `cd mods/drone && ./gradlew build` until it's green.
-2. Restore the execution ledger, so executing-plans knows Tasks 1–6 are done. Run the
+2. Restore the execution ledger, so executing-plans knows Tasks 1–6 and the Final Review are done. Run the
    `sdd-workspace` script from the superpowers `subagent-driven-development` skill with
    `docs/superpowers/plans/2026-10-19-drone-mod-plan.md`. It prints a git-ignored workspace dir.
    Then copy `docs/superpowers/plans/2026-10-19-drone-mod-progress.md` to `<workspace>/progress.md`.
-3. Invoke **superpowers:executing-plans**. It resumes at the Final Review: review range
-   `60ad579..drone-v1` (`git merge-base main drone-v1` = `60ad579`). Give the reviewer the plan's
-   **Review Focus** section and the ledger's `Ruling:` lines.
-4. Then do Task 7 with Frankie, then finishing-a-development-branch. Report every `Ruling:` line in the
-   progress file to Frankie in the final message (executing-plans "Finish" section).
+3. Invoke **superpowers:executing-plans**. It resumes at **Task 7**: Frankie runs `./gradlew runClient`,
+   then Claude asks one question at a time about top speed, braking drift, climb rate and turn speed
+   (and, from the deferred minors, whether diagonal flight being ~41% faster is OK). Tune only
+   `FlightTuning.DEFAULT`, keeping `FlightModelTest.defaultTuningMatchesSpec` and spec §6.1 in sync.
+4. Then finishing-a-development-branch. Report every `Ruling:` line and every `minor (deferred)` line in
+   the progress file to Frankie in the final message (executing-plans "Finish" section).
 
 ## Setting up a machine (one time)
 
@@ -111,6 +112,17 @@ The reference for a correct, current build setup is the official example mod:
   ItemGroupEvents), `ModelLayerRegistry`, `EntityRendererRegistry`, `ClientTickEvents`,
   `KeyMappingHelper`. Client gametest API: `fabric-client-gametest-api-v1` (`TestInput.holdKey`, `takeScreenshot`, ...).
 - **Registration** needs keys up front: `Item.Properties().setId(key)`, `EntityType.Builder...build(key)`.
+- **Client names that moved:** the open screen is `mc.gui.screen()` (no `mc.screen`); key types are
+  `InputConstants.Type.KEYBOARD`/`MOUSE`; `InputConstants.isKeyDown(int)` takes no window.
+  `KeyMappingHelper.getBoundKeyOf(mapping)` gives the bound key. With Toggle Sprint/Sneak on, the
+  `ToggleKeyMapping`'s `isDown()` latches on a tap, so read the physical key when you need "held".
+- **Vehicles:** `Entity.tick()` never applies block effects (lava, fire, cactus, cobwebs); a subclass must
+  call `applyEffectsFromBlocks()` itself, as boats do. Smooth remote movement needs
+  `createInterpolationHandler()` → `LinearInterpolationHandler.create(this, 3)` (default is no-op = snapping).
+- **Server drops clicks silently** (`ServerGamePacketListenerImpl.handleUseItemOn`) until it has the
+  client's "loaded" packet and its last teleport acknowledgement. In gametests, wait for those
+  (see `mods/drone` `GameTestSupport.waitUntilServerAcceptsClicks`), never a fixed tick count.
+- `jar`/`javap`: use the JDK 25 ones (`$JAVA_HOME/bin/...`); macOS's `/usr/bin` stubs fail without a system Java.
 - Prefer current Fabric docs (`https://docs.fabricmc.net/develop/`, or the context7 MCP) over memory.
 
 ## Per-mod commands (run inside `mods/<modid>/`)

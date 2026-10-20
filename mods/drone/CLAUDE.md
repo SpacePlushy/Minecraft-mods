@@ -19,12 +19,12 @@ keyboard/mouse ──► DroneClient (END_CLIENT_TICK) ──► drone.setInput(
 | Where | What |
 |---|---|
 | `src/main/java/.../flight/` | **Pure Java physics**: no Minecraft imports. `FlightTuning` (all constants), `FlightState`, `DroneInput`, `FlightModel`. Unit-tested. |
-| `src/main/java/.../entity/DroneEntity.java` | The vehicle: authority branch, collision, dismount spot, prop spin (render-only constants `PROP_*`). |
+| `src/main/java/.../entity/DroneEntity.java` | The vehicle: authority branch, observer branch (`FlightModel.observe` on movement seen since last tick), collision, interpolation (3 steps, like boats), dismount spot, prop spin (render-only constants `PROP_*`). |
 | `src/main/java/.../item/DroneItem.java` | Place on the clicked face; fails with no room. |
 | `src/main/java/.../registry/` | `ModEntities.DRONE` (1.5 × 0.5 hitbox), `ModItems.DRONE`. |
 | `src/client/java/.../client/` | `DroneClient` (renderer, model layer, input tick), `DroneModel`, `DroneRenderer`, `DroneRenderState`. |
 | `src/test/java/` | JUnit tests for the flight package. |
-| `src/gametest/java/` | Fabric client gametests: smoke, placement, flight. They save screenshots. |
+| `src/gametest/java/` | Fabric client gametests: smoke, placement, flight (incl. dismount coast/glide, Toggle Sprint descend), hazards (lava). They save screenshots. |
 | `tools/gen_textures.py` | Regenerates every PNG (`python3 -I tools/gen_textures.py`). UVs must match `DroneModel.createLayer()`. |
 
 ## Conventions that bite
@@ -34,6 +34,16 @@ keyboard/mouse ──► DroneClient (END_CLIENT_TICK) ──► drone.setInput(
 - **Input lag:** input set at END_CLIENT_TICK is used on the *next* authoritative tick, the same one-tick lag as vanilla boats.
 - **Descend** uses the player's **Sprint** binding; **dismount** is vanilla Shift, decided server-side.
 - **Records:** `FlightState` equality uses `Double.compare`, so `-0.0 != 0.0`. The settle step assigns a literal `0.0`.
+- **Hand-over:** the side that isn't simulating (the server while ridden, clients while unridden) tracks the
+  movement it sees via `FlightModel.observe` (smoothed; a jump > 4 × `topSpeed` is a teleport). So on
+  dismount the server brakes from real speed and the drone drifts a few blocks, as on release.
+- **Descend** reads the *physical* key bound to Sprint: with Toggle Sprint on, the mapping latches.
+- **Hazards:** `DroneEntity` never calls `applyEffectsFromBlocks()`, which is why lava, fire, cactus and
+  cobwebs do nothing (spec §8). Adding that call lets lava break the drone in 2 ticks;
+  `DroneHazardsClientGameTest` guards it.
+- **Gametests:** commands reach the client, and its replies the server, a variable number of ticks later.
+  Wait on conditions (`GameTestSupport.waitUntilServerAcceptsClicks`, `waitForDroneInHand`, `ctx.waitFor`),
+  not fixed tick counts, before simulated clicks.
 
 ## Tuning the feel
 
