@@ -26,7 +26,8 @@ pieces only once two or more mods show real duplication.
   - Installed versions: `26.3` (release, needs Java 25) and `26.4-snapshot-4` (ignore).
   - Player username `SpacePlushy`; survival world **"Frankie's World"** in `saves/`.
   - The launcher's bundled Java (`runtime/java-runtime-epsilon`) is for playing only. Never build with it.
-- **No system Java by default.** Development uses Homebrew `openjdk@25` (keg-only) with
+- **No system Java by default.** Development uses Homebrew `openjdk@25` (keg-only, installed
+  2026-10-19, version 25.0.4.1) with
   `JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home`. If `java -version`
   fails, the JDK is missing or `JAVA_HOME` is unset.
 
