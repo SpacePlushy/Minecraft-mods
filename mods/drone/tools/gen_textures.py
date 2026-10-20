@@ -69,7 +69,7 @@ def box_faces(u, v, w, h, d):
 
 # (texOffs u, v, box w, h, d, base color) — mirrors the plan's UV table.
 PARTS = {
-    "body": (0, 0, 12, 4, 12, rgb("#3A3D42")),
+    "body": (0, 0, 8, 4, 8, rgb("#3A3D42")),
     "arm": (0, 16, 20, 2, 2, rgb("#2B2D31")),
     "motor_front": (0, 20, 3, 3, 3, rgb("#D02020")),
     "motor_back": (12, 20, 3, 3, 3, rgb("#20B040")),

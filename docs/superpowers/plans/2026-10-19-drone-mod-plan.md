@@ -318,7 +318,7 @@ git commit -m "feat(drone): altitude hold, collision response and key-to-input m
 
 | Part | `texOffs(u,v)` | Box `addBox(x,y,z, w,h,d)` | Pose | Color |
 |---|---|---|---|---|
-| `body` | (0,0) | (−6,−2,−6, 12,4,12) | origin | `#3A3D42`; top face (u 12–23, v 0–11) lighter panel `#5A5F66` |
+| `body` | (0,0) | (−4,−2,−4, 8,4,8) | origin | `#3A3D42`; top face (u 8–15, v 0–7) lighter panel `#5A5F66` (Task 5 ruling: was 12×4×12, which hid the arms) |
 | `arm_a` / `arm_b` | (0,16) | (−10,−1,−1, 20,2,2) | yRot +45° / −45° | `#2B2D31` |
 | `motor_front_left` / `_right` | (0,20) | (−1.5,−3,−1.5, 3,3,3) | offset (+7,−1,−7) / (−7,−1,−7) | red `#D02020` |
 | `motor_back_left` / `_right` | (12,20) | same | offset (+7,−1,+7) / (−7,−1,+7) | green `#20B040` |
