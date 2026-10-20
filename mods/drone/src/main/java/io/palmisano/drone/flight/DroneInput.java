@@ -17,6 +17,16 @@ public record DroneInput(double forward, double strafe, double vertical, double 
 		return new DroneInput(0, 0, 0, yaw);
 	}
 
+	/** Maps held movement keys to stick input; opposing keys cancel. */
+	public static DroneInput fromKeys(boolean forward, boolean back, boolean left, boolean right,
+			boolean up, boolean down, double lookYaw) {
+		return new DroneInput(axis(forward, back), axis(right, left), axis(up, down), lookYaw);
+	}
+
+	private static double axis(boolean positive, boolean negative) {
+		return (positive ? 1 : 0) - (negative ? 1 : 0);
+	}
+
 	private static double clamp(double value) {
 		return Math.max(-1, Math.min(1, value));
 	}

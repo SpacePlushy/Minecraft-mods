@@ -99,6 +99,39 @@ class FlightModelTest {
 	}
 
 	@Test
+	void climbConvergesToMaxClimb() {
+		assertEquals(T.maxClimb(), run(FlightState.hovering(0), new DroneInput(0, 0, 1, 0), 100).vy(), 0.005);
+	}
+
+	@Test
+	void descendConvergesToMaxDescend() {
+		assertEquals(-T.maxDescend(), run(FlightState.hovering(0), new DroneInput(0, 0, -1, 0), 100).vy(), 0.005);
+	}
+
+	@Test
+	void releasingVerticalHoldsAltitude() {
+		FlightState s = run(FlightState.hovering(0), new DroneInput(0, 0, 1, 0), 100);
+		s = run(s, DroneInput.hover(0), 60);
+		assertEquals(0, s.vy());
+	}
+
+	@Test
+	void afterCollisionZeroesOnlyBlockedAxes() { // Review Focus 2
+		FlightState s = new FlightState(0.3, 0.1, 0.2, 0, 10, 0);
+		FlightState r = M.afterCollision(s, 0.3, 0.1, 0.2, 0.0, 0.1, 0.2);
+		assertEquals(0, r.vx());
+		assertEquals(0.1, r.vy());
+		assertEquals(0.2, r.vz());
+		assertEquals(10, r.pitchTilt()); // tilt untouched
+	}
+
+	@Test
+	void afterCollisionStopsVerticalOnGround() {
+		FlightState r = M.afterCollision(new FlightState(0, -0.2, 0, 0, 0, 0), 0, -0.2, 0, 0, 0, 0);
+		assertEquals(0, r.vy());
+	}
+
+	@Test
 	void yawHandlesUnwrappedPlayerYaw() { // Review Focus 3
 		FlightState s = M.step(FlightState.hovering(0), DroneInput.hover(725));
 		assertEquals(1.75, wrap(s.yaw()), 1e-9);

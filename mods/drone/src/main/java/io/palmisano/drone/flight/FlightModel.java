@@ -36,8 +36,9 @@ public final class FlightModel {
 		vx += forwardAccel * fx + rightAccel * rx;
 		vz += forwardAccel * fz + rightAccel * rz;
 
-		// 5. Vertical: unchanged for now.
-		double vy = s.vy();
+		// 5. Altitude hold: vertical speed eases toward the commanded climb/sink rate (0 = hold).
+		double targetVy = in.vertical() * (in.vertical() > 0 ? t.maxClimb() : t.maxDescend());
+		double vy = s.vy() + (targetVy - s.vy()) * t.verticalResponse();
 
 		// 6. Drag.
 		vx *= 1 - t.drag();
@@ -50,8 +51,25 @@ public final class FlightModel {
 			pitch = 0.0;
 			roll = 0.0;
 		}
+		if (in.vertical() == 0 && Math.abs(vy) < t.settleSpeed()) {
+			vy = 0.0;
+		}
 
 		return new FlightState(vx, vy, vz, yaw, pitch, roll);
+	}
+
+	/** Bump and stop: zero the velocity on every axis where collision cut the intended movement. */
+	public FlightState afterCollision(FlightState s, double intendedX, double intendedY, double intendedZ,
+			double actualX, double actualY, double actualZ) {
+		return new FlightState(
+				blocked(intendedX, actualX) ? 0.0 : s.vx(),
+				blocked(intendedY, actualY) ? 0.0 : s.vy(),
+				blocked(intendedZ, actualZ) ? 0.0 : s.vz(),
+				s.yaw(), s.pitchTilt(), s.rollTilt());
+	}
+
+	private static boolean blocked(double intended, double actual) {
+		return Math.abs(actual - intended) > 1e-7;
 	}
 
 	private double thrust(double tiltDegrees) {
