@@ -4,7 +4,7 @@ Frankie's home for custom Minecraft (Java Edition) mods, built with [Fabric](htt
 
 | Mod | What it does | Status |
 |---|---|---|
-| [`drone`](mods/drone/) | A rideable quadcopter that flies like a real camera drone | Designing |
+| [`drone`](mods/drone/) | A rideable quadcopter that flies like a real camera drone | Playable (v1) |
 
 ## Trying a mod
 
