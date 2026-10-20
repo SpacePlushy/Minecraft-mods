@@ -9,31 +9,21 @@ so keep durable facts **here**, not in memory.
 
 ## ▶ Current status and how to resume (updated 2026-10-19)
 
-**Branch `drone-v1`** is GitHub's default branch and holds all drone work. `main` holds the commits
-from before implementation (workspace, spec, plan). Work continues on `drone-v1`.
+**Branch `main`** is GitHub's default and holds all finished work. Each mod is built on its own branch
+(`<modid>-v1`, ...) and merged into `main` when done.
 
-The drone mod is **playable (v1)**. Plan `docs/superpowers/plans/2026-10-19-drone-mod-plan.md`:
-
-| Plan step | State |
+| Mod | State |
 |---|---|
-| Tasks 1–6 (scaffold, flight physics, textures, entity/item/render, rider input + flight gametests) | ✅ done, all tests green |
-| Final whole-branch review (superpowers:executing-plans "Final Review") | ✅ done: 3 Important fixed test-first (dismount now brakes from real speed, client view interpolates like boats, descend no longer latches with Toggle Sprint), a flaky placement gametest fixed, 7 minors deferred (listed in the progress file) |
-| **Task 7: Frankie play-tests with `./gradlew runClient`; tune `FlightTuning.DEFAULT`** | ⏭ **next; needs Frankie** |
-| Finish: merge `drone-v1` → `main`, push, `gh repo edit --default-branch main` | last (superpowers:finishing-a-development-branch) |
-| Optional: install into Frankie's real game | only if Frankie asks (see the bottom of this file) |
+| `drone` | ✅ v1 done, reviewed, play-tested by Frankie, merged to `main`. Plan + ledger: `docs/superpowers/plans/2026-10-19-drone-mod-*`. Deferred minors are the `minor (deferred)` lines in the progress file. |
+| `rocket` | 🧠 next: brainstorming a rideable rocket ship with launch vapor (superpowers:brainstorming → spec → plan) |
 
-**To resume with the superpowers workflow:**
-1. Set up the machine (next section) and run `cd mods/drone && ./gradlew build` until it's green.
-2. Restore the execution ledger, so executing-plans knows Tasks 1–6 and the Final Review are done. Run the
-   `sdd-workspace` script from the superpowers `subagent-driven-development` skill with
-   `docs/superpowers/plans/2026-10-19-drone-mod-plan.md`. It prints a git-ignored workspace dir.
-   Then copy `docs/superpowers/plans/2026-10-19-drone-mod-progress.md` to `<workspace>/progress.md`.
-3. Invoke **superpowers:executing-plans**. It resumes at **Task 7**: Frankie runs `./gradlew runClient`,
-   then Claude asks one question at a time about top speed, braking drift, climb rate and turn speed
-   (and, from the deferred minors, whether diagonal flight being ~41% faster is OK). Tune only
-   `FlightTuning.DEFAULT`, keeping `FlightModelTest.defaultTuningMatchesSpec` and spec §6.1 in sync.
-4. Then finishing-a-development-branch. Report every `Ruling:` line and every `minor (deferred)` line in
-   the progress file to Frankie in the final message (executing-plans "Finish" section).
+**To resume a plan that's mid-execution (any mod):**
+1. Set up the machine (next section) and run `./gradlew build` in the mod's folder until it's green.
+2. If the plan has a committed `docs/superpowers/plans/<date>-<topic>-progress.md`, restore it: run the
+   `sdd-workspace` script from the superpowers `subagent-driven-development` skill with the plan file;
+   it prints a git-ignored workspace dir; copy the progress file to `<workspace>/progress.md`.
+3. Invoke **superpowers:executing-plans**. It resumes at the first task without a `Task <N>: complete` line.
+4. Before switching machines mid-plan, copy `<workspace>/progress.md` back into `docs/`, commit and push.
 
 ## Setting up a machine (one time)
 

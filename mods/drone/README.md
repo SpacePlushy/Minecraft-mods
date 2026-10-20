@@ -38,4 +38,4 @@ This opens a separate copy of Minecraft with the mod loaded. Your normal game an
 
 ## Status
 
-v1 is playable. Next up: a play-test, then tuning the flight feel. See the root [`CLAUDE.md`](../../CLAUDE.md) under "Current status".
+v1 is done and play-tested. Ideas for later (sounds, a speed/altitude HUD, other players seeing the tilt, recipes) are listed as non-goals in the [design spec](../../docs/superpowers/specs/2026-10-19-drone-mod-design.md).
