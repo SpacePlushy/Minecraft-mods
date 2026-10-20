@@ -131,6 +131,56 @@ class FlightModelTest {
 		assertEquals(0, r.vy());
 	}
 
+	private static FlightState observeSteady(FlightState s, double dz, int ticks) {
+		for (int i = 0; i < ticks; i++) {
+			s = M.observe(s, 0, 0, dz, 0);
+		}
+		return s;
+	}
+
+	@Test
+	void observeLevelsOutTilt() { // spec §5.1: a drone this side doesn't simulate levels out
+		FlightState s = new FlightState(0, 0, 0, 0, 20, -20);
+		for (int i = 0; i < 20; i++) {
+			s = M.observe(s, 0, 0, 0, 0);
+		}
+		assertTrue(Math.abs(s.pitchTilt()) < 0.5 && Math.abs(s.rollTilt()) < 0.5, "tilt " + s);
+	}
+
+	@Test
+	void observeTracksSeenMovement() { // the side that takes over later starts from real speed
+		FlightState s = observeSteady(FlightState.hovering(0), 0.3, 20);
+		assertEquals(0.3, s.vz(), 1e-4);
+		assertEquals(0, s.vx());
+		assertEquals(0, s.vy());
+	}
+
+	@Test
+	void observeRidesOutAMissedPacket() { // a tick with no vehicle-move packet must not read as a stop
+		FlightState s = observeSteady(FlightState.hovering(0), 0.3, 20);
+		s = M.observe(s, 0, 0, 0, 0);
+		assertTrue(s.vz() > 0.1, "vz=" + s.vz());
+	}
+
+	@Test
+	void observeTreatsTeleportAsRest() { // /tp of a ridden drone must not fling it on hand-over
+		FlightState s = observeSteady(FlightState.hovering(0), 0.3, 20);
+		s = M.observe(s, 0, 0, 50, 0);
+		assertEquals(0, s.vz());
+	}
+
+	@Test
+	void handOverBrakesFromObservedSpeed() { // Review Focus 1: dismount mid-flight drifts a few blocks, then hovers
+		FlightState s = observeSteady(FlightState.hovering(0), 0.29, 10);
+		double z = 0;
+		for (int i = 0; i < 100; i++) {
+			s = M.step(s, DroneInput.hover(0));
+			z += s.vz();
+		}
+		assertTrue(z > 2 && z < 5, "coasted " + z); // simulated ~3.2
+		assertEquals(FlightState.hovering(0), s);
+	}
+
 	@Test
 	void yawHandlesUnwrappedPlayerYaw() { // Review Focus 3
 		FlightState s = M.step(FlightState.hovering(0), DroneInput.hover(725));

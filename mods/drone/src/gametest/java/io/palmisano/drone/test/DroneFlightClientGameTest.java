@@ -105,21 +105,24 @@ public class DroneFlightClientGameTest implements FabricClientGameTest {
 		}
 	}
 
-	/** Review Focus 1: hopping off mid-air leaves the drone hovering in place and levelling out. */
+	/**
+	 * Review Focus 1: hopping off mid-flight, the drone keeps its momentum and brakes like a released
+	 * stick (spec §6.1: drifts a few blocks), then hovers in place and levels out.
+	 */
 	private static void dismountMidAirHovers(ClientGameTestContext ctx) {
 		try (TestSingleplayerContext sp = mountedArena(ctx)) {
 			ctx.getInput().holdKey(o -> o.keyUp);
-			ctx.waitTicks(30);
-			ctx.getInput().releaseKey(o -> o.keyUp);
+			ctx.waitTicks(30); // ~0.29 blocks/tick
 			// Dismount is decided server-side from the shift state in the input packet, so hold it like a player would.
 			ctx.getInput().holdKey(o -> o.keyShift);
-			ctx.waitTicks(5);
+			ctx.waitFor(mc -> mc.player.getVehicle() == null, 10);
 			ctx.getInput().releaseKey(o -> o.keyShift);
-			ctx.waitTicks(2);
-			check(ctx.computeOnClient(mc -> mc.player.getVehicle() == null), "did not dismount");
+			ctx.getInput().releaseKey(o -> o.keyUp);
+			double zOff = serverDronePos(sp).z;
 
 			ctx.waitTicks(80);
 			Vec3 p1 = serverDronePos(sp);
+			check(p1.z - zOff > 1, "stopped dead instead of braking: coasted " + (p1.z - zOff)); // simulated ~2.5
 			ctx.waitTicks(20);
 			Vec3 p2 = serverDronePos(sp);
 			check(p1.distanceTo(p2) < 0.01, "drone drifting after dismount: " + p1 + " -> " + p2);

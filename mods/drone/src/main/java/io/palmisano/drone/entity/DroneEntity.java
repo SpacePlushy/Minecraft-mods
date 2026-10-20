@@ -37,6 +37,7 @@ public class DroneEntity extends VehicleEntity {
 	private final FlightModel flight = new FlightModel(FlightTuning.DEFAULT);
 	private FlightState state = FlightState.hovering(0);
 	private DroneInput input;
+	private Vec3 lastTickPos; // vehicle-move packets land between ticks, so xo/yo/zo can't see them
 	private double pitchTiltO;
 	private double rollTiltO;
 	private float propAngle;
@@ -82,10 +83,12 @@ public class DroneEntity extends VehicleEntity {
 			setYRot((float) state.yaw());
 			setDeltaMovement(state.vx(), state.vy(), state.vz());
 		} else {
-			// Spec §5.1: a drone this side doesn't simulate visibly levels out.
-			state = new FlightState(0, 0, 0, getYRot(), state.pitchTilt() * 0.8, state.rollTilt() * 0.8);
+			// Spec §5.1: track what this side sees, so a hand-over (dismount) brakes from real speed.
+			Vec3 seen = lastTickPos == null ? Vec3.ZERO : position().subtract(lastTickPos);
+			state = flight.observe(state, seen.x, seen.y, seen.z, getYRot());
 			setDeltaMovement(Vec3.ZERO);
 		}
+		lastTickPos = position();
 
 		if (level().isClientSide()) {
 			propAngle += (float) (PROP_BASE

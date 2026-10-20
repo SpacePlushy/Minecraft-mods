@@ -5,6 +5,11 @@ package io.palmisano.drone.flight;
  * Yaw 0 faces +Z; forward = (-sin yaw, cos yaw), right = (-cos yaw, -sin yaw) in (x, z).
  */
 public final class FlightModel {
+	// Observer-side filtering for observe(); not flight feel, so not in FlightTuning.
+	private static final double OBSERVED_SMOOTHING = 0.5;
+	private static final double LEVEL_OUT = 0.8;
+	private static final double TELEPORT_SPEEDS = 4; // a one-tick move longer than 4 × topSpeed isn't flight
+
 	private final FlightTuning t;
 
 	public FlightModel(FlightTuning tuning) {
@@ -56,6 +61,23 @@ public final class FlightModel {
 		}
 
 		return new FlightState(vx, vy, vz, yaw, pitch, roll);
+	}
+
+	/**
+	 * State for a drone this side doesn't simulate, given how far it moved since last tick (spec §5.1).
+	 * Velocity follows the seen movement, smoothed so a tick without a vehicle-move packet doesn't read
+	 * as a stop; whichever side takes over then brakes from real speed. A jump far beyond flying speed
+	 * is a teleport and reads as rest. Tilt visibly levels out.
+	 */
+	public FlightState observe(FlightState s, double dx, double dy, double dz, double yaw) {
+		if (Math.sqrt(dx * dx + dy * dy + dz * dz) > TELEPORT_SPEEDS * t.topSpeed()) {
+			return new FlightState(0, 0, 0, yaw, s.pitchTilt() * LEVEL_OUT, s.rollTilt() * LEVEL_OUT);
+		}
+		return new FlightState(
+				s.vx() + (dx - s.vx()) * OBSERVED_SMOOTHING,
+				s.vy() + (dy - s.vy()) * OBSERVED_SMOOTHING,
+				s.vz() + (dz - s.vz()) * OBSERVED_SMOOTHING,
+				yaw, s.pitchTilt() * LEVEL_OUT, s.rollTilt() * LEVEL_OUT);
 	}
 
 	/** Bump and stop: zero the velocity on every axis where collision cut the intended movement. */
