@@ -1,0 +1,27 @@
+# Gradle / build output
+.gradle/
+build/
+out/
+classes/
+
+# Dev game folders created by runClient / gametests
+run/
+runs/
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+
+# OS
+.DS_Store
+
+# Local-only tool state
+.claude/settings.local.json
+.superpowers/
