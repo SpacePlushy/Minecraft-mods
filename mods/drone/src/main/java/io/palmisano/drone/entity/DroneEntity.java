@@ -10,6 +10,8 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.InterpolationHandler;
+import net.minecraft.world.entity.LinearInterpolationHandler;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.Pose;
@@ -99,6 +101,12 @@ public class DroneEntity extends VehicleEntity {
 				propAngleO -= PROP_WRAP;
 			}
 		}
+	}
+
+	/** Glide between position updates on the side that doesn't simulate, like boats. */
+	@Override
+	protected InterpolationHandler createInterpolationHandler() {
+		return LinearInterpolationHandler.create(this, 3);
 	}
 
 	@Override

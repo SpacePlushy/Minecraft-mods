@@ -36,6 +36,11 @@ public class DroneFlightClientGameTest implements FabricClientGameTest {
 		return ctx.computeOnClient(mc -> mc.player.getVehicle() instanceof DroneEntity d ? d.getPitchTilt(1f) : Float.NaN);
 	}
 
+	/** The client's copy of the single drone in the arena, ridden or not. */
+	private static Vec3 clientDronePos(ClientGameTestContext ctx) {
+		return ctx.computeOnClient(mc -> mc.level.getEntitiesOfClass(DroneEntity.class, GameTestSupport.ARENA).getFirst().position());
+	}
+
 	private static void flyForward(ClientGameTestContext ctx) {
 		try (TestSingleplayerContext sp = mountedArena(ctx)) {
 			double z0 = serverDronePos(sp).z;
@@ -119,6 +124,17 @@ public class DroneFlightClientGameTest implements FabricClientGameTest {
 			ctx.getInput().releaseKey(o -> o.keyShift);
 			ctx.getInput().releaseKey(o -> o.keyUp);
 			double zOff = serverDronePos(sp).z;
+
+			// The drone you just left glides between server updates (interpolates like a boat) instead of jumping.
+			double maxStep = 0;
+			Vec3 prev = clientDronePos(ctx);
+			for (int i = 0; i < 12; i++) {
+				ctx.waitTick();
+				Vec3 cur = clientDronePos(ctx);
+				maxStep = Math.max(maxStep, cur.distanceTo(prev));
+				prev = cur;
+			}
+			check(maxStep < 0.5, "drone view jumped " + maxStep + " blocks in one tick"); // flying speed is < 0.3
 
 			ctx.waitTicks(80);
 			Vec3 p1 = serverDronePos(sp);
