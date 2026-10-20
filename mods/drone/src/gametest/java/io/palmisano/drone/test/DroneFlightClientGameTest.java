@@ -19,6 +19,7 @@ public class DroneFlightClientGameTest implements FabricClientGameTest {
 		climbAndHold(ctx);
 		wallStopsDrone(ctx);
 		dismountMidAirHovers(ctx);
+		descendStopsOnReleaseWithToggleSprint(ctx);
 	}
 
 	/** Arena with a mid-air drone at (0, 101, 4) facing +Z and the player riding it. */
@@ -86,6 +87,35 @@ public class DroneFlightClientGameTest implements FabricClientGameTest {
 			ctx.waitTicks(20);
 			double y3 = serverDronePos(sp).y;
 			check(Math.abs(y3 - y2) < 0.05, "not holding altitude: " + y2 + " -> " + y3);
+		}
+	}
+
+	/** Descend (the Sprint binding) acts while held, even for players who set Sprint to Toggle. */
+	private static void descendStopsOnReleaseWithToggleSprint(ClientGameTestContext ctx) {
+		try (TestSingleplayerContext sp = mountedArena(ctx)) {
+			ctx.runOnClient(mc -> mc.options.toggleSprint().set(true));
+			ctx.getInput().holdKey(o -> o.keyJump);
+			ctx.waitTicks(30);
+			ctx.getInput().releaseKey(o -> o.keyJump);
+			ctx.waitTicks(30);
+			double y0 = serverDronePos(sp).y; // simulated ~107.6
+
+			ctx.getInput().holdKey(o -> o.keySprint);
+			ctx.waitTicks(10);
+			ctx.getInput().releaseKey(o -> o.keySprint);
+			ctx.waitTicks(2);
+			double y1 = serverDronePos(sp).y;
+			check(y0 - y1 > 0.3, "did not descend: " + y0 + " -> " + y1);
+			ctx.waitTicks(30);
+			double y2 = serverDronePos(sp).y;
+			ctx.waitTicks(20);
+			double y3 = serverDronePos(sp).y;
+			check(y3 > 103 && Math.abs(y3 - y2) < 0.05, "kept descending after release: " + y1 + " -> " + y2 + " -> " + y3);
+		} finally {
+			ctx.runOnClient(mc -> {
+				mc.options.toggleSprint().set(false);
+				mc.options.keySprint.setDown(false);
+			});
 		}
 	}
 
