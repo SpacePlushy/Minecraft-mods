@@ -25,3 +25,7 @@ bin/
 # Local-only tool state
 .claude/settings.local.json
 .superpowers/
+
+# Python bytecode
+__pycache__/
+*.pyc
