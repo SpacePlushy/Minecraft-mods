@@ -15,7 +15,7 @@ so keep durable facts **here**, not in memory.
 | Mod | State |
 |---|---|
 | `drone` | ✅ v1 done, reviewed, play-tested by Frankie, merged to `main`. Plan + ledger: `docs/superpowers/plans/2026-10-19-drone-mod-*`. Deferred minors are the `minor (deferred)` lines in the progress file. |
-| `rocket` | 🧠 next: brainstorming a rideable rocket ship with launch vapor (superpowers:brainstorming → spec → plan) |
+| `rocket` | 🚧 v1 built on branch `rocket-v1` (Tasks 1–7 of `docs/superpowers/plans/2026-10-19-rocket-mod-plan.md`, all tests green). **Next:** final whole-branch review (executing-plans "Final Review", range `main..rocket-v1`), then Task 8: Frankie's play-test with `cd mods/rocket && ./gradlew runClient`, then merge to `main`. Spec decisions marked *Claude* in §2 were made while Frankie was AFK and are open to change. |
 
 **To resume a plan that's mid-execution (any mod):**
 1. Set up the machine (next section) and run `./gradlew build` in the mod's folder until it's green.
@@ -109,6 +109,9 @@ The reference for a correct, current build setup is the official example mod:
 - **Vehicles:** `Entity.tick()` never applies block effects (lava, fire, cactus, cobwebs); a subclass must
   call `applyEffectsFromBlocks()` itself, as boats do. Smooth remote movement needs
   `createInterpolationHandler()` → `LinearInterpolationHandler.create(this, 3)` (default is no-op = snapping).
+- **Riders inside a tall hitbox:** `Entity.canBePickedFromInside()` defaults to true, so a rider whose eyes are
+  inside the vehicle's box always targets the vehicle (a creative left-click removes it). Override it to false.
+  `EntityModel`'s default render type draws back faces; pass `RenderTypes::entityCutoutCull` to see out of a cabin.
 - **Server drops clicks silently** (`ServerGamePacketListenerImpl.handleUseItemOn`) until it has the
   client's "loaded" packet and its last teleport acknowledgement. In gametests, wait for those
   (see `mods/drone` `GameTestSupport.waitUntilServerAcceptsClicks`), never a fixed tick count.

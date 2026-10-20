@@ -6,8 +6,11 @@ Each mod is a small, self-contained project under [`mods/`](mods/).
 | Mod | What it does | Minecraft | Status |
 |---|---|---|---|
 | [**Drone**](mods/drone/) | A rideable quadcopter that flies like a real camera drone: it tilts into moves, carries momentum, brakes, and holds altitude | 26.3 | v1 done, play-tested |
+| [**Rocket**](mods/rocket/) | A rideable rocket ship: hold Space for a 2-second ignition with vapor rolling out across the ground, then lift off, steer by tilting, and fall back when the engine is cut | 26.3 | v1 built, awaiting play-test |
 
 ![The drone mod's quadcopters](mods/drone/docs/drone-showcase.png)
+
+![The rocket mod's launch vapor](mods/rocket/docs/rocket-ignition.png)
 
 ## Try a mod
 
@@ -16,7 +19,7 @@ Each mod is a small, self-contained project under [`mods/`](mods/).
 
    ```bash
    git clone https://github.com/SpacePlushy/Minecraft-mods.git
-   cd Minecraft-mods/mods/drone
+   cd Minecraft-mods/mods/drone    # or mods/rocket
    ./gradlew runClient
    ```
 
