@@ -15,7 +15,7 @@ so keep durable facts **here**, not in memory.
 | Mod | State |
 |---|---|
 | `drone` | ✅ v1 done, reviewed, play-tested by Frankie, merged to `main`. Plan + ledger: `docs/superpowers/plans/2026-10-19-drone-mod-*`. Deferred minors are the `minor (deferred)` lines in the progress file. |
-| `rocket` | 🚧 v1 built on branch `rocket-v1` (Tasks 1–7 of `docs/superpowers/plans/2026-10-19-rocket-mod-plan.md`, all tests green). **Next:** final whole-branch review (executing-plans "Final Review", range `main..rocket-v1`), then Task 8: Frankie's play-test with `cd mods/rocket && ./gradlew runClient`, then merge to `main`. Spec decisions marked *Claude* in §2 were made while Frankie was AFK and are open to change. |
+| `rocket` | 🚧 v1 built on branch `rocket-v1` (Tasks 1–7 of `docs/superpowers/plans/2026-10-19-rocket-mod-plan.md`, all tests green). Final whole-branch review done (1 Important fixed test-first; minors deferred, listed in `docs/superpowers/plans/2026-10-19-rocket-mod-progress.md`). **Next:** Task 8: Frankie's play-test with `cd mods/rocket && ./gradlew runClient`, then merge to `main`. Spec decisions marked *Claude* in §2 were made while Frankie was AFK and are open to change. |
 
 **To resume a plan that's mid-execution (any mod):**
 1. Set up the machine (next section) and run `./gradlew build` in the mod's folder until it's green.

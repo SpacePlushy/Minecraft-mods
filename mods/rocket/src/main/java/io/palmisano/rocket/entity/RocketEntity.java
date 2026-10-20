@@ -68,6 +68,11 @@ public class RocketEntity extends VehicleEntity {
 		this.input = input;
 	}
 
+	/** Engine phase as this side sees it (only the simulating side knows it; others read {@code OFF}). */
+	public Engine getEngine() {
+		return state.engine();
+	}
+
 	public float getPitchTilt(float partialTick) {
 		return (float) Mth.lerp(partialTick, pitchTiltO, state.pitchTilt());
 	}
@@ -81,6 +86,9 @@ public class RocketEntity extends VehicleEntity {
 		super.tick();
 		pitchTiltO = state.pitchTilt();
 		rollTiltO = state.rollTilt();
+		if (getControllingPassenger() == null) {
+			input = null; // a later rider starts from their own keys, not the last rider's
+		}
 
 		if (isLocalInstanceAuthoritative()) {
 			RocketState previous = state;

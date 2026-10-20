@@ -79,7 +79,7 @@ imports nothing from Minecraft or Fabric.
 | `RocketState` | main | Record: velocity `vx, vy, vz` (blocks/tick), `yaw`, `pitchTilt`, `rollTilt` (deg), `throttle` ∈ [0, 1], `engine`, `engineTicks` (ticks in the current engine phase) |
 | `RocketPhysics` | main | **Pure.** `step(state, input, onGround) → state` (one tick), `afterCollision(state, intended, actual)` (bump and stop), `observe(state, seen movement, yaw)` (the side that isn't simulating; same role as the drone's) |
 | `ExhaustPlanner` | main | **Pure.** `plan(state, nozzleHeightAboveGround, random) → List<Puff>`: what to emit this tick (kind, offset from the nozzle, velocity). Kinds: `VAPOR`, `BILLOW`, `FLAME`, `TRAIL` |
-| `EngineEvents` | main | **Pure.** Compares two states: `IGNITION_STARTED` (off → ignition), `LIFTOFF` (→ burning), `ABORTED` (ignition → off), `SHUTDOWN` (burning → off). Drives the sounds |
+| `EngineEvent` | main | **Pure.** Compares two states: `IGNITION_STARTED` (off → ignition), `LIFTOFF` (→ burning), `ABORTED` (ignition → off), `SHUTDOWN` (burning → off). Drives the sounds |
 | `RocketEntity` | main | Extends `VehicleEntity`, one passenger. Authority branch like the drone; on the client, turns `Puff`s into vanilla particles and `EngineEvents` into vanilla sounds |
 | `RocketItem`, `ModEntities`, `ModItems`, `RocketMod` | main | Placement and registration (Tools & Utilities tab) |
 | `RocketClient` | client | Renderer and model layer; END_CLIENT_TICK reads the rider's keys into `RocketInput` |
@@ -167,8 +167,9 @@ frame. The entity spawns them as vanilla particles on the client that simulates 
 | `BURNING`, any height | `round(1 + 5·throttle)` `FLAME` out of the nozzle along −nose (0.3–0.5 blocks/tick); `round(3·throttle)` `TRAIL` smoke |
 | `BURNING`, `h < vaporHeight`, throttle > 0.3 | plus `round(8·(1 − h/vaporHeight))` `VAPOR` at ground level radially, and 1 `BILLOW` |
 
-Particle mapping: `VAPOR` → `CLOUD` (white, puffy), `BILLOW` → `CAMPFIRE_COSY_SMOKE` (big, lingers and
-rises), `FLAME` → `FLAME`, `TRAIL` → `LARGE_SMOKE`. If a screenshot shows a better vanilla particle for
+Particle mapping: `VAPOR` → `CLOUD` (white, puffy), `BILLOW` → `EXPLOSION` (big white-gray puffs hugging
+the pad; `CAMPFIRE_COSY_SMOKE` was tried first and was nearly invisible on stone), `FLAME` → `FLAME`,
+`TRAIL` → `LARGE_SMOKE`. If a screenshot shows a better vanilla particle for
 a role, swapping it is a one-line change in the entity.
 
 Sounds (vanilla, played locally by the simulating client):

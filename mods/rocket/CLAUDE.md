@@ -37,6 +37,7 @@ keyboard/mouse ──► RocketClient (END_CLIENT_TICK) ──► rocket.setInpu
 - **Ground:** `step(..., onGround)` zeroes a downward `vy` on the ground itself, so the rocket never sinks into the pad between collisions; tilt can't build up on the ground.
 - **Model space:** pixels, Y down, origin at the **cabin center** (44 px above the base), which is also the tilt pivot so the seated rider stays inside a tilted rocket. Front = −Z = the window.
 - **Rider inside the hitbox:** `canBePickedFromInside()` is false, or the rider's crosshair sticks on the rocket and a creative left-click removes it mid-flight. The model culls back faces (`RenderTypes.entityCutoutCull`), so the rider sees out of the cabin. `positionRider` turns the rider's body with the rocket so the seated legs stay inside.
+- **Input** is cleared whenever no player controls the rocket, so a remount never replays the last rider's keys (`remountUsesFreshInput`).
 - **Effects run only on the simulating client** (the rider's). The server and other players never know the engine state, so they see no flame or vapor (a spec non-goal).
 - **Hazards:** like the drone, `applyEffectsFromBlocks()` is never called, so lava, fire, cactus and cobwebs do nothing.
 - **Gametests:** wait on conditions (`waitUntilServerAcceptsClicks`, `waitForRocketInHand`, `ctx.waitFor`), never fixed tick counts before a click. Keep flights over the stone floor (x −10..10, z −10..30) or landings miss the pad.

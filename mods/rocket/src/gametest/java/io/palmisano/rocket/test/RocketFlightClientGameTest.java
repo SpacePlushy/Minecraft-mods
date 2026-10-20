@@ -4,6 +4,7 @@ import static io.palmisano.rocket.test.GameTestSupport.check;
 import static io.palmisano.rocket.test.GameTestSupport.serverRocketPos;
 
 import io.palmisano.rocket.entity.RocketEntity;
+import io.palmisano.rocket.flight.Engine;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
@@ -23,6 +24,7 @@ public class RocketFlightClientGameTest implements FabricClientGameTest {
 		engineCutFallsAndLands(ctx);
 		ceilingStopsLaunch(ctx);
 		dismountMidAirFallsAndLands(ctx);
+		remountUsesFreshInput(ctx);
 		hardLandingDoesNotHurtRider(ctx);
 	}
 
@@ -155,6 +157,27 @@ public class RocketFlightClientGameTest implements FabricClientGameTest {
 			ctx.getInput().releaseKey(o -> o.keyShift);
 			waitForLandingOnPad(ctx, sp, 400, "after dismount");
 			ctx.getInput().releaseKey(o -> o.keyJump);
+		}
+	}
+
+	/** Climbing back into a falling rocket must not replay the keys held when you bailed out of it. */
+	private static void remountUsesFreshInput(ClientGameTestContext ctx) {
+		try (TestSingleplayerContext sp = mountedArena(ctx, PAD)) {
+			ctx.getInput().holdKey(o -> o.keyJump);
+			waitForClientRocketAbove(ctx, PAD + 15, 300);
+			ctx.getInput().holdKey(o -> o.keyShift);
+			ctx.waitFor(mc -> mc.player.getVehicle() == null, 20);
+			ctx.getInput().releaseKey(o -> o.keyShift);
+			ctx.getInput().releaseKey(o -> o.keyJump);
+			ctx.waitTicks(5);
+			sp.getServer().runCommand("ride @p mount @e[type=rocket:rocket,limit=1]");
+			ctx.waitFor(mc -> mc.player.getVehicle() instanceof RocketEntity, 40);
+			ctx.waitTicks(2);
+			Engine engine = ctx.computeOnClient(mc -> ((RocketEntity) mc.player.getVehicle()).getEngine());
+			double y = serverRocketPos(sp).y;
+			check(engine == Engine.OFF, "engine lit itself on remount with no key held: " + engine + " at y=" + y);
+			check(y > PAD + 5, "test setup: rocket already down at y=" + y);
+			waitForLandingOnPad(ctx, sp, 400, "after remount");
 		}
 	}
 
