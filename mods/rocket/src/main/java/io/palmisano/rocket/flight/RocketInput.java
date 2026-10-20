@@ -16,6 +16,16 @@ public record RocketInput(double forward, double strafe, boolean throttleUp, dou
 		return new RocketInput(0, 0, false, yaw);
 	}
 
+	/** Maps held keys to input; opposing keys cancel. */
+	public static RocketInput fromKeys(boolean forward, boolean back, boolean left, boolean right, boolean up,
+			double lookYaw) {
+		return new RocketInput(axis(forward, back), axis(right, left), up, lookYaw);
+	}
+
+	private static double axis(boolean positive, boolean negative) {
+		return (positive ? 1 : 0) - (negative ? 1 : 0);
+	}
+
 	private static double clamp(double value) {
 		return Math.max(-1, Math.min(1, value));
 	}

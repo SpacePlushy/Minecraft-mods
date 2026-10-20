@@ -106,6 +106,116 @@ class RocketPhysicsTest {
 		assertEquals(Engine.OFF, M.step(s, IDLE, true).engine());
 	}
 
+	/** Maps an angle to (-180, 180]. */
+	private static double wrap(double degrees) {
+		double d = degrees % 360;
+		if (d <= -180) d += 360;
+		if (d > 180) d -= 360;
+		return d;
+	}
+
+	private static RocketState observeSteady(RocketState s, double dz, int ticks) {
+		for (int i = 0; i < ticks; i++) {
+			s = M.observe(s, 0, 0, dz, 0);
+		}
+		return s;
+	}
+
+	@Test
+	void yawIsRateLimited() {
+		assertEquals(5, M.step(RocketState.resting(0), RocketInput.idle(170), true).yaw(), 1e-9);
+	}
+
+	@Test
+	void yawTakesShortestPath() { // 350 -> 10 turns +20 * 0.2 = +4
+		assertEquals(354, M.step(RocketState.resting(350), RocketInput.idle(10), true).yaw(), 1e-9);
+	}
+
+	@Test
+	void yawHandlesUnwrappedPlayerYaw() { // Review Focus 3: after spinning the mouse, player yaw can be 725
+		RocketState s = M.step(RocketState.resting(0), RocketInput.idle(725), true);
+		assertEquals(1.0, wrap(s.yaw()), 1e-9);
+		s = run(s, RocketInput.idle(725), true, 100);
+		assertEquals(0, wrap(s.yaw() - 725), 0.01);
+	}
+
+	@Test
+	void tiltFollowsKeysAndSelfRights() {
+		RocketState s = run(RocketState.resting(0), new RocketInput(1, 0, false, 0), false, 100);
+		assertEquals(20, s.pitchTilt(), 0.1);
+		assertTrue(Math.abs(run(s, IDLE, false, 100).pitchTilt()) < 0.1);
+		s = run(RocketState.resting(0), new RocketInput(0, 1, false, 0), false, 100);
+		assertEquals(20, s.rollTilt(), 0.1);
+		assertTrue(Math.abs(run(s, IDLE, false, 100).rollTilt()) < 0.1);
+	}
+
+	@Test
+	void noTiltOnTheGround() {
+		RocketState s = run(RocketState.resting(0), new RocketInput(1, 1, true, 0), true, 20);
+		assertEquals(Engine.IGNITION, s.engine());
+		assertEquals(0, s.pitchTilt());
+		assertEquals(0, s.rollTilt());
+	}
+
+	@Test
+	void tiltedThrustPushesAlongHeading() {
+		RocketState s = run(burning(0, 1), new RocketInput(1, 0, true, 0), false, 200);
+		assertTrue(s.vz() > 0.5, "vz=" + s.vz()); // yaw 0 faces +Z
+		assertTrue(Math.abs(s.vx()) < 1e-9, "vx=" + s.vx());
+		s = run(burning(0, 1).withYaw(90), new RocketInput(1, 0, true, 90), false, 200);
+		assertTrue(s.vx() < -0.5, "vx=" + s.vx()); // yaw 90 faces -X
+	}
+
+	@Test
+	void groundFrictionStopsSliding() {
+		RocketState sliding = new RocketState(0.5, 0, 0, 0, 0, 0, 0, Engine.OFF, 0);
+		assertEquals(0.0, run(sliding, IDLE, true, 20).vx());
+	}
+
+	@Test
+	void landingStopsTheFall() {
+		Pad pad = new Pad(RocketState.resting(0), 20).fly(M, IDLE, 200);
+		assertEquals(0, pad.y);
+		assertEquals(0, pad.state.vy());
+	}
+
+	@Test
+	void afterCollisionZeroesOnlyBlockedAxes() { // a wall stops x; the climb and the drift carry on
+		RocketState s = new RocketState(0.3, 0.1, 0.2, 0, 10, 0, 1, Engine.BURNING, 0);
+		RocketState r = M.afterCollision(s, 0.3, 0.1, 0.2, 0.0, 0.1, 0.2);
+		assertEquals(0, r.vx());
+		assertEquals(0.1, r.vy());
+		assertEquals(0.2, r.vz());
+		assertEquals(10, r.pitchTilt());
+	}
+
+	@Test
+	void observeTracksSeenMovement() { // the side that takes over later starts from real speed
+		RocketState s = observeSteady(RocketState.resting(0), 0.3, 20);
+		assertEquals(0.3, s.vz(), 1e-4);
+	}
+
+	@Test
+	void observeRidesOutAMissedPacket() { // a tick with no vehicle-move packet must not read as a stop
+		RocketState s = M.observe(observeSteady(RocketState.resting(0), 0.3, 20), 0, 0, 0, 0);
+		assertTrue(s.vz() > 0.1, "vz=" + s.vz());
+	}
+
+	@Test
+	void observeTreatsTeleportAsRest() { // /tp of a ridden rocket must not fling it on hand-over
+		RocketState s = M.observe(observeSteady(RocketState.resting(0), 0.3, 20), 0, 0, 50, 0);
+		assertEquals(0, s.vz());
+	}
+
+	@Test
+	void observeMeansEngineOff() { // only the simulating side knows the engine; the other side shows it off
+		RocketState s = M.observe(new RocketState(0, 0, 0, 0, 10, -10, 0.8, Engine.BURNING, 3), 0, 0, 0, 0);
+		assertEquals(Engine.OFF, s.engine());
+		assertEquals(0, s.throttle());
+		assertEquals(0, s.engineTicks());
+		assertTrue(s.pitchTilt() < 10 && s.pitchTilt() > 0 && s.rollTilt() > -10 && s.rollTilt() < 0, "tilt " + s);
+	}
+
 	@Test
 	void noseIsUnitAndFollowsTilt() {
 		Vec up = RocketPhysics.nose(0, 0, 0);
