@@ -190,7 +190,8 @@ Dismount spot: beside the rocket when there's room (vanilla `DismountHelper`), e
 (on top of the rocket).
 
 **Item (`rocket:rocket`, "Rocket").** Tools & Utilities tab. Use on a block → rocket stands on the
-clicked face, window facing the player. No room (blocks or entities in the hitbox) → nothing spawns.
+clicked face, facing the way the player looks (like the drone), so after climbing in the rider
+looks out of the window. No room (blocks or entities in the hitbox) → nothing spawns.
 
 **Model (16 px = 1 block, about 4.6 blocks tall).** From the bottom: a dark engine bell; a 22 px square
 lower body; four fins at the base (total span ≈ 2.4 blocks); a 22 px square cabin with a big window on
