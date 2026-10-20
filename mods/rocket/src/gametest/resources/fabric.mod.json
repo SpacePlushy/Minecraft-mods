@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "rocket-test",
+	"version": "1.0.0",
+	"name": "Rocket Tests",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"io.palmisano.rocket.test.SmokeClientGameTest"
+		]
+	},
+	"depends": {
+		"rocket": "*"
+	}
+}

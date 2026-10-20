@@ -1,0 +1,26 @@
+{
+	"schemaVersion": 1,
+	"id": "rocket",
+	"version": "${version}",
+	"name": "Rocket",
+	"description": "A rideable rocket ship: hold Space to ignite, launch on a cloud of vapor, and steer it through the sky.",
+	"authors": [
+		"Frankie Palmisano"
+	],
+	"icon": "assets/rocket/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"io.palmisano.rocket.RocketMod"
+		],
+		"client": [
+			"io.palmisano.rocket.client.RocketClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
