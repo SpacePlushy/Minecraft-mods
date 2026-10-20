@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.client.CameraType;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
 
 /** Placing the drone with its item, mounting it, and refusing to spawn without room. */
 @SuppressWarnings("UnstableApiUsage")
@@ -43,11 +44,12 @@ public class DronePlacementClientGameTest implements FabricClientGameTest {
 				mc.player.setXRot(35f);
 				mc.player.setYRot(0f);
 			});
-			ctx.waitTicks(2);
+			GameTestSupport.waitForDroneInHand(ctx);
+			String aim = ctx.computeOnClient(mc -> mc.hitResult instanceof BlockHitResult b ? b.getBlockPos().toShortString() : "nothing");
 			ctx.getInput().pressKey(o -> o.keyUse);
 			ctx.waitTicks(5);
 			int count = GameTestSupport.serverDrones(sp, new AABB(-3, 99, -1, 3, 102, 6)).size();
-			check(count == 1, "expected 1 drone, got " + count);
+			check(count == 1, "expected 1 drone, got " + count + " (crosshair was on " + aim + ")");
 
 			sp.getServer().runCommand("ride @p mount @e[type=drone:drone,limit=1]");
 			ctx.waitTicks(5);
@@ -77,9 +79,10 @@ public class DronePlacementClientGameTest implements FabricClientGameTest {
 			sp.getServer().runCommand("fill 5 100 0 5 102 10 minecraft:stone");
 			sp.getServer().runCommand("fill 7 100 0 7 102 10 minecraft:stone");
 			sp.getServer().runCommand("tp @a 6.5 100 0.5 0 35"); // looks at floor block (6,99,2)
+			GameTestSupport.waitUntilServerAcceptsClicks(ctx, sp, 6.5, 0.5);
 			sp.getServer().runCommand("give @a drone:drone");
 			ctx.runOnClient(mc -> mc.player.getInventory().setSelectedSlot(0));
-			ctx.waitTicks(5);
+			GameTestSupport.waitForDroneInHand(ctx); // else "no drone" would pass for the wrong reason
 			ctx.getInput().pressKey(o -> o.keyUse);
 			ctx.waitTicks(5);
 			check(GameTestSupport.serverDrones(sp, new AABB(4, 99, -1, 8, 103, 11)).isEmpty(),

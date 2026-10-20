@@ -3,6 +3,7 @@ package io.palmisano.drone.test;
 import java.util.List;
 
 import io.palmisano.drone.entity.DroneEntity;
+import io.palmisano.drone.registry.ModItems;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.world.phys.AABB;
@@ -24,7 +25,27 @@ final class GameTestSupport {
 		sp.getServer().runCommand("fill -10 100 -10 10 115 30 minecraft:air");
 		sp.getServer().runCommand("tp @a 0.5 100 0.5 0 0");
 		sp.getConnection().waitForChunksRender();
+		waitUntilServerAcceptsClicks(ctx, sp, 0.5, 0.5);
 		return sp;
+	}
+
+	/**
+	 * The server silently ignores clicks until it has the client's "loaded" packet and its
+	 * acknowledgement of the last teleport (ServerGamePacketListenerImpl.handleUseItemOn). Both arrive
+	 * a variable number of ticks after the command, so wait for them instead of a fixed tick count.
+	 */
+	static void waitUntilServerAcceptsClicks(ClientGameTestContext ctx, TestSingleplayerContext sp, double x, double z) {
+		ctx.waitFor(mc -> Math.abs(mc.player.getX() - x) < 1e-6 && Math.abs(mc.player.getZ() - z) < 1e-6, 40);
+		ctx.waitTick(); // the client acknowledged the teleport when it applied it; the server reads that next tick
+		for (int i = 0; !sp.getServer().computeOnServer(s -> s.getPlayerList().getPlayers().getFirst().connection.hasClientLoaded()); i++) {
+			check(i < 60, "server never saw the client finish loading");
+			ctx.waitTick();
+		}
+	}
+
+	/** After {@code give}, the item reaches the client a variable number of ticks later; Use before that does nothing. */
+	static void waitForDroneInHand(ClientGameTestContext ctx) {
+		ctx.waitFor(mc -> mc.player.getMainHandItem().is(ModItems.DRONE), 40);
 	}
 
 	static void check(boolean ok, String msg) {
