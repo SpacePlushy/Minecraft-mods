@@ -101,7 +101,39 @@ public class BuilderScreenClientGameTest implements FabricClientGameTest {
 			ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
 			ctx.waitFor(mc -> mc.gui.screen() == null);
 			rebind(ctx, AiBuilderClient.OPEN_BUILDER.getDefaultKey());
+
+			// All ten stored prompts are reachable: the newest show first, the arrows reach the oldest.
+			writeHistory("{\"lastSize\":\"AUTO\",\"recent\":[\"p10\",\"p9\",\"p8\",\"p7\",\"p6\",\"p5\",\"p4\",\"p3\",\"p2\",\"p1\"]}");
+			ctx.getInput().pressKey(AiBuilderClient.OPEN_BUILDER);
+			ctx.waitForScreen(BuilderScreen.class);
+			check(hasButton(ctx, "p10") && hasButton(ctx, "p9") && !hasButton(ctx, "p1"), "the newest prompts should show first");
+			for (int i = 0; i < 8; i++) {
+				ctx.clickScreenButton("gui.aibuilder.recent.down");
+			}
+			check(hasButton(ctx, "p1"), "the arrows should reach the oldest prompt");
+			ctx.clickScreenButton("p1");
+			check(screen(ctx, BuilderScreen::prompt).equals("p1"), "clicking the oldest prompt should fill the box");
+			ctx.clickScreenButton("gui.aibuilder.recent.up");
+			check(hasButton(ctx, "p3"), "the up arrow should scroll back");
+
+			// The narrowest GUI with a full list keeps every widget, arrows and prompt rows included, on screen.
+			ctx.getInput().resizeWindow(640, 480);
+			ctx.waitFor(mc -> mc.gui.screen() != null && mc.gui.screen().width == 320);
+			ctx.waitTick();
+			String offScreenWithList = screen(ctx, BuilderScreenClientGameTest::firstWidgetOffScreen);
+			check(offScreenWithList == null, "widget off screen with ten recent prompts: " + offScreenWithList);
+			ctx.takeScreenshot("aibuilder-screen-scroll");
+			ctx.getInput().resizeWindow(window[0], window[1]);
+			ctx.waitFor(mc -> mc.gui.screen() != null && mc.gui.screen().width == guiWidth);
+			ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
+			ctx.waitFor(mc -> mc.gui.screen() == null);
 		}
+	}
+
+	/** Whether the open screen has a button labelled exactly {@code label}. */
+	private static boolean hasButton(ClientGameTestContext ctx, String label) {
+		return ctx.computeOnClient(mc -> mc.gui.screen().children().stream()
+				.anyMatch(child -> child instanceof AbstractWidget w && w.getMessage().getString().equals(label)));
 	}
 
 	private static <T> T screen(ClientGameTestContext ctx, Function<BuilderScreen, T> read) {

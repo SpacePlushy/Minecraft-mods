@@ -1,5 +1,6 @@
 package io.palmisano.aibuilder.client;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import io.palmisano.aibuilder.core.request.BuildPrompt;
@@ -31,8 +32,12 @@ public class BuilderScreen extends Screen {
 	private PromptHistory history;
 	private SizeTier size;
 	private String draft = "";
+	private int recentOffset;
 	private MultiLineEditBox promptBox;
 	private Button buildButton;
+	private final List<Button> recentRows = new ArrayList<>();
+	private Button upButton;
+	private Button downButton;
 
 	public BuilderScreen(PromptHistoryStore store) {
 		super(Component.translatable("gui.aibuilder.title"));
@@ -84,8 +89,14 @@ public class BuilderScreen extends Screen {
 		buildButton.active = buildEnabled();
 	}
 
-	/** The "Recent prompts" label and as many prompt buttons as end above {@code height - 8}; no label when none fit. */
+	/**
+	 * The "Recent prompts" label and as many prompt rows as end above {@code height - 8}; when the history holds more
+	 * than fit, ▲ and ▼ beside the label scroll the rows through all of it. No label when no row fits.
+	 */
 	private void addRecentPrompts(int left, int column, int labelRow) {
+		recentRows.clear();
+		upButton = null;
+		downButton = null;
 		int firstRow = labelRow + 12;
 		int room = height - 8 - firstRow;
 		int fit = room < 20 ? 0 : 1 + (room - 20) / ROW_STEP;
@@ -93,12 +104,41 @@ public class BuilderScreen extends Screen {
 		if (shown == 0) {
 			return;
 		}
-		addRenderableOnly(new StringWidget(left, labelRow, column, font.lineHeight, Component.translatable("gui.aibuilder.recent"), font));
-		for (int i = 0; i < shown; i++) {
-			String prompt = history.recent().get(i);
-			addRenderableWidget(Button.builder(Component.literal(buttonLabel(prompt, column - 8)), button -> useRecent(prompt))
-					.bounds(left, firstRow + i * ROW_STEP, column, 20)
+		recentOffset = Math.clamp(recentOffset, 0, history.recent().size() - shown);
+		boolean scrolls = history.recent().size() > shown;
+		addRenderableOnly(new StringWidget(left, labelRow, scrolls ? column - 48 : column, font.lineHeight,
+				Component.translatable("gui.aibuilder.recent"), font));
+		if (scrolls) {
+			upButton = addRenderableWidget(Button.builder(Component.translatable("gui.aibuilder.recent.up"), button -> scrollRecent(-1))
+					.bounds(left + column - 44, labelRow - 2, 20, 12)
 					.build());
+			downButton = addRenderableWidget(Button.builder(Component.translatable("gui.aibuilder.recent.down"), button -> scrollRecent(1))
+					.bounds(left + column - 20, labelRow - 2, 20, 12)
+					.build());
+		}
+		for (int i = 0; i < shown; i++) {
+			int row = i;
+			recentRows.add(addRenderableWidget(Button.builder(Component.empty(), button -> useRecent(row))
+					.bounds(left, firstRow + i * ROW_STEP, column, 20)
+					.build()));
+		}
+		showRecentRows();
+	}
+
+	private void scrollRecent(int delta) {
+		recentOffset = Math.clamp(recentOffset + delta, 0, history.recent().size() - recentRows.size());
+		showRecentRows();
+	}
+
+	/** Labels the rows from {@link #recentOffset} on, and greys out an arrow at that end of the list. */
+	private void showRecentRows() {
+		for (int i = 0; i < recentRows.size(); i++) {
+			Button row = recentRows.get(i);
+			row.setMessage(Component.literal(buttonLabel(history.recent().get(recentOffset + i), row.getWidth() - 8)));
+		}
+		if (upButton != null) {
+			upButton.active = recentOffset > 0;
+			downButton.active = recentOffset + recentRows.size() < history.recent().size();
 		}
 	}
 
@@ -121,10 +161,9 @@ public class BuilderScreen extends Screen {
 		return false;
 	}
 
-	private void useRecent(String prompt) {
-		promptBox.setValue(prompt);
-		draft = prompt;
-		buildButton.active = buildEnabled();
+	/** Puts the prompt in that row back in the box; the box's listener updates the draft and Build. */
+	private void useRecent(int row) {
+		promptBox.setValue(history.recent().get(recentOffset + row));
 		setFocused(promptBox);
 	}
 

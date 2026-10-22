@@ -15,7 +15,7 @@ Building starts in M2. The plan, milestone by milestone, is in [`PLAN.md`](PLAN.
 |---|---|
 | Press **B** in a world | The AI Builder screen opens (rebind it in Options → Controls → Key Binds → AI Builder) |
 | Type what you want, pick a **Size**, press **Build** | Chat says `AI Builder got: …` |
-| Click a recent prompt | It goes back in the box, ready to build again |
+| Click a recent prompt (▲ ▼ scroll through the last 10) | It goes back in the box, ready to build again |
 | `/aibuild <prompt>` in chat | Same as Build, at Auto size |
 
 The screen remembers your last 10 prompts and the size you picked last. Prompts can be up to 2,000 characters.
