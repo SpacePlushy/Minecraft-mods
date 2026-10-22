@@ -127,8 +127,15 @@ public final class BuildManager {
 			reply(player, build != null ? Messages.busy() : Messages.undoing());
 			return Outcome.BUSY;
 		}
+		LocalFrame frame = Sites.ahead(player);
+		ServerLevel level = player.level();
+		Optional<Box> allowed = BuildBox.allowed(SizeTier.AUTO, frame.origin().y(), level.getMinY(), level.getMaxY());
+		if (allowed.isEmpty()) {
+			reply(player, Messages.noRoom());
+			return Outcome.NOTHING;
+		}
 		ScriptedBackend demo = new ScriptedBackend(demoScript(), task -> Thread.ofPlatform().daemon().name("aibuilder-build").start(task));
-		build = new Build(player, demo, new BuildRequest("the demo house", SizeTier.AUTO));
+		build = new Build(player, frame, allowed.get(), demo, new BuildRequest("the demo house", SizeTier.AUTO), Tunables.BLOCKS_PER_TICK);
 		return Outcome.STARTED;
 	}
 
@@ -254,13 +261,11 @@ public final class BuildManager {
 		boolean cancelled;
 		String failure;
 
-		Build(ServerPlayer player, AiBackend backend, BuildRequest request) {
+		Build(ServerPlayer player, LocalFrame frame, Box allowed, AiBackend backend, BuildRequest request, int blocksPerTick) {
 			owner = player.getUUID();
 			level = player.level();
-			LocalFrame frame = Sites.ahead(player);
-			Box allowed = BuildBox.allowed(request.size(), frame.origin().y(), level.getMinY(), level.getMaxY());
-			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level),
-					Tunables.BLOCKS_PER_TICK, Tunables.TICK_BUDGET_NANOS);
+			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level), blocksPerTick,
+					Tunables.TICK_BUDGET_NANOS);
 			chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(allowed.min())), Positions.toBlockPos(frame.toWorld(allowed.max())));
 			BuildTickets.hold(level, chunks);
 			JobScheduler.add(job);

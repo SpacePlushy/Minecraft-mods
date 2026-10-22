@@ -130,6 +130,12 @@ public final class ToolExecutor {
 		if (name.equals("set_blocks")) {
 			return setBlocks(a);
 		}
+		// A shape bigger than the whole allowed box is a mistake; refuse it before building it in memory.
+		long size = upperBound(name, a);
+		if (size > allowed.volume()) {
+			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": this " + name + " covers up to " + blocks(size)
+					+ ", more than the whole allowed box (" + describe(allowed) + ") holds; nothing was queued");
+		}
 		List<LocalBlock> blocks = switch (name) {
 			case "fill" -> fill(a);
 			case "clear" -> Shapes.fill(a.box("box"), AIR, FillMode.SOLID);
@@ -150,6 +156,54 @@ public final class ToolExecutor {
 			default -> throw new IllegalStateException(name);
 		};
 		return queue(blocks, false);
+	}
+
+	/**
+	 * At most how many blocks a shape comes to, from its arguments alone. Generous (a sphere counts its whole cube);
+	 * an argument the shape itself would refuse counts as 0, so the shape's own message reaches Claude.
+	 */
+	private static long upperBound(String name, Args a) {
+		return switch (name) {
+			case "fill", "clear" -> a.box("box").volume();
+			case "line" -> span(a.pos("from"), a.pos("to")) + 1;
+			case "wall" -> {
+				List<int[]> points = a.points("points");
+				long length = 1;
+				for (int i = 1; i < points.size(); i++) {
+					length += Math.max(Math.abs((long) points.get(i)[0] - points.get(i - 1)[0]),
+							Math.abs((long) points.get(i)[1] - points.get(i - 1)[1])) + 1;
+				}
+				yield length * atLeast0(a.integer("height")) * atLeast0(a.optInt("thickness", 1));
+			}
+			case "cylinder", "cone" -> square(atLeast0(2L * a.integer("radius") + 1)) * atLeast0(a.integer("height"));
+			case "sphere" -> square(atLeast0(2L * a.integer("radius") + 1)) * atLeast0(2L * a.integer("radius") + 1);
+			case "arch" -> (span(a.pos("from"), a.pos("to")) + 1) * atLeast0(a.integer("rise") + 1L)
+					* atLeast0(a.optInt("thickness", 1));
+			case "roof" -> {
+				Box box = a.box("box");
+				long grow = 2L * atLeast0(a.optInt("overhang", 0));
+				long width = box.max().x() - box.min().x() + 1 + grow;
+				long depth = box.max().z() - box.min().z() + 1 + grow;
+				yield width * depth * (Math.max(width, depth) + 1);
+			}
+			case "staircase" -> a.string("style").equals("spiral")
+					? atLeast0(a.integer("to_y") - (long) a.integer("from_y") + 1) + 8 * atLeast0(a.integer("radius"))
+					: atLeast0(a.integer("steps")) * atLeast0(a.optInt("width", 1));
+			default -> 0;
+		};
+	}
+
+	/** The longest of the three distances between two points. */
+	private static long span(Pos from, Pos to) {
+		return Math.max(Math.abs((long) to.x() - from.x()), Math.max(Math.abs((long) to.y() - from.y()), Math.abs((long) to.z() - from.z())));
+	}
+
+	private static long square(long n) {
+		return n * n;
+	}
+
+	private static long atLeast0(long n) {
+		return Math.max(0, n);
 	}
 
 	private static List<LocalBlock> fill(Args a) {

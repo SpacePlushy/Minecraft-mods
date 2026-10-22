@@ -83,6 +83,27 @@ class ToolExecutorTest {
 	}
 
 	@Test
+	void numbersMustBeWholeAndInRange() {
+		ToolExecutor tools = briefed();
+		ToolResult fraction = tools.call("fill", json("{\"box\":[0,0,0,1.5,0,0],\"block\":\"stone\"}"));
+		assertTrue(fraction.isError() && fraction.text().contains("bad_argument") && fraction.text().contains("box"), fraction.text());
+		ToolResult huge = tools.call("fill", json("{\"box\":[0,0,0,3000000000,0,0],\"block\":\"stone\"}"));
+		assertTrue(huge.isError() && huge.text().contains("bad_argument"), huge.text());
+		assertEquals(0, sink.queuedCount());
+	}
+
+	/** A shape can't be bigger than the whole allowed box, so one that is is a mistake, refused before it's built. */
+	@Test
+	void aShapeBiggerThanTheAllowedBoxIsRefusedWhole() {
+		ToolExecutor tools = briefed();
+		ToolResult sphere = tools.call("sphere", json("{\"center\":[0,5,8],\"radius\":60,\"block\":\"stone\"}"));
+		assertTrue(sphere.isError() && sphere.text().contains("too_many"), sphere.text());
+		ToolResult fill = tools.call("fill", json("{\"box\":[-50,0,0,50,50,50],\"block\":\"stone\"}"));
+		assertTrue(fill.isError() && fill.text().contains("too_many"), fill.text());
+		assertEquals(0, sink.queuedCount());
+	}
+
+	@Test
 	void aBriefWithAMalformedPhaseIsABadArgument() {
 		ToolResult result = executor(150, 100_000).call("submit_brief",
 				json("{\"title\":\"test house\",\"style\":\"plain\",\"phases\":[{\"name\":\"walls\"}]}"));

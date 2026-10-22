@@ -68,6 +68,20 @@ class ScriptedBackendTest {
 		assertEquals("the world is read-only", handle.failure());
 	}
 
+	/** An Error (out of memory, a stack overflow) must still end the build, or the server would stay busy forever. */
+	@Test
+	void anErrorThatIsntAnExceptionStillEndsTheBuild() throws Exception {
+		RecordingSink sink = new RecordingSink() {
+			@Override
+			public void queue(List<Placement> batch) {
+				throw new StackOverflowError("too deep");
+			}
+		};
+		BuildHandle handle = new ScriptedBackend(script(BRIEF, FILL), Runnable::run).start(REQUEST, tools(sink));
+		assertEquals(BuildOutcome.FAILED, handle.outcome().get(5, TimeUnit.SECONDS));
+		assertTrue(handle.failure().contains("too deep"), handle.failure());
+	}
+
 	@Test
 	void cancelStopsBeforeTheNextCall() throws Exception {
 		CountDownLatch inCheckpoint = new CountDownLatch(1);

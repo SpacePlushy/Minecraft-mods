@@ -1,5 +1,6 @@
 package io.palmisano.aibuilder.core.tools;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -8,6 +9,7 @@ import java.util.Map;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.blocks.BlockSpec;
 import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.shapes.Box;
@@ -153,14 +155,23 @@ final class Args {
 		return out;
 	}
 
+	/** A whole number within ±{@link Tunables#ARGUMENT_LIMIT}; a fraction or a huge number is refused, never rounded. */
 	private static int asInt(JsonElement e, String name) {
+		BigDecimal value;
 		try {
 			if (!e.isJsonPrimitive()) {
 				throw new BadArgument(name + " must hold whole numbers");
 			}
-			return e.getAsInt();
+			value = e.getAsBigDecimal();
 		} catch (NumberFormatException | UnsupportedOperationException | IllegalStateException ex) {
 			throw new BadArgument(name + " must hold whole numbers");
 		}
+		if (value.signum() != 0 && value.stripTrailingZeros().scale() > 0) {
+			throw new BadArgument(name + " must hold whole numbers, not " + value.toPlainString());
+		}
+		if (value.abs().compareTo(BigDecimal.valueOf(Tunables.ARGUMENT_LIMIT)) > 0) {
+			throw new BadArgument(name + " must be between -" + Tunables.ARGUMENT_LIMIT + " and " + Tunables.ARGUMENT_LIMIT);
+		}
+		return value.intValueExact();
 	}
 }

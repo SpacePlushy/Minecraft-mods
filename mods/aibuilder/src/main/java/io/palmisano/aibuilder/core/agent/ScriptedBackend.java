@@ -70,7 +70,8 @@ public final class ScriptedBackend implements AiBackend {
 					tools.call("finish", args);
 				}
 				outcome.complete(BuildOutcome.FINISHED);
-			} catch (RuntimeException e) {
+			} catch (Throwable e) {
+				// Errors too (out of memory, a stack overflow): an outcome that never completes keeps the server busy.
 				failure.set(e.getMessage() == null ? e.toString() : e.getMessage());
 				outcome.completeExceptionally(e);
 			}

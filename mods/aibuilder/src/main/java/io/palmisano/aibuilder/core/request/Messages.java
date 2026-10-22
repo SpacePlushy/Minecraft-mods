@@ -92,6 +92,10 @@ public final class Messages {
 		return "Nothing is building.";
 	}
 
+	public static String noRoom() {
+		return "There's no room to build here: this spot is outside the world's build height.";
+	}
+
 	private static String building(String phase) {
 		return phase.isEmpty() ? "Building" : "Building " + phase;
 	}

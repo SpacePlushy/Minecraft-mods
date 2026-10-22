@@ -22,6 +22,18 @@ public final class Tunables {
 	public static final int STATUS_INTERVAL_TICKS = 20;
 	/** How long a checkpoint waits for its blocks to be placed. */
 	public static final int CHECKPOINT_TIMEOUT_SECONDS = 120;
+	/**
+	 * The largest number a tool argument may hold, either sign. Coordinates and sizes beyond it are mistakes, and the
+	 * limit keeps every shape's loops far from int overflow.
+	 */
+	public static final int ARGUMENT_LIMIT = 1_000_000;
+	/** {@code /aibuild test}'s rate: slow enough to watch the house go up, check on it and cancel it (about 10 s). */
+	public static final int DEMO_BLOCKS_PER_TICK = 2;
+	/**
+	 * Ticks after a block entity is placed before its data is taken as what the build left there: some change on their
+	 * first tick (a hopper's transfer cooldown), and undo must still recognise them as the build's own.
+	 */
+	public static final int BLOCK_ENTITY_SETTLE_TICKS = 2;
 
 	private Tunables() {
 	}
