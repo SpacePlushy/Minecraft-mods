@@ -46,6 +46,13 @@ class ClaudeChecksTest {
 		assertTrue(System.nanoTime() - began < 200_000_000L, "the second check ran the process again");
 	}
 
+	/** A Claude Code that runs but breaks (a damaged install) says so, with its error: not "log in", which wouldn't help. */
+	@Test
+	void aBrokenInstallIsNotALogout() {
+		assertEquals(Optional.of(Messages.claudeBroken("Error: Cannot find module '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js'")),
+				ClaudeChecks.login(FAKE, environment(Map.of("FAKE_CLAUDE_BROKEN", "1"))));
+	}
+
 	@Test
 	void aCommandThatCantRunIsNotInstalled() {
 		assertEquals(Optional.of(Messages.notInstalled()), ClaudeChecks.login(List.of("/nowhere/at/all/claude"), environment(Map.of())));

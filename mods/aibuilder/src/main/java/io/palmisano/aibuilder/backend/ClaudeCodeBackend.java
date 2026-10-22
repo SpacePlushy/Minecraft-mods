@@ -8,9 +8,12 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.nio.file.attribute.UserPrincipal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -75,6 +78,10 @@ public final class ClaudeCodeBackend implements AiBackend {
 
 	private static final Logger LOG = LoggerFactory.getLogger("aibuilder");
 	private static final boolean WINDOWS = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows");
+	private static final boolean POSIX = FileSystems.getDefault().supportedFileAttributeViews().contains("posix");
+	private static final Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rwx------");
+	/** A private folder in place of each asked-for temp root that wasn't safe to write in. */
+	private static final Map<Path, Path> FALLBACK_ROOTS = new ConcurrentHashMap<>();
 	private static final Set<Run> RUNNING = ConcurrentHashMap.newKeySet();
 	private static final ScheduledExecutorService TIMERS = Executors.newSingleThreadScheduledExecutor(task -> {
 		Thread t = new Thread(task, "aibuilder-claude-timer");
@@ -155,9 +162,11 @@ public final class ClaudeCodeBackend implements AiBackend {
 
 		void launch() {
 			try {
-				Path work = config.tempRoot().resolve("work");
+				Path root = privateRoot(config.tempRoot());
+				sweep(root);
+				Path work = root.resolve("work");
 				Files.createDirectories(work);
-				buildDir = Files.createTempDirectory(config.tempRoot(), "build-");
+				buildDir = Files.createTempDirectory(root, "build-");
 				token = config.endpoint().sessions().open(this);
 				// Never in a log (spec §16), whatever prints it.
 				config.scrub().add(token);
@@ -172,6 +181,7 @@ public final class ClaudeCodeBackend implements AiBackend {
 				builder.environment().putAll(config.environment());
 				process = builder.start();
 			} catch (IOException | RuntimeException e) {
+				LOG.warn("Couldn't start Claude Code", e);
 				stop.compareAndSet(null, new Stop(BuildOutcome.FAILED, Messages.couldNotStartClaude(String.valueOf(e.getMessage()))));
 				finish(-1);
 				return;
@@ -297,6 +307,7 @@ public final class ClaudeCodeBackend implements AiBackend {
 					}
 					Optional<String> problem = InitCheck.problem(init);
 					if (problem.isPresent()) {
+						LOG.warn("Claude Code started with more than the build tools ({}), so the build was stopped", problem.get());
 						stop(BuildOutcome.FAILED, Messages.initRejected(problem.get()));
 					} else {
 						ready.complete(true);
@@ -336,7 +347,8 @@ public final class ClaudeCodeBackend implements AiBackend {
 				}
 				case StreamEvent.Retry retry -> {
 					retrying = true;
-					events.status(Messages.claudeRetrying(retry.attempt()));
+					// No HTTP status: nothing answered, so it's the connection, not a busy Claude.
+					events.status(retry.status() == 0 ? Messages.claudeUnreachable(retry.attempt()) : Messages.claudeRetrying(retry.attempt()));
 				}
 				case StreamEvent.RateLimit limit -> {
 					UsageLimits.Decision decision = UsageLimits.decide(limit, ZoneId.systemDefault(), Instant.now());
@@ -444,6 +456,10 @@ public final class ClaudeCodeBackend implements AiBackend {
 			} else if (last != null && UsageLimits.limitFromText(last.text()).isPresent()) {
 				kind = BuildOutcome.LIMITED;
 				reason = Messages.usageLimit(UsageLimits.limitFromText(last.text()).get());
+			} else if (last != null && last.isError() && last.terminalReason().equals("api_error") && last.apiErrorStatus() == 0) {
+				// Its last request got no answer at all, after the retries: the connection went (the Wi-Fi, say).
+				kind = BuildOutcome.FAILED;
+				reason = Messages.connectionLost(last.text().isBlank() ? "no answer" : last.text().strip());
 			} else if (last != null) {
 				kind = BuildOutcome.FAILED;
 				reason = Messages.claudeStopped(last.text().isBlank() ? last.terminalReason() : last.text());
@@ -512,20 +528,88 @@ public final class ClaudeCodeBackend implements AiBackend {
 		/** mcp.json holds the token: readable by the owner only, and gone when the build ends. */
 		private void deleteBuildDir() {
 			Path dir = buildDir;
-			if (dir == null) {
-				return;
+			if (dir != null) {
+				deleteTree(dir);
 			}
-			try (Stream<Path> files = Files.walk(dir)) {
-				files.sorted(Comparator.reverseOrder()).forEach(path -> {
-					try {
-						Files.deleteIfExists(path);
-					} catch (IOException e) {
-						LOG.warn("Couldn't delete {}", path);
-					}
-				});
-			} catch (IOException e) {
-				LOG.warn("Couldn't delete the build's folder {}", dir);
+		}
+	}
+
+	/**
+	 * Where builds write their token and system prompt: {@code wanted} when it's a real folder (not a link) of this
+	 * user's, made owner-only; else a private folder of its own, made once. On a shared machine someone else could have
+	 * made /tmp/aibuilder first, and could then change a build's files in it.
+	 */
+	static Path privateRoot(Path wanted) throws IOException {
+		if (ownedByMe(wanted)) {
+			return wanted;
+		}
+		Path fallback = FALLBACK_ROOTS.get(wanted);
+		if (fallback != null && ownedByMe(fallback)) {
+			return fallback;
+		}
+		Path fresh = Files.createTempDirectory("aibuilder-");
+		LOG.warn("{} isn't a private folder of this user's, so builds use {}", wanted, fresh);
+		FALLBACK_ROOTS.put(wanted, fresh);
+		return fresh;
+	}
+
+	/** {@code dir}, made if it isn't there, is a folder this user owns, and from now on only they can use it. */
+	private static boolean ownedByMe(Path dir) {
+		try {
+			if (Files.notExists(dir, LinkOption.NOFOLLOW_LINKS)) {
+				Files.createDirectories(dir);
 			}
+			if (!Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS)) {
+				return false;
+			}
+			if (!POSIX) {
+				return true;
+			}
+			UserPrincipal me = dir.getFileSystem().getUserPrincipalLookupService().lookupPrincipalByName(System.getProperty("user.name"));
+			if (!Files.getOwner(dir, LinkOption.NOFOLLOW_LINKS).equals(me)) {
+				return false;
+			}
+			Files.setPosixFilePermissions(dir, OWNER_ONLY);
+			return true;
+		} catch (IOException | UnsupportedOperationException e) {
+			return false;
+		}
+	}
+
+	/**
+	 * Build folders a day old: left by a game that crashed, their tokens dead with it. Another game's build, still
+	 * going, is younger.
+	 */
+	private static void sweep(Path root) {
+		Instant before = Instant.now().minus(Duration.ofHours(Tunables.STALE_BUILD_FOLDER_HOURS));
+		try (Stream<Path> dirs = Files.list(root)) {
+			dirs.filter(dir -> dir.getFileName().toString().startsWith("build-") && Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS))
+					.filter(dir -> modifiedBefore(dir, before)).forEach(ClaudeCodeBackend::deleteTree);
+		} catch (IOException e) {
+			LOG.warn("Couldn't look for old build folders in {}", root, e);
+		}
+	}
+
+	private static boolean modifiedBefore(Path dir, Instant before) {
+		try {
+			return Files.getLastModifiedTime(dir, LinkOption.NOFOLLOW_LINKS).toInstant().isBefore(before);
+		} catch (IOException e) {
+			return false;
+		}
+	}
+
+	/** {@code dir} and everything in it; links are deleted, never followed. */
+	private static void deleteTree(Path dir) {
+		try (Stream<Path> files = Files.walk(dir)) {
+			files.sorted(Comparator.reverseOrder()).forEach(path -> {
+				try {
+					Files.deleteIfExists(path);
+				} catch (IOException e) {
+					LOG.warn("Couldn't delete {}", path);
+				}
+			});
+		} catch (IOException e) {
+			LOG.warn("Couldn't delete the build folder {}", dir);
 		}
 	}
 

@@ -191,6 +191,16 @@ public final class Messages {
 		return "Claude is busy, retrying (attempt " + attempt + ")…";
 	}
 
+	/** A retry with no answer at all: the connection, not Claude. */
+	public static String claudeUnreachable(int attempt) {
+		return "Can't reach Claude, retrying (attempt " + attempt + ")…";
+	}
+
+	/** Claude Code gave up on a request nothing answered: the Wi-Fi went, say. */
+	public static String connectionLost(String detail) {
+		return "Lost the connection to Claude (" + detail + "). What's built so far stays; /aibuild undo reverts it.";
+	}
+
 	public static String initRejected(String problem) {
 		return "Claude Code started with more than the build tools (" + problem + "), so the build was stopped.";
 	}
@@ -213,6 +223,11 @@ public final class Messages {
 
 	public static String notInstalled() {
 		return "AI Builder needs Claude Code: install it, or set claude_path in config/aibuilder.json.";
+	}
+
+	/** {@code claude auth status} gave no answer: a damaged install, say, which logging in won't fix. */
+	public static String claudeBroken(String why) {
+		return "Claude Code couldn't run (" + why + "): run claude in a terminal to see what's wrong, or reinstall it.";
 	}
 
 	public static String notLoggedIn() {

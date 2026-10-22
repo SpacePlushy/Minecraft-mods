@@ -43,6 +43,8 @@ public final class Tunables {
 	public static final int CANCEL_GRACE_SECONDS = 5;
 	/** How long a prompt waits for the last build's Claude Code process to end; it's destroyed after the cancel grace. */
 	public static final int PREVIOUS_PROCESS_WAIT_SECONDS = 2 * CANCEL_GRACE_SECONDS;
+	/** A build folder this old was left by a game that crashed (a build's lasts as long as its build). */
+	public static final int STALE_BUILD_FOLDER_HOURS = 24;
 	/** How long Claude Code may take to start (its system/init line) before the build fails. */
 	public static final int STARTUP_TIMEOUT_SECONDS = 60;
 	/**

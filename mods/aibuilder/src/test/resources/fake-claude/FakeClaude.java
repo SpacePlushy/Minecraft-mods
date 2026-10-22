@@ -116,6 +116,26 @@ public class FakeClaude {
 				result(false, "success", "Built a tiny oak hut.", "completed", 0);
 			}
 			case "echo" -> result(false, "success", prompt, "completed", 0);
+			case "offline" -> {
+				// The Wi-Fi goes off after the walls: Claude Code retries (no HTTP status: nothing answered), then gives up.
+				call("get_context", "{}");
+				call("submit_brief", "{\"title\":\"Test hut\",\"style\":\"plain\",\"size\":{\"w\":3,\"h\":3,\"d\":3},"
+						+ "\"palette\":[{\"role\":\"primary\",\"block\":\"oak_planks\"}],\"phases\":[\"walls\",\"roof\"]}");
+				call("fill", "{\"box\":[-1,0,1,1,2,3],\"block\":\"oak_planks\",\"mode\":\"hollow\"}");
+				for (int attempt = 1; attempt <= 3; attempt++) {
+					OUT.println("{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":" + attempt + ",\"max_retries\":3,\"retry_delay_ms\":"
+							+ (300 * attempt) + ",\"error_status\":null,\"error\":\"unknown\",\"session_id\":\"" + session + "\"}");
+					Thread.sleep(300L * attempt);
+				}
+				OUT.println("{\"type\":\"assistant\",\"message\":{\"id\":\"" + UUID.randomUUID() + "\",\"model\":\"<synthetic>\",\"role\":\"assistant\","
+						+ "\"content\":[{\"type\":\"text\",\"text\":\"API Error: Connection error.\"}]},\"error\":\"unknown\",\"session_id\":\""
+						+ session + "\"}");
+				done = true;
+				OUT.println("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"num_turns\":" + turns + ",\"result\":"
+						+ "\"API Error: Connection error.\",\"terminal_reason\":\"api_error\",\"api_error_status\":null,\"session_id\":\"" + session + "\"}");
+				OUT.flush();
+				System.exit(1);
+			}
 			case "leak" -> {
 				// What must never reach a log (spec §16): the build's token, as a debug line might show it, and a key.
 				String tokenFile = System.getenv("FAKE_CLAUDE_TOKEN_FILE");
@@ -187,6 +207,13 @@ public class FakeClaude {
 
 	static void auth() {
 		done = true;
+		if ("1".equals(System.getenv("FAKE_CLAUDE_BROKEN"))) {
+			// A damaged install, as Node reports one.
+			System.err.println("node:internal/modules/cjs/loader:1228\n  throw err;\n  ^\n\nError: Cannot find module"
+					+ " '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1225:15)"
+					+ " {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: []\n}\n\nNode.js v22.1.0");
+			System.exit(1);
+		}
 		if ("1".equals(System.getenv("FAKE_CLAUDE_LOGGED_OUT"))) {
 			OUT.println("{\n  \"loggedIn\": false,\n  \"authMethod\": \"none\",\n  \"apiProvider\": \"firstParty\"\n}");
 			System.exit(1);

@@ -1,12 +1,18 @@
 package io.palmisano.aibuilder.backend;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +65,8 @@ class ClaudeCodeBackendTest {
 	private final List<String> started = new CopyOnWriteArrayList<>();
 	private final List<long[]> usage = new CopyOnWriteArrayList<>();
 	private final Scrub scrub = new Scrub();
+	/** Where the builds' folders go; the test's own folder unless a test says otherwise. */
+	private Path root;
 	private McpHttpServer server;
 	private Budget budget = new Budget(150);
 	private Duration startupTimeout = Duration.ofSeconds(30);
@@ -84,7 +92,8 @@ class ClaudeCodeBackendTest {
 		env.put("FAKE_CLAUDE_SCENARIO", scenario);
 		env.putAll(extra);
 		ClaudeCodeBackend backend = new ClaudeCodeBackend(new ClaudeCodeBackend.Config(command, ClaudeLaunch.environment(env),
-				ClaudeSettings.DEFAULT, "You build.", new McpEndpoint(server.port(), sessions), temp, temp.resolve("stream.jsonl"), startupTimeout,
+				ClaudeSettings.DEFAULT, "You build.", new McpEndpoint(server.port(), sessions), root == null ? temp : root, temp.resolve("stream.jsonl"),
+				startupTimeout,
 				Duration.ofSeconds(5), Duration.ofSeconds(2), scrub));
 		ToolExecutor tools = new ToolExecutor(new Validator(FakeCatalog.standard(), Validator.DEFAULT_BANNED), new LocalFrame(new Pos(0, 64, 0),
 				Facing.SOUTH), Box.of(-12, -6, 0, 11, 23, 23), SizeTier.SMALL, 15_000, sink, budget, world);
@@ -176,6 +185,54 @@ class ClaudeCodeBackendTest {
 		assertTrue(stream.contains("Bearer [redacted]"), stream);
 		// The build log scrubs with the same scrubber, so it has to know the token.
 		assertEquals("token [redacted]", scrub.apply("token " + token));
+	}
+
+	/** A crashed game leaves its build's folder (its token long revoked): the next build takes away what's a day old. */
+	@Test
+	void staleBuildFoldersGo() throws Exception {
+		Path stale = Files.createDirectories(temp.resolve("build-12345"));
+		Files.writeString(stale.resolve("mcp.json"), "{}");
+		Files.setLastModifiedTime(stale, FileTime.from(Instant.now().minus(Duration.ofDays(2))));
+		// Another game's build, still going: left alone.
+		Path fresh = Files.createDirectories(temp.resolve("build-67890"));
+		assertEquals(BuildOutcome.FINISHED, outcome(start("build")));
+		assertFalse(Files.exists(stale), "a day-old build folder stayed");
+		assertTrue(Files.exists(fresh), "a fresh build folder was swept");
+	}
+
+	/** The token and the system prompt are written there: only the player may read or change anything in it. */
+	@Test
+	void theTempRootIsOwnerOnly() throws Exception {
+		assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+		root = Files.createDirectories(temp.resolve("aibuilder"));
+		Files.setPosixFilePermissions(root, PosixFilePermissions.fromString("rwxrwxrwx"));
+		assertEquals(BuildOutcome.FINISHED, outcome(start("build")));
+		assertEquals(PosixFilePermissions.fromString("rwx------"), Files.getPosixFilePermissions(root));
+	}
+
+	/** A root that's a link (someone else's folder, on a shared machine) isn't written through: a private one is used. */
+	@Test
+	void aLinkedTempRootIsNotUsed() throws Exception {
+		Path elsewhere = Files.createDirectories(temp.resolve("elsewhere"));
+		root = Files.createSymbolicLink(temp.resolve("aibuilder"), elsewhere);
+		assertEquals(BuildOutcome.FINISHED, outcome(start("build")));
+		try (Stream<Path> files = Files.list(elsewhere)) {
+			assertEquals(List.of(), files.toList(), "the build wrote through the link");
+		}
+	}
+
+	/**
+	 * The Wi-Fi goes off mid-build (M6 check): Claude Code retries, then gives up with an API error and no HTTP status.
+	 * The player sees the retries as they happen, then a line that says the connection went, not a bare "api_error".
+	 */
+	@Test
+	void offlineMidBuildEndsCleanly() throws Exception {
+		BuildHandle handle = start("offline");
+		assertEquals(BuildOutcome.FAILED, outcome(handle));
+		assertTrue(notes.contains(Messages.claudeUnreachable(1)) && notes.contains(Messages.claudeUnreachable(3)), notes.toString());
+		assertEquals(Messages.connectionLost("API Error: Connection error."), handle.reason());
+		// What it placed before the connection went is in the sink, for the undo.
+		assertEquals(1, sink.batches.size());
 	}
 
 	@Test

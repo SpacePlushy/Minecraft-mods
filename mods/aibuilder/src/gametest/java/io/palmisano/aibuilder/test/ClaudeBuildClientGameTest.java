@@ -119,6 +119,7 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 				aPromptWaitsForTheLastProcess(ctx, server, session);
 				GameTestSupport.awaitChatCount(ctx, "Done: ", 5, 600);
 				logsNeverHoldTheToken(ctx);
+				offlineMidBuildEndsCleanly(ctx);
 			} finally {
 				TestHooks.claudeEnvironment = TestSetup.DEFAULT_SCENARIO;
 			}
@@ -192,6 +193,27 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 		JsonObject request = lines.getFirst();
 		check(request.get("prompt").getAsString().equals("a leaky hut") && request.get("mode").getAsString().equals("new"), "the request: " + request);
 		check(lines.getLast().get("tool_calls").getAsInt() == 2 && lines.getLast().get("output_tokens").getAsLong() == 200, "the totals: " + lines.getLast());
+	}
+
+	/**
+	 * The Wi-Fi goes off mid-build (spec §18's M6 check): the action bar shows Claude Code's retries, then chat says the
+	 * connection went, with [Undo], and what went in before it went comes off again.
+	 */
+	private static void offlineMidBuildEndsCleanly(ClientGameTestContext ctx) {
+		// The hut refined above still stands where this one goes: taken back first (after its refinements, too).
+		int undone = GameTestSupport.count("Undone: ");
+		GameTestSupport.runPlayerCommand(ctx, "aibuild undo");
+		GameTestSupport.awaitChatCount(ctx, "Undone: ", undone + 1, 600);
+		check(GameTestSupport.chat().getLast().equals(Messages.undone(26, 0)), "undoing the refined hut: " + GameTestSupport.chat().getLast());
+
+		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "offline");
+		GameTestSupport.runPlayerCommand(ctx, "aibuild new an offline hut");
+		GameTestSupport.awaitChatStartingWith(ctx, Messages.connectionLost("API Error: Connection error.") + " [Undo]", 600);
+		check(GameTestSupport.overlay().stream().anyMatch(line -> line.startsWith("Can't reach Claude, retrying (attempt ")),
+				"the action bar never showed the retries: " + GameTestSupport.overlay());
+		GameTestSupport.runPlayerCommand(ctx, "aibuild undo");
+		GameTestSupport.awaitChatCount(ctx, "Undone: ", undone + 2, 600);
+		check(GameTestSupport.chat().getLast().equals(Messages.undone(26, 0)), "undoing the offline hut: " + GameTestSupport.chat().getLast());
 	}
 
 	/** The newest file in {@code dir} whose name ends with {@code suffix}, or null. */

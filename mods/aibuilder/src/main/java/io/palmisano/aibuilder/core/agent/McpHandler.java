@@ -3,6 +3,7 @@ package io.palmisano.aibuilder.core.agent;
 import java.net.URI;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -33,13 +34,29 @@ public final class McpHandler {
 		this.sessions = sessions;
 	}
 
-	public McpResponse handle(McpRequest request) {
-		String origin = request.headers().get("origin");
+	/**
+	 * The refusal a request gets on its headers alone (lowercase names): a web page's {@code Origin}, or no live build's
+	 * token. The transport asks before it reads the body, so a request it would refuse never makes it wait or buffer.
+	 */
+	public Optional<McpResponse> refusal(Map<String, String> headers) {
+		String origin = headers.get("origin");
 		if (origin != null && !local(origin)) {
-			return new McpResponse(403, error(null, -32000, "Requests from web pages aren't accepted."));
+			return Optional.of(new McpResponse(403, error(null, -32000, "Requests from web pages aren't accepted.")));
+		}
+		if (sessions.find(bearer(headers.get("authorization"))).isEmpty()) {
+			return Optional.of(new McpResponse(401, error(null, -32001, "This build's session has ended.")));
+		}
+		return Optional.empty();
+	}
+
+	public McpResponse handle(McpRequest request) {
+		Optional<McpResponse> refused = refusal(request.headers());
+		if (refused.isPresent()) {
+			return refused.get();
 		}
 		Optional<McpSession> session = sessions.find(bearer(request.headers().get("authorization")));
 		if (session.isEmpty()) {
+			// Its build ended between the two looks.
 			return new McpResponse(401, error(null, -32001, "This build's session has ended."));
 		}
 		if (!request.method().equals("POST")) {

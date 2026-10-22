@@ -4,10 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -46,6 +52,27 @@ class McpHttpServerTest {
 		}
 	});
 	private McpHttpServer server;
+
+	/** The status line of a POST whose headers promise a big body that never comes; null if no answer within 5 s. */
+	private String statusWithoutBody(String extraHeaders) throws Exception {
+		try (Socket socket = new Socket("127.0.0.1", server.port())) {
+			socket.setSoTimeout(5000);
+			OutputStream out = socket.getOutputStream();
+			out.write(("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 1000000\r\n" + extraHeaders
+					+ "\r\n{").getBytes(StandardCharsets.US_ASCII));
+			out.flush();
+			return new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII)).readLine();
+		} catch (SocketTimeoutException e) {
+			return null;
+		}
+	}
+
+	@Test
+	void headersAreCheckedFirst() throws Exception {
+		server = McpHttpServer.start(new McpHandler(ToolCatalog.load().tools(), sessions));
+		assertEquals("HTTP/1.1 401 Unauthorized", statusWithoutBody(""));
+		assertEquals("HTTP/1.1 403 Forbidden", statusWithoutBody("Authorization: Bearer " + token + "\r\nOrigin: https://evil.example\r\n"));
+	}
 
 	@AfterEach
 	void stop() {

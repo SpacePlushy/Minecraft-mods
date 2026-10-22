@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -68,6 +69,18 @@ public final class McpHttpServer {
 
 	private static void serve(McpHandler handler, HttpExchange exchange) throws IOException {
 		try (exchange) {
+			Map<String, String> headers = new HashMap<>();
+			for (Map.Entry<String, List<String>> header : exchange.getRequestHeaders().entrySet()) {
+				if (header.getKey() != null && !header.getValue().isEmpty()) {
+					headers.put(header.getKey().toLowerCase(Locale.ROOT), header.getValue().getFirst());
+				}
+			}
+			// A web page or a caller without a live build's token is refused before a byte of its body is read.
+			Optional<McpResponse> refused = handler.refusal(headers);
+			if (refused.isPresent()) {
+				respond(exchange, refused.get());
+				return;
+			}
 			byte[] body;
 			try (InputStream in = exchange.getRequestBody()) {
 				body = in.readNBytes(MAX_BODY_BYTES + 1);
@@ -84,23 +97,21 @@ public final class McpHttpServer {
 				exchange.sendResponseHeaders(413, -1);
 				return;
 			}
-			Map<String, String> headers = new HashMap<>();
-			for (Map.Entry<String, List<String>> header : exchange.getRequestHeaders().entrySet()) {
-				if (header.getKey() != null && !header.getValue().isEmpty()) {
-					headers.put(header.getKey().toLowerCase(Locale.ROOT), header.getValue().getFirst());
-				}
-			}
-			McpResponse response = handler.handle(new McpRequest(exchange.getRequestMethod(), headers, new String(body, StandardCharsets.UTF_8)));
-			if (response.body() == null) {
-				exchange.sendResponseHeaders(response.status(), -1);
-				return;
-			}
-			byte[] out = response.body().getBytes(StandardCharsets.UTF_8);
-			exchange.getResponseHeaders().set("Content-Type", "application/json");
-			exchange.sendResponseHeaders(response.status(), out.length);
-			try (OutputStream stream = exchange.getResponseBody()) {
-				stream.write(out);
-			}
+			respond(exchange, handler.handle(new McpRequest(exchange.getRequestMethod(), headers, new String(body, StandardCharsets.UTF_8))));
+		}
+	}
+
+	/** The response, sent and flushed: closing the exchange may wait on an unread body, and the answer goes first. */
+	private static void respond(HttpExchange exchange, McpResponse response) throws IOException {
+		if (response.body() == null) {
+			exchange.sendResponseHeaders(response.status(), -1);
+			return;
+		}
+		byte[] out = response.body().getBytes(StandardCharsets.UTF_8);
+		exchange.getResponseHeaders().set("Content-Type", "application/json");
+		exchange.sendResponseHeaders(response.status(), out.length);
+		try (OutputStream stream = exchange.getResponseBody()) {
+			stream.write(out);
 		}
 	}
 }

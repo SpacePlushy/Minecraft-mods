@@ -54,6 +54,38 @@ class AuthStatusTest {
 	}
 
 	@Test
+	void onlyJsonIsAnAnswer() {
+		assertTrue(AuthStatus.parse(1, LOGGED_OUT).answered());
+		assertFalse(AuthStatus.parse(1, "").answered());
+		assertFalse(AuthStatus.parse(0, "Usage: claude [options] [command] [prompt]").answered());
+		assertFalse(AuthStatus.parse(0, "{\"authMethod\": \"claude.ai\"}").answered());
+	}
+
+	/** What a broken install printed, for the player: its error line, not Node's stack or its version banner. */
+	@Test
+	void whyPicksTheErrorLine() {
+		String node = """
+				node:internal/modules/cjs/loader:1228
+				  throw err;
+				  ^
+
+				Error: Cannot find module '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js'
+				    at Module._resolveFilename (node:internal/modules/cjs/loader:1225:15)
+				    at node:internal/main/run_main_module:28:49 {
+				  code: 'MODULE_NOT_FOUND',
+				  requireStack: []
+				}
+
+				Node.js v22.1.0
+				""";
+		assertEquals("Error: Cannot find module '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js'", AuthStatus.why(node, 1));
+		assertEquals("Segmentation fault", AuthStatus.why("\nSegmentation fault\n", 139));
+		assertEquals("exit code 3", AuthStatus.why("", 3));
+		assertEquals("no answer to claude auth status", AuthStatus.why("  \n", 0));
+		assertEquals(200, AuthStatus.why("Error: " + "x".repeat(500), 1).length());
+	}
+
+	@Test
 	void aFailedRunIsNotOkWhateverItPrints() {
 		assertFalse(AuthStatus.parse(1, LOGGED_IN).ok());
 	}

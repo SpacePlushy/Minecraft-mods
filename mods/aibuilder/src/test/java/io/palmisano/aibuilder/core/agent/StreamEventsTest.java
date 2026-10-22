@@ -103,7 +103,25 @@ class StreamEventsTest {
 		StreamEvent event = StreamEvents.parse(
 				"{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":2,\"max_retries\":10,\"retry_delay_ms\":4000,\"error_status\":529,"
 						+ "\"error\":\"overloaded_error\",\"session_id\":\"s\"}").orElseThrow();
-		assertEquals(new StreamEvent.Retry(2, "overloaded_error"), event);
+		assertEquals(new StreamEvent.Retry(2, "overloaded_error", 529), event);
+	}
+
+	/** No HTTP status: the request never got an answer (the Wi-Fi is off), which the player is told differently. */
+	@Test
+	void aRetryWithoutAStatusNeverReachedClaude() {
+		StreamEvent event = StreamEvents.parse("{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":1,\"max_retries\":10,"
+				+ "\"retry_delay_ms\":600,\"error_status\":null,\"error\":\"unknown\",\"session_id\":\"s\"}").orElseThrow();
+		assertEquals(new StreamEvent.Retry(1, "unknown", 0), event);
+	}
+
+	@Test
+	void aFailedRequestsStatusIsKept() {
+		StreamEvent.Result failed = (StreamEvent.Result) StreamEvents.parse("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,"
+				+ "\"result\":\"API Error: 529 overloaded\",\"terminal_reason\":\"api_error\",\"api_error_status\":529}").orElseThrow();
+		assertEquals(529, failed.apiErrorStatus());
+		StreamEvent.Result offline = (StreamEvent.Result) StreamEvents.parse("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,"
+				+ "\"result\":\"API Error: Connection error.\",\"terminal_reason\":\"api_error\",\"api_error_status\":null}").orElseThrow();
+		assertEquals(0, offline.apiErrorStatus());
 	}
 
 	@Test
@@ -120,7 +138,7 @@ class StreamEventsTest {
 		// A rate limit without its info, a result without numbers: defaults, no exception.
 		assertEquals(Optional.of(new StreamEvent.RateLimit("", 0, "", false, "", 0)), StreamEvents.parse("{\"type\":\"rate_limit_event\"}"));
 		StreamEvent.Result result = (StreamEvent.Result) StreamEvents.parse("{\"type\":\"result\",\"subtype\":\"success\"}").orElseThrow();
-		assertEquals(new StreamEvent.Result("success", false, 0, "", ""), result);
+		assertEquals(new StreamEvent.Result("success", false, 0, "", "", 0), result);
 		// Wrong types where a value is expected don't throw either.
 		assertTrue(StreamEvents.parse("{\"type\":\"result\",\"num_turns\":\"many\",\"is_error\":{}}").isPresent());
 		assertTrue(StreamEvents.parse("{\"type\":\"assistant\",\"message\":\"text\"}").isPresent());

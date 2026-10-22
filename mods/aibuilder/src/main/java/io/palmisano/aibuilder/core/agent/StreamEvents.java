@@ -41,7 +41,7 @@ public final class StreamEvents {
 		return Optional.of(switch (type) {
 			case "system" -> switch (subtype) {
 				case "init" -> init(o);
-				case "api_retry" -> new StreamEvent.Retry(integer(o, "attempt"), string(o, "error"));
+				case "api_retry" -> new StreamEvent.Retry(integer(o, "attempt"), string(o, "error"), integer(o, "error_status"));
 				default -> new StreamEvent.Other(subtype.isEmpty() ? "system" : "system/" + subtype);
 			};
 			case "assistant" -> assistant(o);
@@ -66,7 +66,7 @@ public final class StreamEvents {
 						bool(info, "isUsingOverage"), string(info, "overageStatus"), fullest);
 			}
 			case "result" -> new StreamEvent.Result(subtype, bool(o, "is_error"), integer(o, "num_turns"), string(o, "result"),
-					string(o, "terminal_reason"));
+					string(o, "terminal_reason"), integer(o, "api_error_status"));
 			default -> new StreamEvent.Other(type);
 		});
 	}

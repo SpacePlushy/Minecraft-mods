@@ -14,13 +14,11 @@ import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 final class GameTestSupport {
 	/** Every system message the client received since the last {@link #world}, as plain text, oldest first. */
 	private static final List<String> CHAT = new CopyOnWriteArrayList<>();
+	/** The action bar's lines since the last {@link #world}, oldest first. */
+	private static final List<String> OVERLAY = new CopyOnWriteArrayList<>();
 
 	static {
-		ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-			if (!overlay) {
-				CHAT.add(message.getString());
-			}
-		});
+		ClientReceiveMessageEvents.GAME.register((message, overlay) -> (overlay ? OVERLAY : CHAT).add(message.getString()));
 	}
 
 	private GameTestSupport() {
@@ -34,6 +32,7 @@ final class GameTestSupport {
 		TestSingleplayerContext sp = ctx.worldBuilder().create();
 		sp.getConnection().waitForChunksRender();
 		CHAT.clear();
+		OVERLAY.clear();
 		return sp;
 	}
 
@@ -102,6 +101,11 @@ final class GameTestSupport {
 	/** Every line so far, oldest first. */
 	static List<String> chat() {
 		return List.copyOf(CHAT);
+	}
+
+	/** Every action bar line so far, oldest first. */
+	static List<String> overlay() {
+		return List.copyOf(OVERLAY);
 	}
 
 	static void check(boolean ok, String msg) {

@@ -1,5 +1,7 @@
 package io.palmisano.aibuilder.test;
 
+import java.util.List;
+
 import io.palmisano.aibuilder.AiBuilderMod;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.request.Messages;
@@ -15,14 +17,18 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
  * A live build with the real Claude Code on the owner's own login. Never in the suites (spec §17.5): it runs only with
  * {@code AIBUILDER_LIVE=1} on the Gradle command, and then it's the only client gametest that does:
  * {@code AIBUILDER_LIVE=1 ./gradlew runClientGameTest --no-daemon}. {@code AIBUILDER_LIVE_PROMPT} and
- * {@code AIBUILDER_LIVE_SIZE} pick the build (a small cozy cabin, Small). It saves screenshots along the way and from
- * two viewpoints at the end; the build's stream is in build/run/clientGameTest/logs/aibuilder/.
+ * {@code AIBUILDER_LIVE_SIZE} pick the build (a small cozy cabin, Small); {@code AIBUILDER_LIVE_REFINE}, a second
+ * prompt that refines it from where the player stood ("add a moat", spec §5.4). It saves screenshots along the way and
+ * from three viewpoints after each prompt; the logs are in build/run/clientGameTest/logs/aibuilder/.
  */
 @SuppressWarnings("UnstableApiUsage")
 public class LiveBuildClientGameTest implements FabricClientGameTest {
 	/** The build's own time cap is 45 minutes. */
 	private static final int MAX_TICKS = 20 * 60 * 50;
 	private static final int SCREENSHOT_EVERY_TICKS = 20 * 60 * 2;
+	/** How every build ends, one way or another. */
+	private static final List<String> ENDS = List.of("Done: ", "Stopped", "Your Claude usage limit", Messages.extraUsage(), "Lost the connection",
+			"Claude Code ", "Couldn't start Claude Code", Messages.notLoggedIn(), Messages.notInstalled(), Messages.stillStopping());
 
 	@Override
 	public void runTest(ClientGameTestContext ctx) {
@@ -31,6 +37,7 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 		}
 		String prompt = System.getenv().getOrDefault("AIBUILDER_LIVE_PROMPT", "a small cozy cabin");
 		SizeTier size = SizeTier.parse(System.getenv().getOrDefault("AIBUILDER_LIVE_SIZE", "small"));
+		String refine = System.getenv().getOrDefault("AIBUILDER_LIVE_REFINE", "");
 		try (TestSingleplayerContext singleplayer = GameTestSupport.world(ctx)) {
 			TestServerContext server = singleplayer.getServer();
 			// Noon for the whole build, no weather, nothing hostile walking up to the player.
@@ -45,34 +52,73 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 
 			ctx.runOnClient(mc -> ClientPlayNetworking.send(new BuildPromptPayload(prompt, size)));
 			GameTestSupport.awaitChat(ctx, Messages.accepted(prompt, size), 200);
-			String end = GameTestSupport.awaitChatAny(ctx, MAX_TICKS, SCREENSHOT_EVERY_TICKS,
-					n -> ctx.takeScreenshot("aibuilder-live-progress-" + n), "Done: ", "Stopped", "Build failed", "Your Claude usage limit",
-					"Claude's paid extra usage");
+			String end = awaitEnd(ctx, 0, "aibuilder-live-progress-");
 			AiBuilderMod.LOG.info("Live build ended: {}", end);
 			AiBuilderMod.LOG.info("Live build chat: {}", GameTestSupport.chat());
 			ctx.waitTicks(40);
 			ctx.takeScreenshot("aibuilder-live-player-view");
-
-			// Back and up, then from the front-left and the left side, each looking at the middle of the site, as far
-			// off as the tier is big (a Small site's middle is 15 blocks ahead, a Medium's 27). As a spectator, so
-			// nothing falls (the M5 castle's player did, from 32 up), and once the chat has faded.
-			server.runCommand("gamemode spectator @a");
-			ctx.waitTicks(200);
 			int span = size == SizeTier.AUTO ? SizeTier.LARGE.size() : size.size();
-			double middleZ = Tunables.SITE_GAP + span / 2.0 - 0.5;
-			String middle = " facing 0.5 " + (feetY + span / 8) + " " + middleZ;
-			server.runCommand("tp @a 0.5 " + (feetY + Math.round(span * 0.66)) + " " + (0.5 - span / 2) + middle);
-			ctx.waitTicks(80);
-			singleplayer.getConnection().waitForChunksRender();
-			ctx.takeScreenshot("aibuilder-live-overview");
-			server.runCommand("tp @a " + (0.5 + Math.round(span * 0.75)) + " " + (feetY + Math.round(span * 0.36)) + " " + (0.5 - span / 5) + middle);
-			ctx.waitTicks(80);
-			singleplayer.getConnection().waitForChunksRender();
-			ctx.takeScreenshot("aibuilder-live-front-left");
-			server.runCommand("tp @a " + (0.5 + Math.round(span * 1.1)) + " " + (feetY + span / 3) + " " + middleZ + middle);
-			ctx.waitTicks(80);
-			singleplayer.getConnection().waitForChunksRender();
-			ctx.takeScreenshot("aibuilder-live-side");
+			viewpoints(ctx, singleplayer, feetY, span, refine.isEmpty() ? "" : "-before");
+			if (refine.isEmpty()) {
+				return;
+			}
+
+			// Back where the player stood, on foot: a prompt within 48 blocks of the build changes it (spec §5.4).
+			server.runCommand("gamemode creative @a");
+			server.runCommand("tp @a 0.5 " + feetY + " 0.5 0 0");
+			ctx.waitTicks(40);
+			int from = GameTestSupport.chat().size();
+			ctx.runOnClient(mc -> ClientPlayNetworking.send(new BuildPromptPayload(refine, size, false)));
+			GameTestSupport.awaitChatStartingWith(ctx, "AI Builder: changing ", 200);
+			String refined = awaitEnd(ctx, from, "aibuilder-live-refine-progress-");
+			AiBuilderMod.LOG.info("Live refinement ended: {}", refined);
+			AiBuilderMod.LOG.info("Live refinement chat: {}", GameTestSupport.chat().subList(from, GameTestSupport.chat().size()));
+			ctx.waitTicks(40);
+			ctx.takeScreenshot("aibuilder-live-refined-player-view");
+			// The refinement may build 16 blocks past the first build on every side: the views stand farther off.
+			viewpoints(ctx, singleplayer, feetY, span + 24, "-refined");
 		}
+	}
+
+	/** The first line from {@code from} on that ends a build; a screenshot every two minutes meanwhile. */
+	private static String awaitEnd(ClientGameTestContext ctx, int from, String progress) {
+		for (int tick = 0; ; tick++) {
+			List<String> chat = GameTestSupport.chat();
+			for (String line : chat.subList(Math.min(from, chat.size()), chat.size())) {
+				if (ENDS.stream().anyMatch(line::startsWith)) {
+					return line;
+				}
+			}
+			GameTestSupport.check(tick < MAX_TICKS, "the build never ended: " + chat);
+			if (tick > 0 && tick % SCREENSHOT_EVERY_TICKS == 0) {
+				ctx.takeScreenshot(progress + tick / SCREENSHOT_EVERY_TICKS);
+			}
+			ctx.waitTick();
+		}
+	}
+
+	/**
+	 * Back and up, then from the front-left and the left side, each looking at the middle of the site, as far off as
+	 * {@code span} (a Small site's middle is 15 blocks ahead, a Medium's 27). As a spectator, so nothing falls (the M5
+	 * castle's player did, from 32 up), and once the chat has faded.
+	 */
+	private static void viewpoints(ClientGameTestContext ctx, TestSingleplayerContext singleplayer, int feetY, int span, String suffix) {
+		TestServerContext server = singleplayer.getServer();
+		server.runCommand("gamemode spectator @a");
+		ctx.waitTicks(200);
+		double middleZ = Tunables.SITE_GAP + span / 2.0 - 0.5;
+		String middle = " facing 0.5 " + (feetY + span / 8) + " " + middleZ;
+		server.runCommand("tp @a 0.5 " + (feetY + Math.round(span * 0.66)) + " " + (0.5 - span / 2) + middle);
+		ctx.waitTicks(80);
+		singleplayer.getConnection().waitForChunksRender();
+		ctx.takeScreenshot("aibuilder-live-overview" + suffix);
+		server.runCommand("tp @a " + (0.5 + Math.round(span * 0.75)) + " " + (feetY + Math.round(span * 0.36)) + " " + (0.5 - span / 5) + middle);
+		ctx.waitTicks(80);
+		singleplayer.getConnection().waitForChunksRender();
+		ctx.takeScreenshot("aibuilder-live-front-left" + suffix);
+		server.runCommand("tp @a " + (0.5 + Math.round(span * 1.1)) + " " + (feetY + span / 3) + " " + middleZ + middle);
+		ctx.waitTicks(80);
+		singleplayer.getConnection().waitForChunksRender();
+		ctx.takeScreenshot("aibuilder-live-side" + suffix);
 	}
 }

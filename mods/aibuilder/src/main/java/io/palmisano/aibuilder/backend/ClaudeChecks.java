@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.backend;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -49,7 +50,7 @@ public final class ClaudeChecks {
 		}
 		List<String> args = new ArrayList<>(command);
 		args.addAll(List.of("auth", "status", "--json"));
-		ProcessBuilder builder = new ProcessBuilder(args).redirectError(ProcessBuilder.Redirect.DISCARD);
+		ProcessBuilder builder = new ProcessBuilder(args);
 		builder.environment().clear();
 		builder.environment().putAll(environment);
 		Process process;
@@ -60,19 +61,16 @@ public final class ClaudeChecks {
 			return Optional.of(Messages.notInstalled());
 		}
 		String out;
-		try (InputStream in = process.getInputStream()) {
-			CompletableFuture<byte[]> read = CompletableFuture.supplyAsync(() -> {
-				try {
-					return in.readNBytes(64 * 1024);
-				} catch (IOException e) {
-					return new byte[0];
-				}
-			});
+		String err;
+		try (InputStream in = process.getInputStream(); InputStream errors = process.getErrorStream()) {
+			CompletableFuture<byte[]> read = readAll(in);
+			CompletableFuture<byte[]> readErrors = readAll(errors);
 			if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
 				process.destroyForcibly();
 				return Optional.of(Messages.claudeNotAnswering());
 			}
 			out = new String(read.get(5, TimeUnit.SECONDS), StandardCharsets.UTF_8);
+			err = new String(readErrors.get(5, TimeUnit.SECONDS), StandardCharsets.UTF_8);
 		} catch (IOException | ExecutionException | TimeoutException e) {
 			process.destroyForcibly();
 			return Optional.of(Messages.claudeNotAnswering());
@@ -86,6 +84,23 @@ public final class ClaudeChecks {
 			last = new Pass(List.copyOf(command), Map.copyOf(environment), System.nanoTime());
 			return Optional.empty();
 		}
+		if (!status.answered()) {
+			// It ran but didn't say: a damaged install, say. Telling the player to log in wouldn't help.
+			return Optional.of(Messages.claudeBroken(AuthStatus.why(err, process.exitValue())));
+		}
 		return Optional.of(status.loggedIn() ? Messages.notSubscription(status.method()) : Messages.notLoggedIn());
+	}
+
+	/** Its first 64 KB; the rest is read and dropped, so a chatty process never blocks on a full pipe. */
+	private static CompletableFuture<byte[]> readAll(InputStream in) {
+		return CompletableFuture.supplyAsync(() -> {
+			try {
+				byte[] head = in.readNBytes(64 * 1024);
+				in.transferTo(OutputStream.nullOutputStream());
+				return head;
+			} catch (IOException e) {
+				return new byte[0];
+			}
+		});
 	}
 }

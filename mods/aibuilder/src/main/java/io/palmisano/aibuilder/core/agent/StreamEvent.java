@@ -28,8 +28,11 @@ public sealed interface StreamEvent {
 	record Usage(long input, long output, long cacheRead, long cacheWrite) implements StreamEvent {
 	}
 
-	/** {@code system/api_retry}: the API was busy or failed, and Claude Code is trying again. */
-	record Retry(int attempt, String error) implements StreamEvent {
+	/**
+	 * {@code system/api_retry}: the API was busy or failed, and Claude Code is trying again. {@code status}: the answer's
+	 * HTTP status, 0 when nothing answered (no connection).
+	 */
+	record Retry(int attempt, String error, int status) implements StreamEvent {
 	}
 
 	/**
@@ -41,8 +44,11 @@ public sealed interface StreamEvent {
 			implements StreamEvent {
 	}
 
-	/** {@code result}: the run is over. */
-	record Result(String subtype, boolean isError, int turns, String text, String terminalReason) implements StreamEvent {
+	/**
+	 * {@code result}: the run is over. A failed last request ends with {@code success}, {@code isError} and the
+	 * terminal reason {@code api_error}; {@code apiErrorStatus} is its HTTP status, 0 when nothing answered.
+	 */
+	record Result(String subtype, boolean isError, int turns, String text, String terminalReason, int apiErrorStatus) implements StreamEvent {
 	}
 
 	/** Any other line, by its type (and subtype): {@code system/status}, {@code user}, {@code tool_progress}… */
