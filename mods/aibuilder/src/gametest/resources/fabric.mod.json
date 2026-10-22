@@ -8,6 +8,9 @@
 		"aibuilder-test.mixins.json"
 	],
 	"entrypoints": {
+		"main": [
+			"io.palmisano.aibuilder.test.TestSetup"
+		],
 		"fabric-gametest": [
 			"io.palmisano.aibuilder.test.PlacementGameTest",
 			"io.palmisano.aibuilder.test.UndoGameTest",
@@ -19,7 +22,8 @@
 			"io.palmisano.aibuilder.test.SmokeClientGameTest",
 			"io.palmisano.aibuilder.test.PromptServerClientGameTest",
 			"io.palmisano.aibuilder.test.BuilderScreenClientGameTest",
-			"io.palmisano.aibuilder.test.DemoBuildClientGameTest"
+			"io.palmisano.aibuilder.test.DemoBuildClientGameTest",
+			"io.palmisano.aibuilder.test.ClaudeBuildClientGameTest"
 		]
 	},
 	"depends": {

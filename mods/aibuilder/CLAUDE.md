@@ -16,19 +16,21 @@ headless `claude -p`) calls build tools that this mod serves over a localhost MC
 - Only the world's owner can build (spec §15): never route other players' prompts through Frankie's subscription.
 - Every subagent runs on Opus 5.5 (root `CLAUDE.md`).
 
-## Architecture (as of M3)
+## Architecture (as of M4)
 
 ```
 B key ──► AiBuilderClient ──► BuilderScreen ──Build──► BuildPromptPayload ──┐
-/aibuild <prompt> ──────────────────────────────────────────────────────────┤──► BuildManager.submit: M1's echo (M4: Claude)
+/aibuild <prompt> ──────────────────────────────────────────────────────────┤──► BuildManager.submit (owner, typed, not busy)
 /aibuild test|undo|cancel|status|survey ──► AiBuildCommand ──► BuildManager (one per server, server thread)
-                                                              │ test: Sites.ahead (frame) + BuildBox (allowed box)
-   worker thread:  ScriptedBackend ──calls──► ToolExecutor ──batches──► McBuildSink ──enqueue──► PlacementJob
-   (M4: Claude)    replays demo_house.json    validate, shapes,          checkpoint waits    server tick (JobScheduler):
-                                              local → world              for the job         818 writes + journal, then
-                                                                                             ShapePass (finalize)
-   job ends ──► UndoStore.push (SavedData) ──► chat "Done: N blocks placed. [Undo]"
-   /aibuild undo ──► UndoStore.pop ──► UndoRunner (server tick): restore what still holds the build's block, finalize
+   submit: Sites.ahead (frame) + BuildBox ──► worker: ClaudeChecks (find claude, `auth status --json`) ──► Build
+   Build: McWorldReader (site survey) + PlacementJob + McBuildSink + ToolExecutor ──► backend.start
+     ClaudeCodeBackend: build dir (mcp.json, builder_system.md) ──► `claude -p …` (ClaudeLaunch), prompt on stdin
+       stdout reader: StreamEvents → InitCheck (opens the tools) · notes · tokens → Budget · UsageLimits · result
+       Claude Code ──HTTP 127.0.0.1/mcp, bearer token──► McpHttpServer ──► McpHandler ──► Run.call ──► ToolExecutor
+     ScriptedBackend (/aibuild test): replays demo_house.json through the same ToolExecutor
+   ToolExecutor ──batches──► McBuildSink ──enqueue──► PlacementJob (server tick: 818 writes + journal, cap on real
+   changes, then ShapePass) ── job ends ──► chat: Claude's summary, "Done: N blocks placed. [Undo]"
+   /aibuild undo ──► UndoStore ──► UndoRunner (server tick): restore what still holds the build's block, finalize
 ```
 
 | Where | What |
@@ -41,15 +43,23 @@ B key ──► AiBuilderClient ──► BuilderScreen ──Build──► Bui
 | `core/tools/` | **Pure**: `ToolExecutor` (all 19 tools; `tools.json` is the catalog), `WorldReader` (what the read tools and protection read through), `ServerHop` (a world read runs on the server thread or fails, never inline on a stopping server), `Budget`, `PhaseProgress`, `BuildSink`. |
 | `core/survey/` | **Pure**: `TerrainSnapshot`/`Column` and `SurveyEncoder` (survey_area's compact text, coarsened to stay under 30,000 characters), `RegionEncoder` (inspect_region). |
 | `core/place/ProtectionMask` | **Pure**: protected (probably player-made) and unbreakable spots in the allowed box; a write there is rejected `protected`. |
-| `core/agent/` | **Pure**: `AiBackend`, `ScriptedBackend` (replays a script on a worker thread). M4 adds Claude Code. |
+| `core/agent/` | **Pure**: `AiBackend`/`BuildHandle`/`BuildEvents`, `ScriptedBackend`; Claude Code's side: `StreamEvents` (stream-json, never throws), `InitCheck` (build tools, our server, no API key, built-in plugins only), `UsageLimits` (stop at the plan limit or at paid extra usage), `ClaudeLaunch` (flags, environment, mcp.json), `ClaudeLocator`, `AuthStatus`, `McpHandler`/`McpSessions` (JSON-RPC, tokens, origins). |
+| `backend/` | JDK only, no Minecraft: `McpHttpServer` (127.0.0.1, 8 threads), `ClaudeCodeBackend` (the process, its threads, caps, cancel, `stopAll`), `ClaudeChecks` (find it, check the login, remember a pass 5 min). |
+| `resources/aibuilder/prompts/builder_system.md` | The in-game Claude's system prompt (`config/aibuilder/builder_system.md` replaces it). |
+| `TestHooks` | The gametests' seam: the fake Claude Code's command and scenario. Nothing in the mod sets it. |
 | `core/site/` | **Pure**: `GroundFinder` (the origin's floor, nearest the feet), `SurveyFloor` (a survey column's: climbs a mountain to the box top, reads water on raised ground to its surface, "no floor" over a drop), `BuildBox` (allowed box per tier, clipped to the world). |
 | `world/` | Minecraft side: `McBlockCatalog`, `StateFactory` (rotate, second halves, persistent leaves), `PlacementJob`, `ShapePass`, `JobScheduler`, `BuildTickets`, `UndoStore`, `UndoRunner`, `Sites`, `Occupancy`, `ProtectionHeuristic` (natural = vanilla terrain/growth tags + a short list), `WorldSurvey` (columns and the protection mask, read over ticks), `McWorldReader` (the real `WorldReader`: starts the site survey when a build starts; region and fact reads hop to the server thread). |
-| `BuildManager` | One per server: one job at a time (build or undo), owner only; status in the action bar; saves on stop; `/aibuild survey`. |
-| `BuildPermission` | Singleplayer owner only (M6 adds the dedicated-server allow list). |
+| `BuildManager` | One per server: one job at a time (build or undo), owner only; the Claude Code check, then the build; status in the action bar; the end message per outcome; saves on stop and ends every Claude Code process; `/aibuild survey`. |
+| `BuildPermission` | Singleplayer owner only, by UUID, and only commands they type (`mixin/CommandSourceStackAccessor`); M6 adds the dedicated-server allow list. |
 | `net/BuildPromptPayload` | Serverbound packet. Wire limit 8,192 chars, far above the 2,000 prompt limit, so a long prompt gets a chat answer instead of a decode failure that drops the connection. |
 | `client/BuilderScreen` | The screen. The typed text lives in a field and survives `init()` re-runs (resize, GUI scale). |
 | `client/PromptHistoryStore` | `config/aibuilder-history.json`; write-temp-then-move; never throws. |
-| `src/gametest/` | Client gametests (smoke, prompt to server, the screen, the demo build) and server gametests (`PlacementGameTest`, `UndoGameTest`, `PermissionGameTest`, `SiteGameTest`, `SurveyGameTest`, run in the `aibuilder-test:arena` structure through `ArenaBuilds`). `GameTestSupport` captures chat with `ClientReceiveMessageEvents.GAME`. |
+| `src/gametest/` | Client gametests (smoke, prompt to server, the screen, the demo build, a whole build with the fake Claude Code) and server gametests (`PlacementGameTest`, `UndoGameTest`, `PermissionGameTest`, `SiteGameTest`, `SurveyGameTest`, run in the `aibuilder-test:arena` structure through `ArenaBuilds`). `GameTestSupport` captures chat with `ClientReceiveMessageEvents.GAME`. `TestSetup` (the test mod's main entrypoint) points every gametest run at the fake Claude Code. |
+| `src/test/resources/fake-claude/FakeClaude.java` | A fake `claude` (JDK only, `java FakeClaude.java …`): `auth status` and a `-p` run with real MCP calls, by `FAKE_CLAUDE_SCENARIO`. `src/test/resources/stream/` holds the M4 spike's real recordings. |
+
+**Real Claude is never in the suites (spec §17.5).** Every gametest run uses the fake; `AIBUILDER_LIVE=1` (an
+environment variable on the Gradle command) makes the client gametests use the real Claude Code on the owner's login,
+and then only the live test runs.
 
 **Directions (spec §7).** Tool input says forward/back/left/right/up/down, never compass names. They map to the
 compass as if the player faced south (forward → south, right → west), then vanilla `BlockState.rotate` turns the

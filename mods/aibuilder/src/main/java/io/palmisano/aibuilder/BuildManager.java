@@ -6,13 +6,23 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+import io.palmisano.aibuilder.backend.ClaudeChecks;
+import io.palmisano.aibuilder.backend.ClaudeCodeBackend;
+import io.palmisano.aibuilder.backend.McpEndpoint;
+import io.palmisano.aibuilder.backend.McpHttpServer;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.survey.SurveyEncoder;
 import io.palmisano.aibuilder.core.agent.AiBackend;
@@ -20,6 +30,10 @@ import io.palmisano.aibuilder.core.agent.BuildEvents;
 import io.palmisano.aibuilder.core.agent.BuildHandle;
 import io.palmisano.aibuilder.core.agent.BuildOutcome;
 import io.palmisano.aibuilder.core.agent.BuildRequest;
+import io.palmisano.aibuilder.core.agent.ClaudeLaunch;
+import io.palmisano.aibuilder.core.agent.ClaudeSettings;
+import io.palmisano.aibuilder.core.agent.McpHandler;
+import io.palmisano.aibuilder.core.agent.McpSessions;
 import io.palmisano.aibuilder.core.agent.ScriptedBackend;
 import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
@@ -31,6 +45,7 @@ import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.site.BuildBox;
 import io.palmisano.aibuilder.core.tools.Brief;
 import io.palmisano.aibuilder.core.tools.Budget;
+import io.palmisano.aibuilder.core.tools.ToolCatalog;
 import io.palmisano.aibuilder.core.tools.ToolExecutor;
 import io.palmisano.aibuilder.world.BuildTickets;
 import io.palmisano.aibuilder.world.JobScheduler;
@@ -47,6 +62,7 @@ import io.palmisano.aibuilder.world.UndoStore;
 import io.palmisano.aibuilder.world.UndoStore.StoredBuild;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.ChatFormatting;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.ClickEvent;
@@ -73,10 +89,18 @@ public final class BuildManager {
 	}
 
 	private static BuildManager current;
+	private static final McpSessions SESSIONS = new McpSessions();
+	private static McpHttpServer mcp;
+	private static final ExecutorService CHECKS = Executors.newCachedThreadPool(task -> {
+		Thread t = new Thread(task, "aibuilder-checks");
+		t.setDaemon(true);
+		return t;
+	});
 
 	private final MinecraftServer server;
 	private Build build;
 	private Undo undo;
+	private Starting starting;
 	private int ticksToStatus;
 
 	private BuildManager(MinecraftServer server) {
@@ -105,12 +129,16 @@ public final class BuildManager {
 		return current;
 	}
 
-	/** A build or an undo is running. */
+	/** A build or an undo is running, or Claude Code is being checked for one. */
 	public boolean busy() {
-		return build != null || undo != null;
+		return build != null || undo != null || starting != null;
 	}
 
-	/** A prompt from {@code /aibuild <prompt>} or the screen. M1 echoes it; M4 starts Claude here. */
+	/**
+	 * A prompt from {@code /aibuild <prompt>} or the screen: a real build. The site is taken where the player stands
+	 * now; Claude Code is found and its login checked on a worker (a process, about a second); then the build starts
+	 * with the Claude Code backend, exactly as {@code /aibuild test} does with its script.
+	 */
 	public void submit(ServerPlayer player, String rawPrompt, SizeTier size) {
 		if (!BuildPermission.canBuild(player)) {
 			reply(player, Messages.ownerOnly());
@@ -122,7 +150,115 @@ public final class BuildManager {
 			reply(player, Messages.problem(problem, prompt));
 			return;
 		}
-		reply(player, Messages.received(prompt, size));
+		if (busy()) {
+			reply(player, undo != null ? Messages.undoing() : Messages.busy());
+			return;
+		}
+		LocalFrame frame = Sites.ahead(player);
+		ServerLevel level = player.level();
+		Optional<Box> allowed = BuildBox.allowed(size, frame.origin().y(), level.getMinY(), level.getMaxY());
+		if (allowed.isEmpty()) {
+			reply(player, Messages.noRoom());
+			return;
+		}
+		Starting start = new Starting(player.getUUID());
+		starting = start;
+		reply(player, Messages.accepted(prompt, size));
+		Map<String, String> environment = childEnvironment();
+		List<String> override = TestHooks.claudeCommand;
+		CompletableFuture.supplyAsync(() -> check(override, environment), CHECKS).whenComplete((checked, error) -> server.execute(() -> {
+			if (starting != start) {
+				return;
+			}
+			starting = null;
+			if (start.cancelled) {
+				return;
+			}
+			if (error != null || !checked.problem().isEmpty()) {
+				tell(start.owner, Component.literal(error != null ? Messages.failed(reason(error)) : checked.problem()));
+				return;
+			}
+			ServerPlayer owner = server.getPlayerList().getPlayer(start.owner);
+			if (owner == null) {
+				return;
+			}
+			try {
+				build = new Build(owner, level, frame, allowed.get(), claudeBackend(checked.command(), environment, owner),
+						new BuildRequest(prompt, size), Tunables.BLOCKS_PER_TICK, new Budget(Tunables.MAX_TOOL_CALLS, Tunables.MAX_OUTPUT_TOKENS,
+								Tunables.MAX_BUILD_MINUTES * 60_000L, System::currentTimeMillis));
+			} catch (IOException e) {
+				tell(start.owner, Component.literal(Messages.failed("the mod's tool server couldn't start: " + e.getMessage())));
+			}
+		}));
+	}
+
+	/** The command to launch, or the player's line for why there's none (not installed, not logged in…). Blocking. */
+	private static Checked check(List<String> override, Map<String, String> environment) {
+		List<String> command = override;
+		if (command == null) {
+			Optional<List<String>> found = ClaudeChecks.command(null, System.getenv(), Path.of(System.getProperty("user.home")), Files::isExecutable);
+			if (found.isEmpty()) {
+				return new Checked(List.of(), Messages.notInstalled());
+			}
+			command = found.get();
+		}
+		return new Checked(command, ClaudeChecks.login(command, environment).orElse(""));
+	}
+
+	private record Checked(List<String> command, String problem) {
+	}
+
+	/** A prompt waiting for its Claude Code check; a cancel meanwhile drops it. Server thread. */
+	private static final class Starting {
+		final UUID owner;
+		boolean cancelled;
+
+		Starting(UUID owner) {
+			this.owner = owner;
+		}
+	}
+
+	/** The game's environment as the child gets it (spec §12.2), with any test scenario. */
+	private static Map<String, String> childEnvironment() {
+		Map<String, String> env = new HashMap<>(System.getenv());
+		env.putAll(TestHooks.claudeEnvironment);
+		return ClaudeLaunch.environment(env);
+	}
+
+	private ClaudeCodeBackend claudeBackend(List<String> command, Map<String, String> environment, ServerPlayer player) throws IOException {
+		String time = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
+		Path streamLog = server.getServerDirectory().resolve("logs/aibuilder").resolve(time + "_" + player.getName().getString() + ".stream.jsonl");
+		return new ClaudeCodeBackend(new ClaudeCodeBackend.Config(command, environment, ClaudeSettings.DEFAULT, systemPrompt(), endpoint(),
+				Path.of(System.getProperty("java.io.tmpdir"), "aibuilder"), streamLog, Duration.ofSeconds(Tunables.STARTUP_TIMEOUT_SECONDS),
+				Duration.ofSeconds(Tunables.CAP_GRACE_SECONDS), Duration.ofSeconds(Tunables.CANCEL_GRACE_SECONDS)));
+	}
+
+	/** {@code config/aibuilder/builder_system.md} if the player made one (spec §13), else the mod's own. */
+	private static String systemPrompt() {
+		Path custom = FabricLoader.getInstance().getConfigDir().resolve("aibuilder/builder_system.md");
+		if (Files.isRegularFile(custom)) {
+			try {
+				return Files.readString(custom, StandardCharsets.UTF_8);
+			} catch (IOException e) {
+				AiBuilderMod.LOG.warn("Couldn't read {}; using the built-in system prompt", custom, e);
+			}
+		}
+		return resource("/aibuilder/prompts/builder_system.md");
+	}
+
+	/** The MCP server, one per game, started on the first build and stopped with the server. */
+	private static synchronized McpEndpoint endpoint() throws IOException {
+		if (mcp == null) {
+			mcp = McpHttpServer.start(new McpHandler(ToolCatalog.load().tools(), SESSIONS));
+		}
+		return new McpEndpoint(mcp.port(), SESSIONS);
+	}
+
+	private static synchronized void stopMcp() {
+		if (mcp != null) {
+			mcp.stop();
+			mcp = null;
+		}
 	}
 
 	/** {@code /aibuild test}: the demo house through the real tools, in front of the player, no Claude. */
@@ -132,7 +268,7 @@ public final class BuildManager {
 			return Outcome.REFUSED;
 		}
 		if (busy()) {
-			reply(player, build != null ? Messages.busy() : Messages.undoing());
+			reply(player, undo != null ? Messages.undoing() : Messages.busy());
 			return Outcome.BUSY;
 		}
 		LocalFrame frame = Sites.ahead(player);
@@ -142,10 +278,11 @@ public final class BuildManager {
 			reply(player, Messages.noRoom());
 			return Outcome.NOTHING;
 		}
-		ScriptedBackend demo = new ScriptedBackend(demoScript(), task -> Thread.ofPlatform().daemon().name("aibuilder-build").start(task));
+		ScriptedBackend demo = new ScriptedBackend(resource("/aibuilder/scripts/demo_house.json"),
+				task -> Thread.ofPlatform().daemon().name("aibuilder-build").start(task));
 		// Slow on purpose: something to watch, check on with /aibuild status and cancel half-way.
-		build = new Build(player, frame, allowed.get(), demo, new BuildRequest("the demo house", SizeTier.AUTO),
-				Tunables.DEMO_BLOCKS_PER_TICK);
+		build = new Build(player, level, frame, allowed.get(), demo, new BuildRequest("the demo house", SizeTier.AUTO),
+				Tunables.DEMO_BLOCKS_PER_TICK, new Budget(Tunables.MAX_TOOL_CALLS));
 		return Outcome.STARTED;
 	}
 
@@ -154,6 +291,13 @@ public final class BuildManager {
 		if (!BuildPermission.canBuild(player)) {
 			reply(player, Messages.ownerOnly());
 			return Outcome.REFUSED;
+		}
+		if (starting != null) {
+			// Still checking Claude Code: nothing has started, so nothing is left to undo.
+			starting.cancelled = true;
+			starting = null;
+			reply(player, Messages.stoppedBeforeStart());
+			return Outcome.DONE;
 		}
 		if (build == null) {
 			reply(player, Messages.nothingToCancel());
@@ -240,6 +384,8 @@ public final class BuildManager {
 	public void status(ServerPlayer player) {
 		if (build != null) {
 			reply(player, Messages.status(build.sink.phase(), build.job.placed(), build.budget.used(), build.budget.max()));
+		} else if (starting != null) {
+			reply(player, Messages.startingClaude());
 		} else {
 			reply(player, undo != null ? Messages.undoing() : Messages.nothingBuilding());
 		}
@@ -257,13 +403,16 @@ public final class BuildManager {
 		ticksToStatus = Tunables.STATUS_INTERVAL_TICKS;
 		ServerPlayer player = server.getPlayerList().getPlayer(build.owner);
 		if (player != null) {
-			player.sendOverlayMessage(Component.literal(Messages.progress(build.sink.phase(), build.job.placed())));
+			// Before the brief (and during a retry) the backend's note; then the phase and the count.
+			String note = build.note;
+			player.sendOverlayMessage(Component.literal(note.isEmpty() ? Messages.progress(build.sink.phase(), build.job.placed()) : note));
 		}
 	}
 
 	/**
 	 * The server is stopping and won't tick again. A running build is already in the undo history, so what it placed
-	 * can be undone after a restart; an unfinished undo's build is still there too.
+	 * can be undone after a restart; an unfinished undo's build is still there too. No Claude Code process outlives
+	 * the server, and the tool server goes with it.
 	 */
 	private void stop() {
 		if (build != null) {
@@ -272,13 +421,16 @@ public final class BuildManager {
 			build.store.setDirty();
 			build = null;
 		}
+		starting = null;
 		undo = null;
+		ClaudeCodeBackend.stopAll();
+		stopMcp();
 	}
 
-	private static String demoScript() {
-		try (InputStream in = BuildManager.class.getResourceAsStream("/aibuilder/scripts/demo_house.json")) {
+	private static String resource(String path) {
+		try (InputStream in = BuildManager.class.getResourceAsStream(path)) {
 			if (in == null) {
-				throw new IllegalStateException("the demo script is missing from the mod");
+				throw new IllegalStateException(path + " is missing from the mod");
 			}
 			return new String(in.readAllBytes(), StandardCharsets.UTF_8);
 		} catch (IOException e) {
@@ -321,7 +473,7 @@ public final class BuildManager {
 		final UndoJournal<BlockState, CompoundTag> journal = new UndoJournal<>();
 		final UndoStore store;
 		final McWorldReader world;
-		final Budget budget = new Budget(Tunables.MAX_TOOL_CALLS);
+		final Budget budget;
 		final PlacementJob job;
 		final McBuildSink sink;
 		final Set<ChunkPos> chunks;
@@ -329,12 +481,19 @@ public final class BuildManager {
 		StoredBuild stored;
 		boolean cancelled;
 		String failure;
+		/** Set when the backend stopped at a cap or the usage limit, with its line. */
+		BuildOutcome stoppedBy;
+		String stopReason = "";
 		/** finish's summary, from the backend's thread. */
 		volatile String summary = "";
+		/** The backend's note for the action bar ("Starting Claude…"); "" for the phase line. Any thread. */
+		volatile String note = "";
 
-		Build(ServerPlayer player, LocalFrame frame, Box allowed, AiBackend backend, BuildRequest request, int blocksPerTick) {
+		Build(ServerPlayer player, ServerLevel level, LocalFrame frame, Box allowed, AiBackend backend, BuildRequest request, int blocksPerTick,
+				Budget budget) {
 			owner = player.getUUID();
-			level = player.level();
+			this.level = level;
+			this.budget = budget;
 			store = UndoStore.get(server);
 			// The player's earlier builds here are theirs to change: the survey doesn't protect what those left.
 			List<UndoJournal<BlockState, CompoundTag>> earlier = store.builds(owner).stream()
@@ -358,7 +517,17 @@ public final class BuildManager {
 			});
 			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, allowed, request.size(),
 					request.size().maxChangedBlocks(), sink, budget, world);
-			handle = backend.start(request, tools, BuildEvents.NONE);
+			handle = backend.start(request, tools, new BuildEvents() {
+				@Override
+				public void status(String text) {
+					note = text;
+				}
+
+				@Override
+				public void warn(String line) {
+					server.execute(() -> tell(owner, Component.literal(line)));
+				}
+			});
 			handle.outcome().thenAccept(outcome -> server.execute(() -> backendEnded(outcome)));
 		}
 
@@ -375,10 +544,18 @@ public final class BuildManager {
 			tell(owner, Component.literal(Messages.designing(brief)));
 		}
 
-		/** Claude (here, the script) is done: whatever it left queued still goes in, then the job ends. */
+		/** Claude (or the script) is done: whatever it left queued still goes in, then the job ends. */
 		private void backendEnded(BuildOutcome outcome) {
-			if (outcome == BuildOutcome.FAILED) {
-				failure = handle.reason();
+			if (!job.ended()) {
+				switch (outcome) {
+					case FAILED -> failure = handle.reason();
+					case CAPPED, LIMITED -> {
+						stoppedBy = outcome;
+						stopReason = handle.reason();
+					}
+					default -> {
+					}
+				}
 			}
 			job.finish();
 		}
@@ -402,6 +579,10 @@ public final class BuildManager {
 				line = Messages.failed(reason(error));
 			} else if (failure != null) {
 				line = Messages.failed(failure);
+			} else if (stoppedBy == BuildOutcome.CAPPED) {
+				line = Messages.capped(stopReason, job.placed());
+			} else if (stoppedBy == BuildOutcome.LIMITED) {
+				line = stopReason;
 			} else if (cancelled) {
 				line = Messages.stopped(job.placed());
 			} else {
@@ -412,7 +593,7 @@ public final class BuildManager {
 				// The last "Building …" would otherwise linger for seconds after the build is over.
 				online.sendOverlayMessage(Component.empty());
 			}
-			if (error == null && failure == null && !cancelled && !summary.isBlank()) {
+			if (error == null && failure == null && stoppedBy == null && !cancelled && !summary.isBlank()) {
 				// finish's summary goes to chat (spec §8), above the count and [Undo].
 				tell(owner, Component.literal(Messages.summary(summary)));
 			}

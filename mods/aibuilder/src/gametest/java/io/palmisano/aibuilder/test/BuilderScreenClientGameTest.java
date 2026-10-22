@@ -11,6 +11,7 @@ import java.util.function.Function;
 import com.mojang.blaze3d.platform.InputConstants;
 import io.palmisano.aibuilder.client.AiBuilderClient;
 import io.palmisano.aibuilder.client.BuilderScreen;
+import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -65,7 +66,9 @@ public class BuilderScreenClientGameTest implements FabricClientGameTest {
 			check(screen(ctx, BuilderScreen::size) == SizeTier.SMALL, "one click should move the size to Small");
 			ctx.clickScreenButton("gui.aibuilder.build");
 			ctx.waitFor(mc -> mc.gui.screen() == null);
-			GameTestSupport.awaitChat(ctx, "AI Builder got: " + BARN + " (Small)");
+			GameTestSupport.awaitChat(ctx, Messages.accepted(BARN, SizeTier.SMALL));
+			// The fake Claude Code answers with the prompt, so the build ends at once.
+			GameTestSupport.awaitChatStartingWith(ctx, "Done: ", 600);
 
 			// Reopening remembers the size and lists the prompt; clicking it fills the box.
 			ctx.getInput().pressKey(AiBuilderClient.OPEN_BUILDER);

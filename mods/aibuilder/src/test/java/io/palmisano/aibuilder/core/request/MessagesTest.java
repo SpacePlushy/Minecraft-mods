@@ -1,6 +1,7 @@
 package io.palmisano.aibuilder.core.request;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,13 +13,19 @@ import org.junit.jupiter.api.Test;
 
 class MessagesTest {
 	@Test
-	void receivedEchoesPromptAndSize() {
-		assertEquals("AI Builder got: castle (Small)", Messages.received("castle", SizeTier.SMALL));
+	void acceptedSaysWhatsComing() {
+		assertEquals("AI Builder: building \"castle\" (Small). Claude plans before it builds, so give it a few minutes; /aibuild cancel stops it.",
+				Messages.accepted("castle", SizeTier.SMALL));
 	}
 
 	@Test
-	void receivedKeepsNonAsciiIntact() {
-		assertEquals("AI Builder got: 日本庭園 with a koi pond 🐟 (Auto)", Messages.received("日本庭園 with a koi pond 🐟", SizeTier.AUTO));
+	void acceptedKeepsNonAsciiIntact() {
+		assertTrue(Messages.accepted("日本庭園 with a koi pond 🐟", SizeTier.AUTO).startsWith("AI Builder: building \"日本庭園 with a koi pond 🐟\" (Auto)."));
+	}
+
+	@Test
+	void cappedSaysWhichLimit() {
+		assertEquals("Stopped at the 150 tool-call limit: 2,314 blocks placed.", Messages.capped("the 150 tool-call limit", 2314));
 	}
 
 	@Test

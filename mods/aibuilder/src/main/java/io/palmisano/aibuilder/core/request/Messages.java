@@ -11,8 +11,10 @@ public final class Messages {
 	private Messages() {
 	}
 
-	public static String received(String prompt, SizeTier size) {
-		return "AI Builder got: " + prompt + " (" + size.label() + ")";
+	/** The prompt was taken: what's coming, and how to stop it (spec §5.3: builds take minutes, not seconds). */
+	public static String accepted(String prompt, SizeTier size) {
+		return "AI Builder: building \"" + prompt + "\" (" + size.label() + "). Claude plans before it builds, so give it a few minutes;"
+				+ " /aibuild cancel stops it.";
 	}
 
 	public static String problem(BuildPrompt.Problem problem, String prompt) {
@@ -56,6 +58,19 @@ public final class Messages {
 
 	public static String stopped(int placed) {
 		return "Stopped: " + blocks(placed) + " placed.";
+	}
+
+	/** At one of the mod's caps; {@code limit} is the budget's own words ("the 150 tool-call limit"). */
+	public static String capped(String limit, int placed) {
+		return "Stopped at " + limit + ": " + blocks(placed) + " placed.";
+	}
+
+	public static String stoppedBeforeStart() {
+		return "Stopped before Claude started.";
+	}
+
+	public static String claudeNotAnswering() {
+		return "Claude Code didn't answer when asked about its login; try again in a moment.";
 	}
 
 	public static String failed(String reason) {

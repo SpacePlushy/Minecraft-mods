@@ -3,6 +3,7 @@ package io.palmisano.aibuilder.test;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import io.palmisano.aibuilder.TestHooks;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
@@ -26,6 +27,9 @@ final class GameTestSupport {
 
 	/** A new singleplayer world with its chunks rendered, and an empty chat record. */
 	static TestSingleplayerContext world(ClientGameTestContext ctx) {
+		// A prompt in a test must never reach the real Claude Code on the owner's login (spec §17.5).
+		check(TestHooks.claudeCommand != null || TestSetup.live(), "the fake Claude Code isn't installed: refusing to run a test that could"
+				+ " start the real one");
 		TestSingleplayerContext sp = ctx.worldBuilder().create();
 		sp.getConnection().waitForChunksRender();
 		CHAT.clear();
@@ -39,8 +43,13 @@ final class GameTestSupport {
 
 	/** Waits until chat has shown exactly {@code expected}; on timeout, fails listing what it did show. */
 	static void awaitChat(ClientGameTestContext ctx, String expected) {
+		awaitChat(ctx, expected, 100);
+	}
+
+	/** {@link #awaitChat}, waiting up to {@code maxTicks}. */
+	static void awaitChat(ClientGameTestContext ctx, String expected, int maxTicks) {
 		for (int i = 0; !CHAT.contains(expected); i++) {
-			check(i < 100, "chat never showed \"" + expected + "\"; it showed " + CHAT);
+			check(i < maxTicks, "chat never showed \"" + expected + "\"; it showed " + CHAT);
 			ctx.waitTick();
 		}
 	}
