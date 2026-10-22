@@ -24,8 +24,8 @@ public sealed interface StreamEvent {
 	record Assistant(String messageId, List<String> toolNames, String text, String error) implements StreamEvent {
 	}
 
-	/** One finished message's output tokens (its {@code message_delta}). */
-	record OutputTokens(long tokens) implements StreamEvent {
+	/** One finished message's usage (its {@code message_delta}): one model turn's tokens in, out, and read from and written to the cache. */
+	record Usage(long input, long output, long cacheRead, long cacheWrite) implements StreamEvent {
 	}
 
 	/** {@code system/api_retry}: the API was busy or failed, and Claude Code is trying again. */

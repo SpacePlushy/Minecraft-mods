@@ -17,4 +17,12 @@ public interface BuildEvents {
 
 	/** A line for chat, such as a usage warning. */
 	void warn(String line);
+
+	/** Claude Code started: its version and the model it builds with, for the build log. */
+	default void started(String version, String model) {
+	}
+
+	/** One model turn's tokens, for the build log. */
+	default void usage(long input, long output, long cacheRead, long cacheWrite) {
+	}
 }

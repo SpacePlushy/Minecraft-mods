@@ -71,6 +71,15 @@ public final class ToolExecutor {
 	private FireRule fire;
 	private boolean briefed;
 	private volatile boolean finished;
+	private volatile CallListener listener = (name, args, result, millis) -> {
+	};
+
+	/** Told about every call once it's answered (the build log), on the calling thread: quick and thread-safe. */
+	@FunctionalInterface
+	public interface CallListener {
+		/** {@code args} as Claude sent them (null for none); {@code millis}, how long the call took, waits included. */
+		void called(String name, JsonObject args, ToolResult result, long millis);
+	}
 
 	public ToolExecutor(Validator validator, LocalFrame frame, Box allowed, SizeTier tier, long maxChangedBlocks, BuildSink sink, Budget budget,
 			WorldReader world) {
@@ -97,12 +106,27 @@ public final class ToolExecutor {
 		return budget;
 	}
 
+	public void listen(CallListener listener) {
+		this.listener = listener;
+	}
+
 	/**
 	 * One tool call; thread-safe. Claude Code may send a turn's calls at once, so the ones that wait (a checkpoint for
 	 * placement, the read tools for the world, terraform for both) wait outside the lock: they read only what never
 	 * changes or what's thread-safe, and the writes that change the executor's state take the lock (M4 review).
 	 */
 	public ToolResult call(String name, JsonObject args) {
+		long start = System.nanoTime();
+		ToolResult result = answer(name, args);
+		try {
+			listener.called(name, args, result, (System.nanoTime() - start) / 1_000_000);
+		} catch (RuntimeException e) {
+			// A log that fails never fails the build.
+		}
+		return result;
+	}
+
+	private ToolResult answer(String name, JsonObject args) {
 		ToolResult refusal = admit(name);
 		if (refusal != null) {
 			return withFooter(refusal);
@@ -163,7 +187,7 @@ public final class ToolExecutor {
 
 	private ToolResult withFooter(ToolResult result) {
 		String footer = budget.footer();
-		return footer.isEmpty() ? result : new ToolResult(result.text() + "\n" + footer, result.isError());
+		return footer.isEmpty() ? result : new ToolResult(result.text() + "\n" + footer, result.isError(), result.rejections());
 	}
 
 	private ToolResult context() {
@@ -564,7 +588,7 @@ public final class ToolExecutor {
 				text.append("\n… and ").append(lines.size() - REJECTION_LINES).append(" more");
 			}
 		}
-		return new ToolResult(text.toString(), batch.isEmpty() && rejected > 0);
+		return new ToolResult(text.toString(), batch.isEmpty() && rejected > 0, List.copyOf(lines));
 	}
 
 	private static void reject(List<String> lines, Map<String, Integer> grouped, boolean perEntry, int index, String problem) {

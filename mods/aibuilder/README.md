@@ -84,6 +84,19 @@ as one person's own use, so builds are for that person:
   server itself. List only yourself.
 - At most `rate_limit_per_hour` (20) builds an hour per player, as a guard against a runaway loop of prompts.
 
+## Build logs
+
+Every Claude build leaves two files in `logs/aibuilder/` in the game folder, named for when, who and what (for
+example `2026-10-22_08-07-23_Frankie_a-stone-castle.jsonl`):
+
+- **The build log** (`.jsonl`), one line per event in JSON: the prompt, size and mode, the model and Claude Code's
+  version, every tool call Claude made (its arguments, long lists cut to 20, what the tool answered, anything it
+  turned away and how long it took), the tokens each turn used, how the build ended, and the totals.
+- **Claude Code's raw stream** (`.stream.jsonl`), for digging into a problem.
+
+Neither ever holds a password or a key: the build's own token, any bearer token and anything that looks like an
+Anthropic key come out as `[redacted]`.
+
 ## When a build can't start or stops early
 
 | Chat says | What it means |

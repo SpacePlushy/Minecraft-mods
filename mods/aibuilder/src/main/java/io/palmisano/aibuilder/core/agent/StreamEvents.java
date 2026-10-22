@@ -47,7 +47,10 @@ public final class StreamEvents {
 			case "assistant" -> assistant(o);
 			case "stream_event" -> {
 				JsonObject event = object(o, "event");
-				yield "message_delta".equals(string(event, "type")) ? new StreamEvent.OutputTokens(number(object(event, "usage"), "output_tokens"))
+				JsonObject usage = object(event, "usage");
+				yield "message_delta".equals(string(event, "type"))
+						? new StreamEvent.Usage(number(usage, "input_tokens"), number(usage, "output_tokens"), number(usage, "cache_read_input_tokens"),
+								number(usage, "cache_creation_input_tokens"))
 						: new StreamEvent.Other("stream_event");
 			}
 			case "rate_limit_event" -> {

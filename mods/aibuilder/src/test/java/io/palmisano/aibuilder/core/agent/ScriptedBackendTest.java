@@ -3,7 +3,10 @@ package io.palmisano.aibuilder.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -18,6 +21,7 @@ import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
+import io.palmisano.aibuilder.core.site.BuildBox;
 import io.palmisano.aibuilder.core.tools.Budget;
 import io.palmisano.aibuilder.core.tools.FakeWorld;
 import io.palmisano.aibuilder.core.tools.RecordingSink;
@@ -48,6 +52,33 @@ class ScriptedBackendTest {
 		assertEquals("t", sink.brief.title());
 		assertEquals(2, sink.queuedCount());
 		assertEquals("done", sink.finishedWith);
+	}
+
+	/**
+	 * A real build replays (spec §16, §17): the M5 live castle, converted from its stream log by
+	 * tools/stream_to_script.py. Every call still reaches a tool and none is refused for its arguments; blocks the fake
+	 * catalog doesn't know are only rejected entries.
+	 */
+	@Test
+	void aRealBuildReplays() throws Exception {
+		String castle;
+		try (InputStream in = ScriptedBackendTest.class.getResourceAsStream("/scripts/castle-m5.json")) {
+			castle = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+		}
+		RecordingSink sink = new RecordingSink();
+		ToolExecutor tools = new ToolExecutor(new Validator(FakeCatalog.standard(), Validator.DEFAULT_BANNED), new LocalFrame(new Pos(0, 64, 0),
+				Facing.SOUTH), BuildBox.allowed(SizeTier.MEDIUM, 64, -64, 320).orElseThrow(), SizeTier.MEDIUM, 100_000, sink, new Budget(150),
+				new FakeWorld());
+		List<String> answers = new CopyOnWriteArrayList<>();
+		tools.listen((name, args, result, millis) -> answers.add(name + ": " + result.text()));
+		BuildHandle handle = new ScriptedBackend(castle, Runnable::run).start(new BuildRequest("a medieval stone castle with a gatehouse",
+				SizeTier.MEDIUM), tools, BuildEvents.NONE);
+		assertEquals(BuildOutcome.FINISHED, handle.outcome().get(60, TimeUnit.SECONDS));
+		assertEquals(107, answers.size());
+		List<String> broken = answers.stream().filter(a -> a.contains("There is no tool") || a.contains(": bad_argument")).toList();
+		assertEquals(List.of(), broken);
+		assertEquals("Stonehold Castle with Gatehouse", sink.brief.title());
+		assertTrue(sink.queuedCount() > 5_000, "queued " + sink.queuedCount());
 	}
 
 	@Test

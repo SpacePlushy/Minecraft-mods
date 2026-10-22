@@ -28,6 +28,8 @@ public class FakeClaude {
 	static String token;
 	static String session = UUID.randomUUID().toString();
 	static Path lock;
+	/** Shaped like an Anthropic key, never a real one. */
+	static final String FAKE_KEY = "sk-ant-api03-FAKEFAKEFAKEFAKEFAKEFAKE";
 	static int nextId;
 	static int turns;
 	static volatile boolean done;
@@ -114,6 +116,19 @@ public class FakeClaude {
 				result(false, "success", "Built a tiny oak hut.", "completed", 0);
 			}
 			case "echo" -> result(false, "success", prompt, "completed", 0);
+			case "leak" -> {
+				// What must never reach a log (spec §16): the build's token, as a debug line might show it, and a key.
+				String tokenFile = System.getenv("FAKE_CLAUDE_TOKEN_FILE");
+				if (tokenFile != null) {
+					Files.writeString(Path.of(tokenFile), token);
+				}
+				System.err.println("debug: MCP headers {Authorization: Bearer " + token + "}");
+				OUT.println("{\"type\":\"system\",\"subtype\":\"debug\",\"text\":\"Authorization: Bearer " + token + "; ANTHROPIC_API_KEY=" + FAKE_KEY
+						+ "\",\"session_id\":\"" + session + "\"}");
+				call("get_context", "{}");
+				call("finish", "{\"summary\":" + quote("Nothing built; the token was " + token + " and a key " + FAKE_KEY) + "}");
+				result(false, "success", "Done with " + token, "completed", 0);
+			}
 			case "refine" -> {
 				// What a refinement is given: the session it resumes and the box get_context now gives.
 				String context = call("get_context", "{}");
@@ -201,7 +216,7 @@ public class FakeClaude {
 		OUT.println("{\"type\":\"assistant\",\"message\":{\"id\":\"msg_" + UUID.randomUUID() + "\",\"model\":\"claude-opus-5-5\",\"role\":\"assistant\","
 				+ "\"content\":[{\"type\":\"tool_use\",\"id\":\"" + useId + "\",\"name\":\"mcp__aibuilder__" + tool + "\",\"input\":" + arguments + "}],"
 				+ "\"usage\":{\"input_tokens\":2,\"output_tokens\":1}},\"session_id\":\"" + session + "\"}");
-		OUT.println("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":100}},"
+		OUT.println("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"input_tokens\":3,\"cache_read_input_tokens\":1000,\"cache_creation_input_tokens\":50,\"output_tokens\":100}},"
 				+ "\"session_id\":\"" + session + "\"}");
 		String reply = post("{\"jsonrpc\":\"2.0\",\"id\":" + nextId++ + ",\"method\":\"tools/call\",\"params\":{\"name\":\"" + tool + "\",\"arguments\":"
 				+ arguments + ",\"_meta\":{\"claudecode/toolUseId\":\"" + useId + "\"}}}");

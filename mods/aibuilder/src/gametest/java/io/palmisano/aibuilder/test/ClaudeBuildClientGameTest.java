@@ -6,8 +6,14 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
+
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import io.palmisano.aibuilder.BuildManager;
 import io.palmisano.aibuilder.TestHooks;
@@ -112,6 +118,7 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 				server.waitFor(s -> !BuildManager.of(s).busy());
 				aPromptWaitsForTheLastProcess(ctx, server, session);
 				GameTestSupport.awaitChatCount(ctx, "Done: ", 5, 600);
+				logsNeverHoldTheToken(ctx);
 			} finally {
 				TestHooks.claudeEnvironment = TestSetup.DEFAULT_SCENARIO;
 			}
@@ -139,6 +146,64 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 		GameTestSupport.awaitChatCount(ctx, "Resumed " + session + "; the allowed box is x -17..17, y -3..18, z -15..19", 2, 600);
 		check(GameTestSupport.chat().stream().noneMatch(line -> line.startsWith("Claude Code exited")), "two processes on one session: "
 				+ GameTestSupport.chat());
+	}
+
+	/**
+	 * Neither log holds the build's token or a key, even when Claude Code prints them (spec §16, M6 Review Focus): the
+	 * fake shows its token in the stream, on stderr (the game log) and in its finish summary (chat), and a key-shaped
+	 * string in the stream and the summary.
+	 */
+	private static void logsNeverHoldTheToken(ClientGameTestContext ctx) {
+		Path game = FabricLoader.getInstance().getGameDir();
+		Path tokenFile = game.resolve("aibuilder-test-token");
+		try {
+			Files.deleteIfExists(tokenFile);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "leak", "FAKE_CLAUDE_TOKEN_FILE", tokenFile.toString());
+		int done = GameTestSupport.count("Done: ");
+		GameTestSupport.runPlayerCommand(ctx, "aibuild new a leaky hut");
+		GameTestSupport.awaitChatCount(ctx, "Done: ", done + 1, 600);
+		String token = read(tokenFile).strip();
+		check(token.length() >= 32, "the fake never wrote its token: " + token);
+		String key = "sk-ant-api03-FAKE";
+
+		// The build log is written off the server thread: its last line comes a moment after the chat line.
+		Path logs = game.resolve("logs/aibuilder");
+		ctx.waitFor(mc -> newest(logs, "_a-leaky-hut.jsonl") != null && read(newest(logs, "_a-leaky-hut.jsonl")).contains("\"type\":\"totals\""), 200);
+		Path buildLog = newest(logs, "_a-leaky-hut.jsonl");
+		Path streamLog = newest(logs, "_a-leaky-hut.stream.jsonl");
+		check(streamLog != null, "no stream log next to " + buildLog);
+		for (Path log : List.of(buildLog, streamLog, game.resolve("logs/latest.log"))) {
+			String text = read(log);
+			check(!text.contains(token), log.getFileName() + " holds the build's token");
+			check(!text.contains(key), log.getFileName() + " holds a key");
+		}
+		check(read(streamLog).contains("Bearer [redacted]") && read(buildLog).contains("[redacted]"), "the leak never reached the logs to be scrubbed");
+		check(GameTestSupport.chat().stream().noneMatch(line -> line.contains(token) || line.contains(key)), "chat holds the token or the key");
+
+		// What the build log says: the request, Claude Code's start, both calls, the outcome and the totals, with the two
+		// turns' usage among the calls (the stream and the calls come in on threads of their own).
+		List<JsonObject> lines = read(buildLog).lines().map(line -> JsonParser.parseString(line).getAsJsonObject()).toList();
+		List<String> types = lines.stream().map(line -> line.get("type").getAsString()).toList();
+		check(types.stream().filter(type -> !type.equals("usage")).toList().equals(List.of("request", "claude", "tool", "tool", "outcome", "totals"))
+				&& types.stream().filter(type -> type.equals("usage")).count() == 2, "the build log's lines: " + types);
+		JsonObject request = lines.getFirst();
+		check(request.get("prompt").getAsString().equals("a leaky hut") && request.get("mode").getAsString().equals("new"), "the request: " + request);
+		check(lines.getLast().get("tool_calls").getAsInt() == 2 && lines.getLast().get("output_tokens").getAsLong() == 200, "the totals: " + lines.getLast());
+	}
+
+	/** The newest file in {@code dir} whose name ends with {@code suffix}, or null. */
+	private static Path newest(Path dir, String suffix) {
+		if (!Files.isDirectory(dir)) {
+			return null;
+		}
+		try (Stream<Path> files = Files.list(dir)) {
+			return files.filter(f -> f.getFileName().toString().endsWith(suffix)).max(Comparator.comparing(f -> f.getFileName().toString())).orElse(null);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
 	}
 
 	private static String read(Path file) {

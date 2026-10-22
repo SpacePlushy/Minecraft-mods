@@ -28,6 +28,7 @@ import java.util.concurrent.TimeoutException;
 
 import io.palmisano.aibuilder.backend.ClaudeChecks;
 import io.palmisano.aibuilder.backend.ClaudeCodeBackend;
+import io.palmisano.aibuilder.backend.LogWriter;
 import io.palmisano.aibuilder.backend.McpEndpoint;
 import io.palmisano.aibuilder.backend.McpHttpServer;
 import io.palmisano.aibuilder.core.Tunables;
@@ -35,6 +36,7 @@ import io.palmisano.aibuilder.core.survey.SurveyEncoder;
 import io.palmisano.aibuilder.core.agent.AiBackend;
 import io.palmisano.aibuilder.core.agent.BuildEvents;
 import io.palmisano.aibuilder.core.agent.BuildHandle;
+import io.palmisano.aibuilder.core.agent.BuildLog;
 import io.palmisano.aibuilder.core.agent.BuildOutcome;
 import io.palmisano.aibuilder.core.agent.BuildRequest;
 import io.palmisano.aibuilder.core.agent.ClaudeLaunch;
@@ -42,6 +44,7 @@ import io.palmisano.aibuilder.core.agent.ClaudeSettings;
 import io.palmisano.aibuilder.core.agent.McpHandler;
 import io.palmisano.aibuilder.core.agent.McpSessions;
 import io.palmisano.aibuilder.core.agent.ScriptedBackend;
+import io.palmisano.aibuilder.core.agent.Scrub;
 import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.config.AiBuilderConfig;
 import io.palmisano.aibuilder.core.config.ConfigFile;
@@ -296,7 +299,7 @@ public final class BuildManager {
 		if (scripted) {
 			// Offline (spec §14): every prompt builds the demo house through the real tools, no Claude.
 			reply(player, acceptedLine);
-			build = new Build(player, level, frame, allowed, demo(), request, cfg.placementRate(), budget(cfg), cfg, null, prompt);
+			build = new Build(player, level, frame, allowed, demo(), request, cfg.placementRate(), budget(cfg), cfg, null, prompt, null);
 			return;
 		}
 		Starting start = new Starting(player.getUUID());
@@ -325,8 +328,13 @@ public final class BuildManager {
 				return;
 			}
 			try {
-				build = new Build(owner, level, frame, allowed, claudeBackend(checked.command(), environment, owner, cfg), request,
-						cfg.placementRate(), budget(cfg), cfg, refines.orElse(null), prompt);
+				Path logs = server.getServerDirectory().resolve("logs/aibuilder");
+				String name = BuildLog.baseName(LocalDateTime.now(), owner.getName().getString(), prompt);
+				Scrub scrub = new Scrub();
+				LogWriter writer = new LogWriter(logs.resolve(name + ".jsonl"));
+				Logging logging = new Logging(new BuildLog(writer, scrub, System::currentTimeMillis), writer, scrub);
+				build = new Build(owner, level, frame, allowed, claudeBackend(checked.command(), environment, cfg, logs.resolve(name + ".stream.jsonl"),
+						scrub), request, cfg.placementRate(), budget(cfg), cfg, refines.orElse(null), prompt, logging);
 			} catch (IOException e) {
 				tell(start.owner, Component.literal(Messages.failed("the mod's tool server couldn't start: " + e.getMessage())));
 			}
@@ -362,6 +370,10 @@ public final class BuildManager {
 	private record Checked(List<String> command, String problem) {
 	}
 
+	/** A Claude build's log (spec §16): the lines, the file they go to, and the scrubber the backend tells its token. */
+	private record Logging(BuildLog log, LogWriter writer, Scrub scrub) {
+	}
+
 	/** Waits for a Claude Code process to end (on a worker); false if it hasn't within PREVIOUS_PROCESS_WAIT_SECONDS. */
 	private static boolean ended(CompletableFuture<?> process) {
 		try {
@@ -394,15 +406,13 @@ public final class BuildManager {
 		return ClaudeLaunch.environment(env);
 	}
 
-	private ClaudeCodeBackend claudeBackend(List<String> command, Map<String, String> environment, ServerPlayer player, AiBuilderConfig cfg)
+	private ClaudeCodeBackend claudeBackend(List<String> command, Map<String, String> environment, AiBuilderConfig cfg, Path streamLog, Scrub scrub)
 			throws IOException {
-		String time = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
-		Path streamLog = server.getServerDirectory().resolve("logs/aibuilder").resolve(time + "_" + player.getName().getString() + ".stream.jsonl");
 		// The turn backstop stays above the tool-call cap, whatever the config sets it to.
 		ClaudeSettings settings = new ClaudeSettings(cfg.model(), cfg.effort(), Math.max(Tunables.MAX_TURNS, cfg.maxToolIterations() + 50));
 		return new ClaudeCodeBackend(new ClaudeCodeBackend.Config(command, environment, settings, systemPrompt(), endpoint(),
 				Path.of(System.getProperty("java.io.tmpdir"), "aibuilder"), streamLog, Duration.ofSeconds(Tunables.STARTUP_TIMEOUT_SECONDS),
-				Duration.ofSeconds(Tunables.CAP_GRACE_SECONDS), Duration.ofSeconds(Tunables.CANCEL_GRACE_SECONDS)));
+				Duration.ofSeconds(Tunables.CAP_GRACE_SECONDS), Duration.ofSeconds(Tunables.CANCEL_GRACE_SECONDS), scrub));
 	}
 
 	/** {@code config/aibuilder/builder_system.md} if the player made one (spec §13), else the mod's own. */
@@ -453,7 +463,7 @@ public final class BuildManager {
 		// Slow on purpose: something to watch, check on with /aibuild status and cancel half-way. Its own caps, so
 		// the demo works whatever the config says.
 		build = new Build(player, level, frame, allowed.get(), demo(), new BuildRequest("the demo house", SizeTier.AUTO),
-				Tunables.DEMO_BLOCKS_PER_TICK, new Budget(Tunables.MAX_TOOL_CALLS), cfg, null, "the demo house");
+				Tunables.DEMO_BLOCKS_PER_TICK, new Budget(Tunables.MAX_TOOL_CALLS), cfg, null, "the demo house", null);
 		return Outcome.STARTED;
 	}
 
@@ -670,10 +680,13 @@ public final class BuildManager {
 		final BuildRequest request;
 		/** Only Claude builds have a session to refine: a scripted one (the demo) ends the last. */
 		final boolean claude;
+		/** The build log; null for a scripted build. */
+		final Logging logging;
 
 		Build(ServerPlayer player, ServerLevel level, LocalFrame frame, Box allowed, AiBackend backend, BuildRequest request, int blocksPerTick,
-				Budget budget, AiBuilderConfig cfg, BuildSession refines, String playerPrompt) {
+				Budget budget, AiBuilderConfig cfg, BuildSession refines, String playerPrompt, Logging logging) {
 			owner = player.getUUID();
+			this.logging = logging;
 			this.level = level;
 			this.budget = budget;
 			this.refines = refines;
@@ -706,6 +719,11 @@ public final class BuildManager {
 			});
 			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Set.copyOf(cfg.bannedBlocks())), frame, allowed, request.size(),
 					cap, sink, budget, world);
+			if (logging != null) {
+				logging.log().request(playerPrompt, request.size().label(), refines != null, refines == null ? "" : refines.title(), cfg.model(),
+						cfg.effort(), request.session().toString());
+				tools.listen(logging.log()::call);
+			}
 			handle = backend.start(request, tools, new BuildEvents() {
 				@Override
 				public void status(String text) {
@@ -715,6 +733,20 @@ public final class BuildManager {
 				@Override
 				public void warn(String line) {
 					server.execute(() -> tell(owner, Component.literal(line)));
+				}
+
+				@Override
+				public void started(String version, String model) {
+					if (logging != null) {
+						logging.log().started(version, model);
+					}
+				}
+
+				@Override
+				public void usage(long input, long output, long cacheRead, long cacheWrite) {
+					if (logging != null) {
+						logging.log().usage(input, output, cacheRead, cacheWrite);
+					}
 				}
 			});
 			handle.outcome().thenAccept(outcome -> server.execute(() -> backendEnded(outcome)));
@@ -830,19 +862,37 @@ public final class BuildManager {
 				store.remove(owner, stored);
 			}
 			String line;
+			String outcome;
 			if (error != null) {
 				line = Messages.failed(reason(error));
+				outcome = "failed";
 			} else if (failure != null) {
 				// The backend's reason is the player's whole line (spec §12.2's messages word for word).
 				line = failure;
+				outcome = "failed";
 			} else if (stoppedBy == BuildOutcome.CAPPED) {
 				line = Messages.capped(stopReason, job.placed());
+				outcome = "capped";
 			} else if (stoppedBy == BuildOutcome.LIMITED) {
 				line = stopReason;
+				outcome = "limited";
 			} else if (cancelled) {
 				line = Messages.stopped(job.placed());
+				outcome = "stopped";
 			} else {
 				line = Messages.done(job.placed(), skipped);
+				outcome = "done";
+			}
+			if (logging != null) {
+				String how = outcome;
+				String said = line;
+				int placed = job.placed();
+				int skippedHere = skipped == null ? 0 : skipped;
+				// Once Claude Code has ended, so the totals hold every turn, its last words after finish too.
+				handle.outcome().whenComplete((ignored, failed) -> {
+					logging.log().outcome(how, said, placed, skippedHere);
+					logging.writer().close();
+				});
 			}
 			ServerPlayer online = server.getPlayerList().getPlayer(owner);
 			if (online != null) {
@@ -854,7 +904,8 @@ public final class BuildManager {
 			}
 			if (error == null && failure == null && stoppedBy == null && !cancelled && !summary.isBlank()) {
 				// finish's summary goes to chat (spec §8), above the count and [Undo].
-				tell(owner, Component.literal(Messages.summary(summary)));
+				// Claude's own words: a key the player typed into the prompt could be in them, and chat goes to the game log.
+				tell(owner, Component.literal(Messages.summary(logging == null ? summary : logging.scrub().apply(summary))));
 			}
 			tell(owner, undoable ? withUndo(line) : Component.literal(line));
 			if (build == this) {

@@ -22,6 +22,7 @@ import io.palmisano.aibuilder.core.agent.ClaudeLaunch;
 import io.palmisano.aibuilder.core.agent.ClaudeSettings;
 import io.palmisano.aibuilder.core.agent.McpHandler;
 import io.palmisano.aibuilder.core.agent.McpSessions;
+import io.palmisano.aibuilder.core.agent.Scrub;
 import io.palmisano.aibuilder.core.blocks.FakeCatalog;
 import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.Facing;
@@ -55,6 +56,9 @@ class ClaudeCodeBackendTest {
 	private final FakeWorld world = new FakeWorld();
 	private final List<String> notes = new CopyOnWriteArrayList<>();
 	private final List<String> warnings = new CopyOnWriteArrayList<>();
+	private final List<String> started = new CopyOnWriteArrayList<>();
+	private final List<long[]> usage = new CopyOnWriteArrayList<>();
+	private final Scrub scrub = new Scrub();
 	private McpHttpServer server;
 	private Budget budget = new Budget(150);
 	private Duration startupTimeout = Duration.ofSeconds(30);
@@ -81,7 +85,7 @@ class ClaudeCodeBackendTest {
 		env.putAll(extra);
 		ClaudeCodeBackend backend = new ClaudeCodeBackend(new ClaudeCodeBackend.Config(command, ClaudeLaunch.environment(env),
 				ClaudeSettings.DEFAULT, "You build.", new McpEndpoint(server.port(), sessions), temp, temp.resolve("stream.jsonl"), startupTimeout,
-				Duration.ofSeconds(5), Duration.ofSeconds(2)));
+				Duration.ofSeconds(5), Duration.ofSeconds(2), scrub));
 		ToolExecutor tools = new ToolExecutor(new Validator(FakeCatalog.standard(), Validator.DEFAULT_BANNED), new LocalFrame(new Pos(0, 64, 0),
 				Facing.SOUTH), Box.of(-12, -6, 0, 11, 23, 23), SizeTier.SMALL, 15_000, sink, budget, world);
 		return backend.start(new BuildRequest(prompt, SizeTier.SMALL), tools, new BuildEvents() {
@@ -96,6 +100,16 @@ class ClaudeCodeBackendTest {
 			@Override
 			public void warn(String line) {
 				warnings.add(line);
+			}
+
+			@Override
+			public void started(String version, String model) {
+				started.add(version + " " + model);
+			}
+
+			@Override
+			public void usage(long input, long output, long cacheRead, long cacheWrite) {
+				usage.add(new long[] {input, output, cacheRead, cacheWrite});
 			}
 		});
 	}
@@ -139,6 +153,29 @@ class ClaudeCodeBackendTest {
 		assertEquals(List.of(), buildDirs(), "the build's folder (and its token) outlived the build");
 		assertEquals(0, sessions.size(), "the build's token wasn't revoked");
 		assertTrue(Files.readString(temp.resolve("stream.jsonl")).contains("\"type\":\"result\""), "no stream log");
+	}
+
+	@Test
+	void startAndUsageReachTheEvents() throws Exception {
+		assertEquals(BuildOutcome.FINISHED, outcome(start("build")));
+		assertEquals(List.of("0.0.0-fake claude-opus-5-5"), started);
+		// The fake's five turns: get_context, submit_brief, fill, checkpoint, finish.
+		assertEquals(5, usage.size());
+		assertTrue(usage.stream().allMatch(u -> u[0] == 3 && u[1] == 100 && u[2] == 1000 && u[3] == 50), usage.toString());
+		assertEquals(500, budget.outputTokens());
+	}
+
+	@Test
+	void theStreamLogNeverHoldsTheToken() throws Exception {
+		Path tokenFile = temp.resolve("token");
+		assertEquals(BuildOutcome.FINISHED, outcome(start("leak", "a hut", Map.of("FAKE_CLAUDE_TOKEN_FILE", tokenFile.toString()))));
+		String token = Files.readString(tokenFile).strip();
+		assertTrue(token.length() >= 32, token);
+		String stream = Files.readString(temp.resolve("stream.jsonl"));
+		assertTrue(!stream.contains(token) && !stream.contains("sk-ant-api03-FAKE"), stream);
+		assertTrue(stream.contains("Bearer [redacted]"), stream);
+		// The build log scrubs with the same scrubber, so it has to know the token.
+		assertEquals("token [redacted]", scrub.apply("token " + token));
 	}
 
 	@Test

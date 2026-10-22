@@ -48,8 +48,13 @@ class StreamEventsTest {
 		assertTrue(turns.getLast().text().startsWith("I called get_context once"), turns.getLast().text());
 		assertTrue(turns.stream().allMatch(a -> a.error().isEmpty() && !a.messageId().isEmpty()));
 
-		// message_delta carries each message's final output tokens: together, the result's total.
-		assertEquals(135, only(events, StreamEvent.OutputTokens.class).stream().mapToLong(StreamEvent.OutputTokens::tokens).sum());
+		// message_delta carries each message's final usage: together, the result's totals.
+		List<StreamEvent.Usage> usage = only(events, StreamEvent.Usage.class);
+		assertEquals(3, usage.size());
+		assertEquals(135, usage.stream().mapToLong(StreamEvent.Usage::output).sum());
+		assertEquals(6, usage.stream().mapToLong(StreamEvent.Usage::input).sum());
+		assertEquals(2534, usage.stream().mapToLong(StreamEvent.Usage::cacheRead).sum());
+		assertEquals(1414, usage.stream().mapToLong(StreamEvent.Usage::cacheWrite).sum());
 
 		List<StreamEvent.RateLimit> limits = only(events, StreamEvent.RateLimit.class);
 		// The fullest window decides how close the plan is to its limit (here the seven-day one, at 51%).

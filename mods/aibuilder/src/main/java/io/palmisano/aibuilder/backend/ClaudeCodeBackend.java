@@ -45,6 +45,7 @@ import io.palmisano.aibuilder.core.agent.ClaudeLaunch;
 import io.palmisano.aibuilder.core.agent.ClaudeSettings;
 import io.palmisano.aibuilder.core.agent.InitCheck;
 import io.palmisano.aibuilder.core.agent.McpSession;
+import io.palmisano.aibuilder.core.agent.Scrub;
 import io.palmisano.aibuilder.core.agent.StreamEvent;
 import io.palmisano.aibuilder.core.agent.StreamEvents;
 import io.palmisano.aibuilder.core.agent.UsageLimits;
@@ -65,10 +66,11 @@ import org.slf4j.LoggerFactory;
 public final class ClaudeCodeBackend implements AiBackend {
 	/**
 	 * {@code command}: the binary (a test's fake: {@code java FakeClaude.java}); {@code environment}: already
-	 * {@link ClaudeLaunch#environment}'s; {@code streamLog}: where the raw stream goes, or null.
+	 * {@link ClaudeLaunch#environment}'s; {@code streamLog}: where the raw stream goes, or null; {@code scrub}: what the
+	 * stream log and Claude Code's stderr pass through, told the build's token (the build log shares it).
 	 */
 	public record Config(List<String> command, Map<String, String> environment, ClaudeSettings settings, String systemPrompt, McpEndpoint endpoint,
-			Path tempRoot, Path streamLog, Duration startupTimeout, Duration capGrace, Duration cancelGrace) {
+			Path tempRoot, Path streamLog, Duration startupTimeout, Duration capGrace, Duration cancelGrace, Scrub scrub) {
 	}
 
 	private static final Logger LOG = LoggerFactory.getLogger("aibuilder");
@@ -157,6 +159,8 @@ public final class ClaudeCodeBackend implements AiBackend {
 				Files.createDirectories(work);
 				buildDir = Files.createTempDirectory(config.tempRoot(), "build-");
 				token = config.endpoint().sessions().open(this);
+				// Never in a log (spec §16), whatever prints it.
+				config.scrub().add(token);
 				Path mcp = buildDir.resolve("mcp.json");
 				writeOwnerOnly(mcp, ClaudeLaunch.mcpConfig(config.endpoint().port(), token));
 				Path systemPrompt = buildDir.resolve("builder_system.md");
@@ -247,7 +251,7 @@ public final class ClaudeCodeBackend implements AiBackend {
 				while ((line = out.readLine()) != null) {
 					if (log != null) {
 						try {
-							log.write(line);
+							log.write(config.scrub().apply(line));
 							log.write('\n');
 							log.flush();
 						} catch (IOException e) {
@@ -285,6 +289,12 @@ public final class ClaudeCodeBackend implements AiBackend {
 						sessionId = init.sessionId();
 					}
 					LOG.info("Claude Code {} is building with {}", init.version(), init.model());
+					// Before the tools open, so the build log has it ahead of every call.
+					try {
+						events.started(init.version(), init.model());
+					} catch (RuntimeException e) {
+						LOG.warn("Couldn't note Claude Code's start; going on", e);
+					}
 					Optional<String> problem = InitCheck.problem(init);
 					if (problem.isPresent()) {
 						stop(BuildOutcome.FAILED, Messages.initRejected(problem.get()));
@@ -320,7 +330,10 @@ public final class ClaudeCodeBackend implements AiBackend {
 						}
 					}
 				}
-				case StreamEvent.OutputTokens tokens -> budget.addOutputTokens(tokens.tokens());
+				case StreamEvent.Usage usage -> {
+					budget.addOutputTokens(usage.output());
+					events.usage(usage.input(), usage.output(), usage.cacheRead(), usage.cacheWrite());
+				}
 				case StreamEvent.Retry retry -> {
 					retrying = true;
 					events.status(Messages.claudeRetrying(retry.attempt()));
@@ -449,9 +462,10 @@ public final class ClaudeCodeBackend implements AiBackend {
 			try (BufferedReader err = new BufferedReader(new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
 				String line;
 				while ((line = err.readLine()) != null) {
-					LOG.info("[claude] {}", line);
+					String clean = config.scrub().apply(line);
+					LOG.info("[claude] {}", clean);
 					synchronized (stderrTail) {
-						stderrTail.append(line).append('\n');
+						stderrTail.append(clean).append('\n');
 						if (stderrTail.length() > 2048) {
 							stderrTail.delete(0, stderrTail.length() - 2048);
 						}
