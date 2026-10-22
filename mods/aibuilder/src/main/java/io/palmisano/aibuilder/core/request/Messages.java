@@ -82,6 +82,21 @@ public final class Messages {
 		return building(phase) + " · " + blocks(placed);
 	}
 
+	/** The HUD panel's title before the brief names the build. */
+	public static String hudUntitled() {
+		return "AI Builder";
+	}
+
+	/** The HUD panel's block count. */
+	public static String hudPlaced(int placed) {
+		return blocks(placed) + " placed";
+	}
+
+	/** The HUD panel's line over its budget bar. */
+	public static String hudBudget(int used, int max) {
+		return "Tool calls: " + used + " of " + max;
+	}
+
 	/** {@code /aibuild status} while a build runs. */
 	public static String status(String phase, int placed, int toolCalls, int maxToolCalls) {
 		return building(phase) + " · " + blocks(placed) + " placed · " + toolCalls + " of " + maxToolCalls + " tool calls.";

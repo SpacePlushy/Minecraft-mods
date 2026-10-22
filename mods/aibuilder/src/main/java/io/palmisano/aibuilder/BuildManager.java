@@ -39,14 +39,17 @@ import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.request.BuildPrompt;
+import io.palmisano.aibuilder.core.request.BuildStatus;
 import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.site.BuildBox;
 import io.palmisano.aibuilder.core.tools.Brief;
 import io.palmisano.aibuilder.core.tools.Budget;
+import io.palmisano.aibuilder.core.tools.PhaseProgress;
 import io.palmisano.aibuilder.core.tools.ToolCatalog;
 import io.palmisano.aibuilder.core.tools.ToolExecutor;
+import io.palmisano.aibuilder.net.BuildStatusPayload;
 import io.palmisano.aibuilder.world.BuildTickets;
 import io.palmisano.aibuilder.world.JobScheduler;
 import io.palmisano.aibuilder.world.McBlockCatalog;
@@ -61,6 +64,7 @@ import io.palmisano.aibuilder.world.UndoRunner;
 import io.palmisano.aibuilder.world.UndoStore;
 import io.palmisano.aibuilder.world.UndoStore.StoredBuild;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.ChatFormatting;
@@ -406,6 +410,7 @@ public final class BuildManager {
 			// Before the brief (and during a retry) the backend's note; then the phase and the count.
 			String note = build.note;
 			player.sendOverlayMessage(Component.literal(note.isEmpty() ? Messages.progress(build.sink.phase(), build.job.placed()) : note));
+			build.hud(player);
 		}
 	}
 
@@ -488,6 +493,10 @@ public final class BuildManager {
 		volatile String summary = "";
 		/** The backend's note for the action bar ("Starting Claude…"); "" for the phase line. Any thread. */
 		volatile String note = "";
+		/** The brief's title, once there is one. Server thread. */
+		String title = "";
+		/** The owner's client has the HUD up. Server thread. */
+		boolean hudShown;
 
 		Build(ServerPlayer player, ServerLevel level, LocalFrame frame, Box allowed, AiBackend backend, BuildRequest request, int blocksPerTick,
 				Budget budget) {
@@ -537,7 +546,29 @@ public final class BuildManager {
 			job.cancel();
 		}
 
+		/**
+		 * The HUD panel (spec §5.3), while the owner is alive and in the build's world; taken down while they're
+		 * dead or elsewhere, and back when they return. Server thread.
+		 */
+		void hud(ServerPlayer player) {
+			if (!ServerPlayNetworking.canSend(player, BuildStatusPayload.TYPE)) {
+				return;
+			}
+			if (!player.isAlive() || player.level() != level) {
+				if (hudShown) {
+					ServerPlayNetworking.send(player, new BuildStatusPayload(BuildStatus.CLEAR));
+					hudShown = false;
+				}
+				return;
+			}
+			PhaseProgress progress = sink.progress();
+			ServerPlayNetworking.send(player, new BuildStatusPayload(new BuildStatus(title.isEmpty() ? Messages.hudUntitled() : title,
+					progress.phases(), progress.current(), job.placed(), budget.used(), budget.max(), note)));
+			hudShown = true;
+		}
+
 		private void briefed(Brief brief) {
+			title = brief.title();
 			StoredBuild titled = new StoredBuild(stored.dimension(), brief.title(), journal);
 			store.replace(owner, stored, titled);
 			stored = titled;
@@ -591,8 +622,11 @@ public final class BuildManager {
 			}
 			ServerPlayer online = server.getPlayerList().getPlayer(owner);
 			if (online != null) {
-				// The last "Building …" would otherwise linger for seconds after the build is over.
+				// The last "Building …" would otherwise linger for seconds after the build is over; the HUD too.
 				online.sendOverlayMessage(Component.empty());
+				if (ServerPlayNetworking.canSend(online, BuildStatusPayload.TYPE)) {
+					ServerPlayNetworking.send(online, new BuildStatusPayload(BuildStatus.CLEAR));
+				}
 			}
 			if (error == null && failure == null && stoppedBy == null && !cancelled && !summary.isBlank()) {
 				// finish's summary goes to chat (spec §8), above the count and [Undo].

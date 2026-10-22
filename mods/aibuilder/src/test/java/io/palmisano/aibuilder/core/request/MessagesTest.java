@@ -84,4 +84,12 @@ class MessagesTest {
 		assertEquals("Building walls (2/5) · 1,234 blocks placed · 12 of 150 tool calls.", Messages.status("walls (2/5)", 1234, 12, 150));
 		assertEquals("Building · 1 block placed · 1 of 150 tool calls.", Messages.status("", 1, 1, 150));
 	}
+
+	/** The HUD panel's counts, under its phase list (spec §5.3). */
+	@Test
+	void hudCountsBlocksAndTheBudget() {
+		assertEquals("12,345 blocks placed", Messages.hudPlaced(12_345));
+		assertEquals("1 block placed", Messages.hudPlaced(1));
+		assertEquals("Tool calls: 37 of 150", Messages.hudBudget(37, 150));
+	}
 }

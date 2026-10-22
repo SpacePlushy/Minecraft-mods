@@ -31,6 +31,11 @@ public final class McBuildSink implements BuildSink {
 		return phases.label();
 	}
 
+	/** The brief's phases and the one under way, for the HUD. Any thread. */
+	public PhaseProgress progress() {
+		return phases;
+	}
+
 	@Override
 	public void brief(Brief brief) {
 		phases = PhaseProgress.of(brief.phases());

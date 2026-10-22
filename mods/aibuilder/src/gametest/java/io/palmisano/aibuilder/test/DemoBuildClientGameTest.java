@@ -4,8 +4,10 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 
+import io.palmisano.aibuilder.client.StatusHud;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.world.UndoStore;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
@@ -62,7 +64,15 @@ public class DemoBuildClientGameTest implements FabricClientGameTest {
 			GameTestSupport.awaitChatStartingWith(ctx, "Building ");
 			GameTestSupport.check(server.computeOnServer(s -> UndoStore.get(s).peek(player).isPresent()),
 					"the running build isn't in the undo history");
+			// The HUD (spec §5.3): the brief's title and phases, ticked off as the checkpoints come.
+			ctx.waitFor(mc -> StatusHud.current().title().equals("Demo house"), 100);
+			ctx.waitFor(mc -> StatusHud.current().phase() >= 2, 600);
+			List<String> phases = ctx.computeOnClient(mc -> StatusHud.current().phases());
+			GameTestSupport.check(phases.equals(List.of("foundation", "walls", "roof", "interior", "garden")), "the HUD's phases: " + phases);
+			ctx.takeScreenshot("aibuilder-hud");
 			GameTestSupport.awaitChatStartingWith(ctx, "Done: ", 600);
+			// hudClearsAtTheEnd: gone with the build, not after a timeout.
+			ctx.waitFor(mc -> StatusHud.current().isClear(), 40);
 			// The finish summary goes to chat (spec §8).
 			GameTestSupport.awaitChat(ctx, "A small oak house on a stone-brick footing, with a spruce gable roof, a path to the door and a poppy either"
 					+ " side.");
@@ -87,6 +97,7 @@ public class DemoBuildClientGameTest implements FabricClientGameTest {
 			server.waitFor(s -> s.overworld().getBlockState(underDoor).is(Blocks.STONE_BRICKS));
 			GameTestSupport.runPlayerCommand(ctx, "aibuild cancel");
 			GameTestSupport.awaitChatStartingWith(ctx, "Stopped: ");
+			ctx.waitFor(mc -> StatusHud.current().isClear(), 40);
 			GameTestSupport.check(server.computeOnServer(s -> s.overworld().getBlockState(door).isAir()),
 					"the cancelled build got as far as the door");
 			GameTestSupport.runPlayerCommand(ctx, "aibuild undo");

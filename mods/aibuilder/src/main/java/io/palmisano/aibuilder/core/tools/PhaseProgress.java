@@ -28,6 +28,15 @@ public final class PhaseProgress {
 		return new PhaseProgress(phases, next, phase);
 	}
 
+	public List<String> phases() {
+		return phases;
+	}
+
+	/** The phase under way, counted from 0: as many as are done. */
+	public int current() {
+		return current;
+	}
+
 	/** "walls (2/7)"; without phases in the brief, the last checkpoint's name, or "" before the first. */
 	public String label() {
 		if (phases.isEmpty()) {
