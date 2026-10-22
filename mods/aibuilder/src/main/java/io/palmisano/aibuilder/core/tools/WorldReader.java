@@ -18,8 +18,11 @@ public interface WorldReader {
 		}
 	}
 
-	/** The columns of a local area, minX..minX+width−1 by minZ..minZ+depth−1. */
+	/** The columns of a local area, minX..minX+width−1 by minZ..minZ+depth−1, as read when the build started. */
 	TerrainSnapshot terrain(int minX, int minZ, int width, int depth);
+
+	/** The same, read again now: what terraform levels, after the build's own changes. */
+	TerrainSnapshot currentTerrain(int minX, int minZ, int width, int depth);
 
 	/** Exact block states in a local box, directions relative; x fastest, then z, then y. */
 	List<String> states(Box local);

@@ -52,6 +52,26 @@ class SurveyEncoderTest {
 				""", text);
 	}
 
+	/** A drop with nothing within reach below: marked, and left out of the floor's numbers. */
+	@Test
+	void noFloorColumnsAreMarkedAndLeftOutOfTheStats() {
+		Column drop = new Column(Column.NONE, Column.NONE, Column.NONE, "minecraft:air", 0, 0, false, 0, "");
+		String text = SurveyEncoder.encode(snapshot(0, 0, 3, 1, (x, z) -> x == 1 ? drop : floorAt(2 * x)), Box.of(0, 0, 0, 2, 9, 0), 30_000);
+		assertTrue(text.contains("Floor: 0..4, average 2.0; slope 0.0 "), text);
+		assertTrue(text.contains("No floor within 64 blocks below: 1 column (a drop or the void)."), text);
+		assertTrue(text.contains("Surface blocks: a=grass_block _=no floor\n"), text);
+		assertTrue(text.contains("cells by x, rightward from x 0; a run like a5 is five cells):\nz 0: a _ a\n"), text);
+		assertTrue(text.contains("Floor heights (same layout; 3x5 is height 3 five times):\nz 0: 0 _ 4\n"), text);
+	}
+
+	@Test
+	void aSurveyWithNoFloorAnywhereSaysSo() {
+		Column drop = new Column(Column.NONE, Column.NONE, Column.NONE, "minecraft:air", 0, 0, false, 0, "");
+		String text = SurveyEncoder.encode(snapshot(0, 0, 2, 2, (x, z) -> drop), Box.of(0, 0, 0, 1, 9, 1), 30_000);
+		assertTrue(text.contains("Floor: none within 64 blocks below anywhere here (a drop or the void).\n"), text);
+		assertTrue(text.contains("z 0: _x2\n"), text);
+	}
+
 	@Test
 	void aHillShowsInHeightsAndSlope() {
 		String text = SurveyEncoder.encode(snapshot(0, 0, 3, 1, (x, z) -> floorAt(2 * x)), Box.of(0, 0, 0, 2, 9, 0), 30_000);

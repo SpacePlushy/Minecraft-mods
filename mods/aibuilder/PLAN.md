@@ -103,3 +103,10 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   lava, trees, ceilings, surface blocks; coarsened to stay under 30,000 characters), and protection: blocks that
   look player-made are refused unless a clear asks for them, while blocks left by your own earlier builds aren't
   protected. `/aibuild survey` shows the survey in chat and saves the full text.
+- **2026-10-22:** M3's final review (a fresh Opus 5.5 reviewer) found one critical problem and seven important ones,
+  all fixed test-first, plus two smaller ones raised because real terrain trips them all the time. One terraform call
+  can no longer ask for millions of blocks; reads never touch the world off the server thread or load far chunks; the
+  survey reads mountains, ponds on raised ground and drops correctly; a wider survey still shows protected blocks; a
+  chest you filled stays protected even if a build placed it; a second terraform builds on the first; Claude is told
+  to build around protected blocks; cocoa, bee nests, Nether fungus and other natural blocks no longer count as
+  player-made; lily pads, bamboo and cactus aren't the ground. The smaller findings are in the M3 ledger.

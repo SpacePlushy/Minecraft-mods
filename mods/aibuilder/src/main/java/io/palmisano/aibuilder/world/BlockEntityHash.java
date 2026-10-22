@@ -10,7 +10,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  * What undo compares to tell the build's own block entity from one the player has changed since: a hash of its saved
  * data, leaving out what a block entity rewrites by itself as time passes.
  */
-final class BlockEntityHash {
+public final class BlockEntityHash {
 	/** Paths into the saved data that change on their own; a change there isn't the player's doing. */
 	private static final List<List<String>> CHANGES_BY_ITSELF = List.of(
 			// A vault's timer for its next look around for players.
@@ -20,7 +20,7 @@ final class BlockEntityHash {
 	}
 
 	/** 0 when there's no block entity. */
-	static int of(BlockEntity entity, HolderLookup.Provider registries) {
+	public static int of(BlockEntity entity, HolderLookup.Provider registries) {
 		return entity == null ? 0 : of(entity.saveWithFullMetadata(registries));
 	}
 

@@ -1,5 +1,7 @@
 package io.palmisano.aibuilder.world;
 
+import java.util.Set;
+
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
@@ -11,6 +13,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -34,6 +37,11 @@ public final class Sites {
 	 * leaves, logs and snow layers; else ground. Fluids come first: lava has no collision shape, so it would
 	 * otherwise read as open and a build would sink to the bottom of a lava lake.
 	 */
+	/** Plants with a collision shape: plants all the same, never the floor (§5.4; M3 review). */
+	private static final Set<Block> PLANTS = Set.of(Blocks.LILY_PAD, Blocks.BAMBOO, Blocks.CACTUS, Blocks.BIG_DRIPLEAF, Blocks.BIG_DRIPLEAF_STEM,
+			Blocks.SMALL_DRIPLEAF, Blocks.AZALEA, Blocks.FLOWERING_AZALEA, Blocks.CHORUS_PLANT, Blocks.CHORUS_FLOWER, Blocks.COCOA, Blocks.SEA_PICKLE,
+			Blocks.MOSS_CARPET, Blocks.PALE_MOSS_CARPET, Blocks.SWEET_BERRY_BUSH);
+
 	public static ColumnProbe column(ServerLevel level, int x, int z) {
 		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 		return y -> {
@@ -42,7 +50,7 @@ public final class Sites {
 				return Cell.FLUID;
 			}
 			if (state.isAir() || state.is(BlockTags.LEAVES) || state.is(BlockTags.LOGS) || state.is(Blocks.SNOW)
-					|| state.getCollisionShape(level, pos).isEmpty()) {
+					|| PLANTS.contains(state.getBlock()) || state.getCollisionShape(level, pos).isEmpty()) {
 				return Cell.OPEN;
 			}
 			return Cell.GROUND;

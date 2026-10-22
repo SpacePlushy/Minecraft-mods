@@ -146,6 +146,14 @@ public final class ToolExecutor {
 
 	private ToolResult inspect(Args a) {
 		Box box = a.box("box");
+		// Far from the site the server would load or even generate chunks on the spot, and freeze while it did.
+		Box readable = Box.of(allowed.min().x() - Tunables.SURVEY_RADIUS_MAX, Integer.MIN_VALUE / 2, allowed.min().z() - Tunables.SURVEY_RADIUS_MAX,
+				allowed.max().x() + Tunables.SURVEY_RADIUS_MAX, Integer.MAX_VALUE / 2, allowed.max().z() + Tunables.SURVEY_RADIUS_MAX);
+		if (!readable.contains(box.min()) || !readable.contains(box.max())) {
+			return ToolResult.error(RejectReason.OUT_OF_BOUNDS.wireName() + ": inspect_region looks at most " + Tunables.SURVEY_RADIUS_MAX
+					+ " blocks beyond the allowed box (x " + readable.min().x() + ".." + readable.max().x() + ", z " + readable.min().z() + ".."
+					+ readable.max().z() + ")");
+		}
 		if (box.volume() > Tunables.INSPECT_MAX_BLOCKS) {
 			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": inspect_region reads at most "
 					+ String.format(Locale.ROOT, "%,d", Tunables.INSPECT_MAX_BLOCKS) + " blocks a call; this box holds " + blocks(box.volume())
@@ -170,13 +178,14 @@ public final class ToolExecutor {
 	}
 
 	/**
-	 * Levels the box's footprint (inside the allowed box) to {@code target_y}, from the terrain as surveyed: what's
-	 * above becomes air, up to the column's highest block (so trees go too); below, the solid floor (under any
-	 * water or lava) is filled up with {@code fill_block}; {@code target_y} gets {@code surface_block}.
+	 * Levels the box's footprint (inside the allowed box) to {@code target_y}, from the ground as it is now: what's
+	 * queued is placed first, then the footprint is read again, so a second terraform over the same ground (a terrace,
+	 * a plinth) builds on the first. Above the target becomes air, up to the column's highest block (so trees go too);
+	 * below, the solid floor (under any water or lava) is filled up with {@code fill_block}; {@code target_y} gets
+	 * {@code surface_block}. Nothing outside the allowed box's height.
 	 */
-	private List<LocalBlock> terraform(Args a) {
+	private List<LocalBlock> terraform(Args a, int target) {
 		Box box = a.box("box");
-		int target = a.integer("target_y");
 		BlockSpec surface = BlockSpec.of(a.string("surface_block"));
 		BlockSpec fill = BlockSpec.of(a.optString("fill_block", "minecraft:dirt"));
 		int minX = Math.max(box.min().x(), allowed.min().x());
@@ -186,17 +195,21 @@ public final class ToolExecutor {
 		if (minX > maxX || minZ > maxZ) {
 			return List.of();
 		}
-		TerrainSnapshot terrain = world.terrain(minX, minZ, maxX - minX + 1, maxZ - minZ + 1);
+		sink.awaitPlaced();
+		TerrainSnapshot terrain = world.currentTerrain(minX, minZ, maxX - minX + 1, maxZ - minZ + 1);
 		List<LocalBlock> out = new ArrayList<>();
 		for (int z = minZ; z <= maxZ; z++) {
 			for (int x = minX; x <= maxX; x++) {
 				Column column = terrain.at(x, z);
-				int solid = column.floor() - column.water() - column.lava();
-				for (int y = solid + 1; y < target; y++) {
+				// Over a drop with no floor in reach, the fill comes up from the box's bottom.
+				boolean drop = column.floor() == Column.NONE;
+				int solid = drop ? allowed.min().y() - 1 : column.floor() - column.water() - column.lava();
+				for (int y = Math.max(solid + 1, allowed.min().y()); y < target; y++) {
 					out.add(new LocalBlock(new Pos(x, y, z), fill));
 				}
 				out.add(new LocalBlock(new Pos(x, target, z), surface));
-				for (int y = target + 1; y <= Math.max(column.top(), column.floor()); y++) {
+				int top = drop ? target : Math.min(Math.max(column.top(), column.floor()), allowed.max().y());
+				for (int y = target + 1; y <= top; y++) {
 					out.add(new LocalBlock(new Pos(x, y, z), AIR));
 				}
 			}
@@ -237,6 +250,15 @@ public final class ToolExecutor {
 		if (name.equals("set_blocks")) {
 			return setBlocks(a);
 		}
+		int terraformTarget = 0;
+		if (name.equals("terraform")) {
+			// Outside the box's height it couldn't place its surface anyway, and a far target would mean millions of blocks.
+			terraformTarget = a.integer("target_y");
+			if (terraformTarget < allowed.min().y() || terraformTarget > allowed.max().y()) {
+				return ToolResult.error(RejectReason.OUT_OF_BOUNDS.wireName() + ": target_y " + terraformTarget + " is outside the allowed box's height, y "
+						+ allowed.min().y() + ".." + allowed.max().y() + "; nothing was queued");
+			}
+		}
 		// A shape bigger than the whole allowed box is a mistake; refuse it before building it in memory.
 		long size = upperBound(name, a);
 		if (size > allowed.volume()) {
@@ -260,7 +282,7 @@ public final class ToolExecutor {
 					a.has("slab") ? BlockSpec.of(a.string("slab")) : null, a.has("ridge") ? axis(a.string("ridge")) : null,
 					a.optInt("overhang", 0), a.has("gable_block") ? BlockSpec.of(a.string("gable_block")) : null);
 			case "staircase" -> staircase(a);
-			case "terraform" -> terraform(a);
+			case "terraform" -> terraform(a, terraformTarget);
 			default -> throw new IllegalStateException(name);
 		};
 		return queue(blocks, false, name.equals("clear") && a.optBool("include_protected", false));
@@ -370,7 +392,8 @@ public final class ToolExecutor {
 			} else if (mask.isUnbreakable(block.pos())) {
 				problem = RejectReason.PROTECTED.wireName() + ": it can't be broken (bedrock, a barrier…), so it stays";
 			} else if (!includeProtected && mask.isProtected(block.pos())) {
-				problem = RejectReason.PROTECTED.wireName() + ": it looks player-made, so it stays (clear with include_protected removes it)";
+				problem = RejectReason.PROTECTED.wireName()
+						+ ": it looks player-made, so it stays: build around it (include_protected is only for when the player asked to remove it)";
 			} else if (queuedTotal >= maxChangedBlocks) {
 				problem = RejectReason.TOO_MANY.wireName() + ": this build has reached its limit of "
 						+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks";

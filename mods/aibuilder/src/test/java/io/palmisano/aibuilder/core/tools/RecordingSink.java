@@ -12,6 +12,9 @@ public class RecordingSink implements BuildSink {
 	public volatile Brief brief;
 	public volatile String finishedWith;
 	public volatile int placedSoFar = 42;
+	/** Runs when a tool waits for everything queued to be placed. */
+	public volatile Runnable onAwait = () -> {
+	};
 
 	@Override
 	public void brief(Brief brief) {
@@ -27,6 +30,11 @@ public class RecordingSink implements BuildSink {
 	public int checkpoint(String phase) {
 		checkpoints.add(phase);
 		return placedSoFar;
+	}
+
+	@Override
+	public void awaitPlaced() {
+		onAwait.run();
 	}
 
 	@Override

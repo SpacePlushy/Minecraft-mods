@@ -19,13 +19,16 @@ import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.survey.Column;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
+import io.palmisano.aibuilder.core.tools.ServerHop;
 import io.palmisano.aibuilder.core.tools.WorldFacts;
 import io.palmisano.aibuilder.core.tools.WorldReader;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
@@ -76,20 +79,38 @@ public final class McWorldReader implements WorldReader {
 			}
 			return new TerrainSnapshot(minX, minZ, width, depth, part);
 		}
-		// Bigger than the site: one more survey, without protection (that's only ever about the allowed box).
-		CompletableFuture<WorldSurvey.Survey> wider = new CompletableFuture<>();
-		level.getServer().execute(() -> {
-			WorldSurvey survey = new WorldSurvey(level, frame, allowed, minX, minZ, width, depth, false, List.of());
-			JobScheduler.add(survey);
-			survey.result().whenComplete((result, error) -> {
-				if (error != null) {
-					wider.completeExceptionally(error);
-				} else {
-					wider.complete(result);
+		// Bigger than the site: one more survey, without protection of its own. Protection is only ever about the
+		// allowed box, which the site covers, so the wider one shows the site's: writes there are refused all the same.
+		TerrainSnapshot wider = survey(minX, minZ, width, depth);
+		TerrainSnapshot siteTerrain = await(site, Tunables.SURVEY_TIMEOUT_SECONDS).terrain();
+		List<Column> columns = new ArrayList<>(wider.columns().size());
+		for (int z = minZ; z < minZ + depth; z++) {
+			for (int x = minX; x < minX + width; x++) {
+				Column c = wider.at(x, z);
+				if (siteTerrain.contains(x, z) && siteTerrain.at(x, z).protectedCount() > 0) {
+					Column s = siteTerrain.at(x, z);
+					c = new Column(c.floor(), c.top(), c.ceiling(), c.floorBlock(), c.water(), c.lava(), c.tree(), s.protectedCount(), s.protectedBlock());
 				}
-			});
-		});
-		return await(wider, Tunables.SURVEY_TIMEOUT_SECONDS).terrain();
+				columns.add(c);
+			}
+		}
+		return new TerrainSnapshot(minX, minZ, width, depth, columns);
+	}
+
+	@Override
+	public TerrainSnapshot currentTerrain(int minX, int minZ, int width, int depth) {
+		return survey(minX, minZ, width, depth);
+	}
+
+	/** A fresh survey of a local area, without protection: read over ticks on the server, waited for here. */
+	private TerrainSnapshot survey(int minX, int minZ, int width, int depth) {
+		MinecraftServer server = level.getServer();
+		CompletableFuture<WorldSurvey.Survey> survey = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
+			WorldSurvey reading = new WorldSurvey(level, frame, allowed, minX, minZ, width, depth, false, List.of());
+			JobScheduler.add(reading);
+			return reading;
+		}).thenCompose(WorldSurvey::result);
+		return await(survey, Tunables.SURVEY_TIMEOUT_SECONDS).terrain();
 	}
 
 	@Override
@@ -100,7 +121,10 @@ public final class McWorldReader implements WorldReader {
 			for (int y = local.min().y(); y <= local.max().y(); y++) {
 				for (int z = local.min().z(); z <= local.max().z(); z++) {
 					for (int x = local.min().x(); x <= local.max().x(); x++) {
-						out.add(describe(level.getBlockState(Positions.toBlockPos(frame.toWorld(new Pos(x, y, z)))).rotate(back)));
+						BlockPos pos = Positions.toBlockPos(frame.toWorld(new Pos(x, y, z)));
+						// Only what's loaded: reading an unloaded chunk would load (or generate) it right here, on the tick.
+						LevelChunk chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
+						out.add(chunk == null ? "not_loaded" : describe(chunk.getBlockState(pos).rotate(back)));
 					}
 				}
 			}
@@ -161,18 +185,11 @@ public final class McWorldReader implements WorldReader {
 
 	/** Runs a read on the server thread and waits for it; on the server thread itself, just runs it. */
 	private <T> T onServer(Supplier<T> read) {
-		if (level.getServer().isSameThread()) {
+		MinecraftServer server = level.getServer();
+		if (server.isSameThread()) {
 			return read.get();
 		}
-		CompletableFuture<T> future = new CompletableFuture<>();
-		level.getServer().execute(() -> {
-			try {
-				future.complete(read.get());
-			} catch (RuntimeException e) {
-				future.completeExceptionally(e);
-			}
-		});
-		return await(future, Tunables.READ_TIMEOUT_SECONDS);
+		return await(ServerHop.submit(server, server::isSameThread, server::isStopped, read), Tunables.READ_TIMEOUT_SECONDS);
 	}
 
 	private <T> T await(CompletableFuture<T> future, int seconds) {

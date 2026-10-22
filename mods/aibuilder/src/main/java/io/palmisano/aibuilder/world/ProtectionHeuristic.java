@@ -19,7 +19,7 @@ import net.minecraft.world.level.block.state.BlockState;
  * vanilla tags plus a short list count as natural; everything else counts as probably player-made, villages and other
  * generated structures included, which keeps builds off them too.
  */
-final class ProtectionHeuristic {
+public final class ProtectionHeuristic {
 	private static final List<TagKey<Block>> NATURAL_TAGS = List.of(BlockTags.BASE_STONE_OVERWORLD, BlockTags.BASE_STONE_NETHER,
 			BlockTags.DIRT, BlockTags.SAND, BlockTags.LOGS, BlockTags.LEAVES, BlockTags.FLOWERS, BlockTags.SMALL_FLOWERS, BlockTags.SAPLINGS,
 			BlockTags.ICE, BlockTags.SNOW, BlockTags.CORALS, BlockTags.CORAL_BLOCKS, BlockTags.WALL_CORALS, BlockTags.REPLACEABLE,
@@ -38,12 +38,16 @@ final class ProtectionHeuristic {
 			"weeping_vines", "weeping_vines_plant", "twisting_vines", "twisting_vines_plant", "basalt", "smooth_basalt", "calcite",
 			"powder_snow", "glow_lichen", "spore_blossom", "big_dripleaf", "big_dripleaf_stem", "small_dripleaf", "hanging_roots",
 			"rooted_dirt", "mangrove_roots", "muddy_mangrove_roots", "chorus_plant", "chorus_flower", "bubble_column", "ancient_debris",
-			"dead_bush", "leaf_litter", "firefly_bush", "bush", "short_dry_grass", "tall_dry_grass", "pink_petals", "wildflowers");
+			"dead_bush", "leaf_litter", "firefly_bush", "bush", "short_dry_grass", "tall_dry_grass", "pink_petals", "wildflowers",
+			// Found missing by the M3 review against 26.3's tag files (grass, podzol and mycelium left #dirt for #grass_blocks).
+			"grass_block", "podzol", "mycelium", "pumpkin", "melon", "cocoa", "bee_nest", "crimson_fungus", "warped_fungus", "infested_stone",
+			"infested_deepslate", "suspicious_gravel", "suspicious_sand", "bamboo_sapling", "sculk_sensor", "sculk_shrieker", "sculk_catalyst",
+			"turtle_egg", "frogspawn", "creaking_heart", "resin_clump");
 
 	private ProtectionHeuristic() {
 	}
 
-	static boolean isNatural(BlockState state) {
+	public static boolean isNatural(BlockState state) {
 		if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
 			return true;
 		}
@@ -57,7 +61,7 @@ final class ProtectionHeuristic {
 	}
 
 	/** Bedrock, barriers, end portal frames…: nothing may replace them. */
-	static boolean isUnbreakable(BlockState state) {
+	public static boolean isUnbreakable(BlockState state) {
 		return state.getDestroySpeed(EmptyBlockGetter.INSTANCE, BlockPos.ZERO) < 0;
 	}
 }

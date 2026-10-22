@@ -244,7 +244,7 @@
 	},
 	{
 		"name": "terraform",
-		"description": "Level the box's footprint (its y range is ignored) to target_y, from the terrain as surveyed: everything above target_y becomes air up to each column's highest block (trees too), the ground below is filled up with fill_block (default dirt, replacing any water or lava), and target_y gets surface_block. Protected blocks stay. Use it to make a flat site, a terrace or a raised plinth before building.",
+		"description": "Level the box's footprint (its y range is ignored) to target_y, which must be inside the allowed box's height, from the ground as it is now (what you queued earlier is placed first): everything above target_y becomes air up to each column's highest block (trees too), the ground below is filled up with fill_block (default dirt, replacing any water or lava), and target_y gets surface_block. Protected blocks stay. Use it to make a flat site, a terrace or a raised plinth before building.",
 		"input_schema": {
 			"type": "object",
 			"properties": {

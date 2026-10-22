@@ -11,6 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Predicate;
 
+import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.shapes.Box;
 
 /**
@@ -23,6 +24,8 @@ public final class SurveyEncoder {
 	/** Keys for surface blocks: letters and symbols, never digits, which are run lengths. */
 	private static final String KEYS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&*+=@^~!<>";
 	private static final char OTHER = '?';
+	/** A column with no floor within reach below: a drop, or the void. */
+	private static final char NO_FLOOR = '_';
 	private static final int MAX_CLUSTERS = 20;
 
 	private SurveyEncoder() {
@@ -61,17 +64,22 @@ public final class SurveyEncoder {
 		int deepestLava = 0;
 		int ceilings = 0;
 		int lowestCeiling = Integer.MAX_VALUE;
+		int drops = 0;
 		for (int z = s.minZ(); z <= s.maxZ(); z++) {
 			for (int x = s.minX(); x <= s.maxX(); x++) {
 				Column c = s.at(x, z);
+				if (c.floor() == Column.NONE) {
+					drops++;
+					continue;
+				}
 				min = Math.min(min, c.floor());
 				max = Math.max(max, c.floor());
 				sum += c.floor();
-				if (x < s.maxX()) {
+				if (x < s.maxX() && s.at(x + 1, z).floor() != Column.NONE) {
 					steps += Math.abs((long) c.floor() - s.at(x + 1, z).floor());
 					pairs++;
 				}
-				if (z < s.maxZ()) {
+				if (z < s.maxZ() && s.at(x, z + 1).floor() != Column.NONE) {
 					steps += Math.abs((long) c.floor() - s.at(x, z + 1).floor());
 					pairs++;
 				}
@@ -90,9 +98,18 @@ public final class SurveyEncoder {
 			}
 		}
 		int total = s.columns().size();
-		out.append("Floor: ").append(min).append("..").append(max).append(", average ").append(oneDecimal((double) sum / total))
-				.append("; slope ").append(oneDecimal(pairs == 0 ? 0 : (double) steps / pairs))
-				.append(" (average height step between neighbouring columns).\n");
+		int floored = total - drops;
+		if (floored == 0) {
+			out.append("Floor: none within ").append(Tunables.GROUND_SEARCH_DOWN).append(" blocks below anywhere here (a drop or the void).\n");
+		} else {
+			out.append("Floor: ").append(min).append("..").append(max).append(", average ").append(oneDecimal((double) sum / floored))
+					.append("; slope ").append(oneDecimal(pairs == 0 ? 0 : (double) steps / pairs))
+					.append(" (average height step between neighbouring columns).\n");
+			if (drops > 0) {
+				out.append("No floor within ").append(Tunables.GROUND_SEARCH_DOWN).append(" blocks below: ").append(drops)
+						.append(drops == 1 ? " column" : " columns").append(" (a drop or the void).\n");
+			}
+		}
 		out.append(water == 0 ? "Water: none." : "Water: " + water + " of " + total + " columns (" + Math.round(100.0 * water / total)
 				+ "%), deepest " + deepestWater + ".");
 		out.append(lava == 0 ? " Lava: none." : " Lava: " + lava + (lava == 1 ? " column" : " columns") + ", deepest " + deepestLava + ".");
@@ -125,6 +142,9 @@ public final class SurveyEncoder {
 		if (palette.containsValue(OTHER)) {
 			out.append(' ').append(OTHER).append("=other");
 		}
+		if (drops > 0) {
+			out.append(' ').append(NO_FLOOR).append("=no floor");
+		}
 		return out.append('\n').toString();
 	}
 
@@ -145,7 +165,7 @@ public final class SurveyEncoder {
 	/** Most common floor block first, then by id, each with a key; beyond the keys, "other". */
 	private static Map<String, Character> palette(TerrainSnapshot s) {
 		Map<String, Integer> counts = new HashMap<>();
-		s.columns().forEach(c -> counts.merge(c.floorBlock(), 1, Integer::sum));
+		s.columns().stream().filter(c -> c.floor() != Column.NONE).forEach(c -> counts.merge(c.floorBlock(), 1, Integer::sum));
 		Map<String, Character> palette = new LinkedHashMap<>();
 		counts.entrySet().stream()
 				.sorted(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
@@ -167,6 +187,10 @@ public final class SurveyEncoder {
 				for (int dz = 0; dz < cell && z + dz <= s.maxZ(); dz++) {
 					for (int dx = 0; dx < cell && x + dx <= s.maxX(); dx++) {
 						Column c = s.at(x + dx, z + dz);
+						if (c.floor() == Column.NONE) {
+							keyCounts.merge(NO_FLOOR, 1, Integer::sum);
+							continue;
+						}
 						keyCounts.merge(palette.get(c.floorBlock()), 1, Integer::sum);
 						sum += c.floor();
 						n++;
@@ -177,7 +201,7 @@ public final class SurveyEncoder {
 								.thenComparing(e -> -KEYS.indexOf(e.getKey())))
 						.map(Map.Entry::getKey).orElse(OTHER);
 				keys.add(String.valueOf(key));
-				floors.add(String.valueOf(Math.round((double) sum / n)));
+				floors.add(n == 0 ? String.valueOf(NO_FLOOR) : String.valueOf(Math.round((double) sum / n)));
 			}
 			surface.append("z ").append(z).append(": ").append(runs(keys, "")).append('\n');
 			heights.append("z ").append(z).append(": ").append(runs(floors, "x")).append('\n');

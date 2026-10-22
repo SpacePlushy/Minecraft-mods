@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -85,6 +86,20 @@ class ReadToolsTest {
 		assertTrue(ok.text().startsWith("Region x 0..1, y 0..1, z 0..0 (local): 4 blocks"), ok.text());
 	}
 
+	/** A box far from the site would make the server load or generate chunks on the spot: refused before reading. */
+	@Test
+	void inspectRegionFarAwayIsRefused() {
+		ToolExecutor tools = tools();
+		ToolResult far = tools.call("inspect_region", json("{\"box\":[0,0,4000,0,0,4095]}"));
+		assertTrue(far.isError() && far.text().contains("out_of_bounds") && far.text().contains("96 blocks"), far.text());
+		ToolResult side = tools.call("inspect_region", json("{\"box\":[108,0,0,108,0,0]}"));
+		assertTrue(side.isError(), side.text());
+		assertTrue(world.requests.isEmpty(), "nothing read for a refused call");
+		// The edge of what may be read: 96 beyond the allowed box (x -12..11, z 0..23).
+		assertFalse(tools.call("inspect_region", json("{\"box\":[107,0,-96,107,0,-96]}")).isError());
+		assertFalse(tools.call("inspect_region", json("{\"box\":[-108,-40,119,-108,40,119]}")).isError());
+	}
+
 	@Test
 	void searchListsProperties() {
 		String text = tools().call("search_blocks", json("{\"query\":\"oak stairs\"}")).text();
@@ -122,5 +137,64 @@ class ReadToolsTest {
 				Map.entry("3,0", "minecraft:oak_planks"), Map.entry("3,1", "minecraft:air"), Map.entry("3,2", "minecraft:air"),
 				Map.entry("3,3", "minecraft:air"), Map.entry("3,4", "minecraft:air"), Map.entry("3,5", "minecraft:air"))),
 				placed);
+	}
+
+	/** One terraform call could otherwise make millions of blocks in memory (a target far above or below the box). */
+	@Test
+	void terraformRefusesATargetOutsideTheBox() {
+		ToolExecutor tools = tools();
+		tools.call("submit_brief", json("{\"title\":\"site\",\"style\":\"flat\"}"));
+		for (int target : new int[] {1_000_000, 24, -7, -1_000_000}) {
+			ToolResult result = tools.call("terraform", json("{\"box\":[-12,0,0,11,0,23],\"target_y\":" + target + ",\"surface_block\":\"oak_planks\"}"));
+			assertTrue(result.isError() && result.text().contains("out_of_bounds") && result.text().contains("-6..23"), target + ": " + result.text());
+		}
+		assertEquals(0, sink.queuedCount());
+		assertTrue(world.requests.isEmpty(), "nothing read for a refused call");
+	}
+
+	/** A column taller or deeper than the box is levelled only inside it. */
+	@Test
+	void terraformStaysInsideTheBox() {
+		world.current = (x, z) -> x == 0 ? new Column(0, 40, Column.NONE, "minecraft:stone", 0, 0, false, 0, "")
+				: new Column(-20, -20, Column.NONE, "minecraft:stone", 0, 0, false, 0, "");
+		ToolExecutor tools = tools();
+		tools.call("submit_brief", json("{\"title\":\"site\",\"style\":\"flat\"}"));
+		tools.call("terraform", json("{\"box\":[0,0,1,1,0,1],\"target_y\":0,\"surface_block\":\"oak_planks\",\"fill_block\":\"stone\"}"));
+		int highest = sink.batches.getFirst().stream().mapToInt(p -> p.pos().y() - 64).max().orElseThrow();
+		int lowest = sink.batches.getFirst().stream().mapToInt(p -> p.pos().y() - 64).min().orElseThrow();
+		assertEquals(23, highest, "air only up to the box's top");
+		assertEquals(-6, lowest, "fill only from the box's bottom");
+	}
+
+	/** Over a drop with no floor in reach, the fill comes up from the box's bottom. */
+	@Test
+	void terraformFillsAColumnWithNoFloorFromTheBoxBottom() {
+		world.current = (x, z) -> new Column(Column.NONE, Column.NONE, Column.NONE, "minecraft:air", 0, 0, false, 0, "");
+		ToolExecutor tools = tools();
+		tools.call("submit_brief", json("{\"title\":\"site\",\"style\":\"flat\"}"));
+		tools.call("terraform", json("{\"box\":[0,0,1,0,0,1],\"target_y\":-4,\"surface_block\":\"oak_planks\",\"fill_block\":\"stone\"}"));
+		Map<Integer, String> column = new TreeMap<>();
+		sink.batches.getFirst().forEach(p -> column.put(p.pos().y() - 64, p.block().info().id()));
+		assertEquals(Map.of(-6, "minecraft:stone", -5, "minecraft:stone", -4, "minecraft:oak_planks"), column);
+	}
+
+	/**
+	 * Terraform works from the ground as it is now, after what's queued is placed: a site levelled to 0 and then
+	 * raised to 2 is solid under its new surface (spec §8: "a flat site, a terrace or a raised plinth").
+	 */
+	@Test
+	void terraformReadsTheWorldAsItIsNow() {
+		// When the build started the column stood at 3; an earlier terraform has since levelled it to 0.
+		world.columns = (x, z) -> new Column(3, 3, Column.NONE, "minecraft:grass_block", 0, 0, false, 0, "");
+		world.current = (x, z) -> new Column(0, 0, Column.NONE, "minecraft:oak_planks", 0, 0, false, 0, "");
+		sink.onAwait = () -> world.requests.add("awaitPlaced");
+		ToolExecutor tools = tools();
+		tools.call("submit_brief", json("{\"title\":\"site\",\"style\":\"flat\"}"));
+		tools.call("terraform", json("{\"box\":[0,0,1,0,0,1],\"target_y\":2,\"surface_block\":\"oak_planks\",\"fill_block\":\"stone\"}"));
+		Map<Integer, String> column = new TreeMap<>();
+		sink.batches.getFirst().forEach(p -> column.put(p.pos().y() - 64, p.block().info().id()));
+		assertEquals(Map.of(1, "minecraft:stone", 2, "minecraft:oak_planks"), column);
+		// What's queued goes in first, then the ground is read again.
+		assertEquals(List.of("awaitPlaced", "currentTerrain 0 1 1 1"), world.requests);
 	}
 }

@@ -4,19 +4,20 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
-import io.palmisano.aibuilder.core.place.BlockEquivalence;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
+import io.palmisano.aibuilder.core.place.RestoreDecision;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.site.Cell;
 import io.palmisano.aibuilder.core.site.ColumnProbe;
-import io.palmisano.aibuilder.core.site.GroundFinder;
+import io.palmisano.aibuilder.core.site.SurveyFloor;
 import io.palmisano.aibuilder.core.survey.Column;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 import net.minecraft.core.BlockPos;
@@ -112,8 +113,35 @@ public final class WorldSurvey implements Tickable {
 		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 		ColumnProbe probe = Sites.column(level, wx, wz);
 
-		// The floor is found the way the origin's was (§5.4), from just above the origin's ground.
-		int floor = GroundFinder.find(probe, originY + 1);
+		// Protection runs through the whole allowed box, so a cellar or a cave base counts too.
+		int protectedCount = 0;
+		Map<String, Integer> kinds = new HashMap<>();
+		if (protect && x >= allowed.min().x() && x <= allowed.max().x() && z >= allowed.min().z() && z <= allowed.max().z()) {
+			for (int y = allowed.min().y(); y <= allowed.max().y(); y++) {
+				BlockState state = level.getBlockState(pos.set(wx, originY + y, wz));
+				if (state.isAir()) {
+					continue;
+				}
+				Pos local = new Pos(x, y, z);
+				if (ProtectionHeuristic.isUnbreakable(state)) {
+					mask.unbreakable(local);
+				} else if (!ProtectionHeuristic.isNatural(state) && !leftByAnEarlierBuild(pos, state)) {
+					mask.protect(local);
+					protectedCount++;
+					kinds.merge(id(state), 1, Integer::sum);
+				}
+			}
+		}
+		String mainKind = kinds.entrySet().stream()
+				.max(Map.Entry.<String, Integer>comparingByValue().thenComparing(Map.Entry.comparingByKey()))
+				.map(Map.Entry::getKey).orElse("");
+
+		// From just above the origin's ground, like the origin's own floor, but to a mountain's top (SurveyFloor).
+		OptionalInt found = SurveyFloor.find(probe, originY + 1, originY + allowed.max().y());
+		if (found.isEmpty()) {
+			return new Column(Column.NONE, Column.NONE, Column.NONE, "minecraft:air", 0, 0, false, protectedCount, mainKind);
+		}
+		int floor = found.getAsInt();
 		BlockState floorState = level.getBlockState(pos.set(wx, floor, wz));
 		int water = 0;
 		int lava = 0;
@@ -145,35 +173,18 @@ public final class WorldSurvey implements Tickable {
 			}
 		}
 
-		// Protection runs through the whole allowed box, so a cellar or a cave base counts too.
-		int protectedCount = 0;
-		Map<String, Integer> kinds = new HashMap<>();
-		if (protect && x >= allowed.min().x() && x <= allowed.max().x() && z >= allowed.min().z() && z <= allowed.max().z()) {
-			for (int y = allowed.min().y(); y <= allowed.max().y(); y++) {
-				BlockState state = level.getBlockState(pos.set(wx, originY + y, wz));
-				if (state.isAir()) {
-					continue;
-				}
-				Pos local = new Pos(x, y, z);
-				if (ProtectionHeuristic.isUnbreakable(state)) {
-					mask.unbreakable(local);
-				} else if (!ProtectionHeuristic.isNatural(state) && !leftByAnEarlierBuild(new Pos(wx, originY + y, wz), state)) {
-					mask.protect(local);
-					protectedCount++;
-					kinds.merge(id(state), 1, Integer::sum);
-				}
-			}
-		}
-		String mainKind = kinds.entrySet().stream()
-				.max(Map.Entry.<String, Integer>comparingByValue().thenComparing(Map.Entry.comparingByKey()))
-				.map(Map.Entry::getKey).orElse("");
 		return new Column(floor - originY, top - originY, ceiling, id(floorState), water, lava, tree, protectedCount, mainKind);
 	}
 
-	/** Still the block one of the player's earlier builds put there: theirs to change (spec §11). */
-	private boolean leftByAnEarlierBuild(Pos world, BlockState state) {
+	/**
+	 * Still exactly what one of the player's earlier builds left there, its data too: theirs to change (spec §11). A
+	 * chest that build placed and the player has since filled is the player's now, as undo would judge it.
+	 */
+	private boolean leftByAnEarlierBuild(BlockPos at, BlockState state) {
+		Pos world = Positions.toPos(at);
 		for (UndoJournal<BlockState, CompoundTag> journal : earlier) {
-			if (journal.has(world) && journal.writtenBlock(world) != null && BlockEquivalence.same(id(state), journal.writtenBlock(world))) {
+			if (journal.has(world) && journal.decide(world, id(state), BlockEntityHash.of(level.getBlockEntity(at), level.registryAccess()))
+					== RestoreDecision.RESTORE) {
 				return true;
 			}
 		}

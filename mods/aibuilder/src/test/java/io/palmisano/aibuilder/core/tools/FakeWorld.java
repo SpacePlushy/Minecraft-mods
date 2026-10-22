@@ -31,6 +31,22 @@ public final class FakeWorld implements WorldReader {
 		return new TerrainSnapshot(minX, minZ, width, depth, grid);
 	}
 
+	/** The columns as they are now, for terraform; null: the same as {@link #columns}. */
+	public BiFunction<Integer, Integer, Column> current;
+
+	@Override
+	public TerrainSnapshot currentTerrain(int minX, int minZ, int width, int depth) {
+		requests.add("currentTerrain " + minX + " " + minZ + " " + width + " " + depth);
+		BiFunction<Integer, Integer, Column> now = current != null ? current : columns;
+		List<Column> grid = new ArrayList<>();
+		for (int z = minZ; z < minZ + depth; z++) {
+			for (int x = minX; x < minX + width; x++) {
+				grid.add(now.apply(x, z));
+			}
+		}
+		return new TerrainSnapshot(minX, minZ, width, depth, grid);
+	}
+
 	@Override
 	public List<String> states(Box local) {
 		requests.add("states " + local);

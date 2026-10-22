@@ -38,11 +38,11 @@ B key ──► AiBuilderClient ──► BuilderScreen ──Build──► Bui
 | `core/blocks/` | **Pure**: `Validator` (unknown, banned, compass words, bad property/value, with suggestions) over a `BlockCatalog`. |
 | `core/shapes/` | **Pure**: `Shapes` (fill, wall, line, cylinder, sphere, cone, arch), `Roofs`, `Staircases` → local blocks. |
 | `core/place/` | **Pure**: `PlacementOrder` (passes, bottom-up), `UndoJournal` (first original wins; restore only if unchanged), `UndoHistory`. |
-| `core/tools/` | **Pure**: `ToolExecutor` (all 19 tools; `tools.json` is the catalog), `WorldReader` (what the read tools and protection read through), `Budget`, `PhaseProgress`, `BuildSink`. |
+| `core/tools/` | **Pure**: `ToolExecutor` (all 19 tools; `tools.json` is the catalog), `WorldReader` (what the read tools and protection read through), `ServerHop` (a world read runs on the server thread or fails, never inline on a stopping server), `Budget`, `PhaseProgress`, `BuildSink`. |
 | `core/survey/` | **Pure**: `TerrainSnapshot`/`Column` and `SurveyEncoder` (survey_area's compact text, coarsened to stay under 30,000 characters), `RegionEncoder` (inspect_region). |
 | `core/place/ProtectionMask` | **Pure**: protected (probably player-made) and unbreakable spots in the allowed box; a write there is rejected `protected`. |
 | `core/agent/` | **Pure**: `AiBackend`, `ScriptedBackend` (replays a script on a worker thread). M4 adds Claude Code. |
-| `core/site/` | **Pure**: `GroundFinder` (the floor nearest the feet), `BuildBox` (allowed box per tier, clipped to the world). |
+| `core/site/` | **Pure**: `GroundFinder` (the origin's floor, nearest the feet), `SurveyFloor` (a survey column's: climbs a mountain to the box top, reads water on raised ground to its surface, "no floor" over a drop), `BuildBox` (allowed box per tier, clipped to the world). |
 | `world/` | Minecraft side: `McBlockCatalog`, `StateFactory` (rotate, second halves, persistent leaves), `PlacementJob`, `ShapePass`, `JobScheduler`, `BuildTickets`, `UndoStore`, `UndoRunner`, `Sites`, `Occupancy`, `ProtectionHeuristic` (natural = vanilla terrain/growth tags + a short list), `WorldSurvey` (columns and the protection mask, read over ticks), `McWorldReader` (the real `WorldReader`: starts the site survey when a build starts; region and fact reads hop to the server thread). |
 | `BuildManager` | One per server: one job at a time (build or undo), owner only; status in the action bar; saves on stop; `/aibuild survey`. |
 | `BuildPermission` | Singleplayer owner only (M6 adds the dedicated-server allow list). |
@@ -116,7 +116,11 @@ from its arguments, is more than the whole allowed box is refused as `too_many` 
 - **Chunk tickets:** the future from `addTicketAndLoadWithRadius(type, pos, 1)` completes only once the chunk
   *ticks*, which needs all 8 neighbours generated (seconds on fresh terrain). Undo uses radius 0 (loaded only).
 - No `Blocks.RED_BED`: beds are `Blocks.BED`, a `ColorCollection` (`Blocks.BED.pick(DyeColor.RED)`), all
-  `AbstractBedBlock` (the new straw bed too); the id is still `minecraft:red_bed`.
+  `AbstractBedBlock` (the new straw bed too); the id is still `minecraft:red_bed`. Wool is one too (no `Blocks.WHITE_WOOL`).
+- Once a server is stopping, `server.execute(task)` runs the task inline on the caller's thread: a world read from
+  another thread must check it's on the server thread (`ServerHop`). `getChunkSource().getChunkNow(x, z)` reads a
+  chunk only if it's loaded; `level.getBlockState` loads (or generates) it on the spot.
+- In 26.3 `#minecraft:dirt` no longer holds grass, podzol or mycelium (they're `#grass_blocks`).
 - `BlockState.is(Block / TagKey / …)` and `ItemStack.is(Item)` come from `TypedInstance`, not the classes themselves.
 - Signs: `sign.getText(SignTextSlot.FRONT).asMutable().setLine(0, text).asImmutable()`, then `setText(…, slot)`.
 - DFU 10 has no `Codec.unit`; use `MapCodec.unit(supplier).codec()`. `SavedDataType(id, constructor, codec, null)`.

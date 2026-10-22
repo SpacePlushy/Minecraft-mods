@@ -95,6 +95,9 @@ class ToolExecutorTest {
 		ToolResult result = briefed().call("fill", json("{\"box\":[0,0,0,0,0,2],\"block\":\"stone\"}"));
 		assertEquals(List.of(new Pos(0, 64, 0), new Pos(0, 64, 2)), sink.batches.getFirst().stream().map(Placement::pos).toList());
 		assertTrue(result.text().contains("1 block — protected"), result.text());
+		// What Claude reads when a player's house is in the way: build around it; the bypass is for the player's own ask.
+		assertTrue(result.text().contains("build around it (include_protected is only for when the player asked to remove it)"), result.text());
+		assertFalse(result.text().contains("clear with include_protected removes it"), result.text());
 	}
 
 	@Test
