@@ -16,6 +16,8 @@ public final class Tunables {
 	public static final int SET_BLOCKS_MAX = 2000;
 	/** Builds per player that can be undone. */
 	public static final int UNDO_HISTORY = 5;
+	/** The most builds a player's undo history may keep, whatever the config says (its undo_history_size goes to 50). */
+	public static final int UNDO_HISTORY_CEILING = 50;
 	/** How far the ground search climbs out of solid ground. */
 	public static final int GROUND_SEARCH_UP = 16;
 	/** How far the ground search falls through air. */

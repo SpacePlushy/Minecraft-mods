@@ -2,6 +2,10 @@ package io.palmisano.aibuilder.test;
 
 import static io.palmisano.aibuilder.test.GameTestSupport.check;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 
 import io.palmisano.aibuilder.BuildManager;
@@ -12,6 +16,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestServerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import net.fabricmc.loader.api.FabricLoader;
 
 /**
  * A real build from a prompt in the real game, with the fake Claude Code in place of the real one: the launch, the
@@ -38,6 +43,21 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 				ctx.takeScreenshot("aibuilder-fake-claude-hut");
 				GameTestSupport.runPlayerCommand(ctx, "aibuild undo");
 				GameTestSupport.awaitChatStartingWith(ctx, "Undone: ", 600);
+
+				// config/aibuilder.json (spec §14) applies to the next build without a restart: with one tool call, the
+				// fake's fill is refused (the budget's spent) and it finishes in its grace calls with nothing placed,
+				// where the default 150 build the 26-block hut.
+				Path config = FabricLoader.getInstance().getConfigDir().resolve("aibuilder.json");
+				check(Files.isRegularFile(config), "no config/aibuilder.json written on the first run");
+				String defaults = read(config);
+				write(config, "{\"max_tool_iterations\": 1}");
+				try {
+					TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "build");
+					GameTestSupport.runPlayerCommand(ctx, "aibuild a capped hut");
+					GameTestSupport.awaitChatStartingWith(ctx, "Done: 0 blocks placed.", 600);
+				} finally {
+					write(config, defaults);
+				}
 
 				// The plan's usage limit: the build stops at once and says when it resets.
 				TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "usage_limit");
@@ -69,6 +89,22 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 			} finally {
 				TestHooks.claudeEnvironment = TestSetup.DEFAULT_SCENARIO;
 			}
+		}
+	}
+
+	private static String read(Path file) {
+		try {
+			return Files.readString(file);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+	}
+
+	private static void write(Path file, String text) {
+		try {
+			Files.writeString(file, text);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
 		}
 	}
 }

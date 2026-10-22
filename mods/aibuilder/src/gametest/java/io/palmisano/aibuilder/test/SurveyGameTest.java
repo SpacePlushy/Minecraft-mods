@@ -7,6 +7,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.config.AiBuilderConfig;
 import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
@@ -45,7 +46,8 @@ public class SurveyGameTest {
 
 	private static McWorldReader reader(GameTestHelper helper, Facing facing, List<UndoJournal<BlockState, CompoundTag>> earlier) {
 		LocalFrame frame = ArenaBuilds.frame(helper, facing);
-		return new McWorldReader(helper.getLevel(), frame, ArenaBuilds.ALLOWED, SizeTier.SMALL, () -> null, earlier, new UndoJournal<>());
+		return new McWorldReader(helper.getLevel(), frame, ArenaBuilds.ALLOWED, SizeTier.SMALL, () -> null, earlier, new UndoJournal<>(),
+				AiBuilderConfig.DEFAULT);
 	}
 
 	@GameTest(structure = ARENA, maxTicks = 400)
@@ -258,6 +260,24 @@ public class SurveyGameTest {
 			helper.assertFalse(read.join().isProtected(ownLocal), "the player's earlier AI build is protected from them");
 			helper.assertTrue(read.join().isProtected(otherLocal), "other player-made planks aren't protected");
 			helper.assertTrue(read.join().isProtected(chestLocal), "the chest the player filled isn't protected");
+		});
+	}
+
+	/** protect_player_blocks off (spec §11, §14): nothing is protected as player-made; what can't be broken still is. */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void protectionCanBeTurnedOff(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		Pos planksLocal = new Pos(0, 1, 4);
+		Pos bedrockLocal = new Pos(2, 1, 4);
+		level.setBlock(ArenaBuilds.worldPos(helper, Facing.SOUTH, planksLocal), Blocks.OAK_PLANKS.defaultBlockState(), Block.UPDATE_ALL);
+		level.setBlock(ArenaBuilds.worldPos(helper, Facing.SOUTH, bedrockLocal), Blocks.BEDROCK.defaultBlockState(), Block.UPDATE_ALL);
+		McWorldReader world = new McWorldReader(level, ArenaBuilds.frame(helper, Facing.SOUTH), ArenaBuilds.ALLOWED, SizeTier.SMALL, () -> null,
+				List.of(), new UndoJournal<>(), AiBuilderConfig.load("{\"protect_player_blocks\": false}").config());
+		CompletableFuture<ProtectionMask> read = offThread(world::protection);
+		helper.succeedWhen(() -> {
+			helper.assertTrue(read.isDone(), "the protection mask hasn't come back");
+			helper.assertFalse(read.join().isProtected(planksLocal), "the planks are protected with protection off");
+			helper.assertTrue(read.join().isUnbreakable(bedrockLocal), "bedrock isn't unbreakable any more");
 		});
 	}
 

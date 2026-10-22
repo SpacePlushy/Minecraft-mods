@@ -6,6 +6,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -36,6 +37,8 @@ import io.palmisano.aibuilder.core.agent.McpHandler;
 import io.palmisano.aibuilder.core.agent.McpSessions;
 import io.palmisano.aibuilder.core.agent.ScriptedBackend;
 import io.palmisano.aibuilder.core.blocks.Validator;
+import io.palmisano.aibuilder.core.config.AiBuilderConfig;
+import io.palmisano.aibuilder.core.config.ConfigFile;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.request.BuildPrompt;
@@ -106,9 +109,33 @@ public final class BuildManager {
 	private Undo undo;
 	private Starting starting;
 	private int ticksToStatus;
+	private AiBuilderConfig config;
+	private FileTime configTime;
 
 	private BuildManager(MinecraftServer server) {
 		this.server = server;
+	}
+
+	/**
+	 * {@code config/aibuilder.json} (spec §14), read again whenever it has changed, so an edit applies to the next
+	 * build without a restart. Written with the defaults on the first run. Server thread.
+	 */
+	public AiBuilderConfig config() {
+		Path dir = FabricLoader.getInstance().getConfigDir();
+		FileTime time = modified(dir.resolve(ConfigFile.NAME));
+		if (config == null || time == null || !time.equals(configTime)) {
+			config = ConfigFile.load(dir, AiBuilderMod.LOG::warn);
+			configTime = modified(dir.resolve(ConfigFile.NAME));
+		}
+		return config;
+	}
+
+	private static FileTime modified(Path file) {
+		try {
+			return Files.getLastModifiedTime(file);
+		} catch (IOException e) {
+			return null;
+		}
 	}
 
 	public static void register() {
@@ -158,11 +185,18 @@ public final class BuildManager {
 			reply(player, undo != null ? Messages.undoing() : Messages.busy());
 			return;
 		}
-		LocalFrame frame = Sites.ahead(player);
+		AiBuilderConfig cfg = config();
+		LocalFrame frame = Sites.ahead(player, cfg.siteGap());
 		ServerLevel level = player.level();
 		Optional<Box> allowed = BuildBox.allowed(size, frame.origin().y(), level.getMinY(), level.getMaxY());
 		if (allowed.isEmpty()) {
 			reply(player, Messages.noRoom());
+			return;
+		}
+		if (cfg.backend().equals("scripted")) {
+			// Offline (spec §14): every prompt builds the demo house through the real tools, no Claude.
+			reply(player, Messages.accepted(prompt, size));
+			build = new Build(player, level, frame, allowed.get(), demo(), new BuildRequest(prompt, size), cfg.placementRate(), budget(cfg), cfg);
 			return;
 		}
 		Starting start = new Starting(player.getUUID());
@@ -170,7 +204,7 @@ public final class BuildManager {
 		reply(player, Messages.accepted(prompt, size));
 		Map<String, String> environment = childEnvironment();
 		List<String> override = TestHooks.claudeCommand;
-		CompletableFuture.supplyAsync(() -> check(override, environment), CHECKS).whenComplete((checked, error) -> server.execute(() -> {
+		CompletableFuture.supplyAsync(() -> check(override, environment, cfg.claudePath()), CHECKS).whenComplete((checked, error) -> server.execute(() -> {
 			if (starting != start) {
 				return;
 			}
@@ -187,20 +221,32 @@ public final class BuildManager {
 				return;
 			}
 			try {
-				build = new Build(owner, level, frame, allowed.get(), claudeBackend(checked.command(), environment, owner),
-						new BuildRequest(prompt, size), Tunables.BLOCKS_PER_TICK, new Budget(Tunables.MAX_TOOL_CALLS, Tunables.MAX_OUTPUT_TOKENS,
-								Tunables.MAX_BUILD_MINUTES * 60_000L, System::currentTimeMillis));
+				build = new Build(owner, level, frame, allowed.get(), claudeBackend(checked.command(), environment, owner, cfg),
+						new BuildRequest(prompt, size), cfg.placementRate(), budget(cfg), cfg);
 			} catch (IOException e) {
 				tell(start.owner, Component.literal(Messages.failed("the mod's tool server couldn't start: " + e.getMessage())));
 			}
 		}));
 	}
 
-	/** The command to launch, or the player's line for why there's none (not installed, not logged in…). Blocking. */
-	private static Checked check(List<String> override, Map<String, String> environment) {
+	/** A build's caps from the config (spec §12.2): tool calls, output tokens, minutes. */
+	private static Budget budget(AiBuilderConfig cfg) {
+		return new Budget(cfg.maxToolIterations(), cfg.maxTokensPerBuild(), cfg.maxBuildMinutes() * 60_000L, System::currentTimeMillis);
+	}
+
+	private static ScriptedBackend demo() {
+		return new ScriptedBackend(resource("/aibuilder/scripts/demo_house.json"), task -> Thread.ofPlatform().daemon().name("aibuilder-build").start(task));
+	}
+
+	/**
+	 * The command to launch, or the player's line for why there's none (not installed, not logged in…); {@code path}
+	 * is the config's claude_path ("" to search). Blocking.
+	 */
+	private static Checked check(List<String> override, Map<String, String> environment, String path) {
 		List<String> command = override;
 		if (command == null) {
-			Optional<List<String>> found = ClaudeChecks.command(null, System.getenv(), Path.of(System.getProperty("user.home")), Files::isExecutable);
+			Optional<List<String>> found = ClaudeChecks.command(path.isEmpty() ? null : path, System.getenv(), Path.of(System.getProperty("user.home")),
+					Files::isExecutable);
 			if (found.isEmpty()) {
 				return new Checked(List.of(), Messages.notInstalled());
 			}
@@ -229,10 +275,13 @@ public final class BuildManager {
 		return ClaudeLaunch.environment(env);
 	}
 
-	private ClaudeCodeBackend claudeBackend(List<String> command, Map<String, String> environment, ServerPlayer player) throws IOException {
+	private ClaudeCodeBackend claudeBackend(List<String> command, Map<String, String> environment, ServerPlayer player, AiBuilderConfig cfg)
+			throws IOException {
 		String time = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
 		Path streamLog = server.getServerDirectory().resolve("logs/aibuilder").resolve(time + "_" + player.getName().getString() + ".stream.jsonl");
-		return new ClaudeCodeBackend(new ClaudeCodeBackend.Config(command, environment, ClaudeSettings.DEFAULT, systemPrompt(), endpoint(),
+		// The turn backstop stays above the tool-call cap, whatever the config sets it to.
+		ClaudeSettings settings = new ClaudeSettings(cfg.model(), cfg.effort(), Math.max(Tunables.MAX_TURNS, cfg.maxToolIterations() + 50));
+		return new ClaudeCodeBackend(new ClaudeCodeBackend.Config(command, environment, settings, systemPrompt(), endpoint(),
 				Path.of(System.getProperty("java.io.tmpdir"), "aibuilder"), streamLog, Duration.ofSeconds(Tunables.STARTUP_TIMEOUT_SECONDS),
 				Duration.ofSeconds(Tunables.CAP_GRACE_SECONDS), Duration.ofSeconds(Tunables.CANCEL_GRACE_SECONDS)));
 	}
@@ -275,18 +324,18 @@ public final class BuildManager {
 			reply(player, undo != null ? Messages.undoing() : Messages.busy());
 			return Outcome.BUSY;
 		}
-		LocalFrame frame = Sites.ahead(player);
+		AiBuilderConfig cfg = config();
+		LocalFrame frame = Sites.ahead(player, cfg.siteGap());
 		ServerLevel level = player.level();
 		Optional<Box> allowed = BuildBox.allowed(SizeTier.AUTO, frame.origin().y(), level.getMinY(), level.getMaxY());
 		if (allowed.isEmpty()) {
 			reply(player, Messages.noRoom());
 			return Outcome.NOTHING;
 		}
-		ScriptedBackend demo = new ScriptedBackend(resource("/aibuilder/scripts/demo_house.json"),
-				task -> Thread.ofPlatform().daemon().name("aibuilder-build").start(task));
-		// Slow on purpose: something to watch, check on with /aibuild status and cancel half-way.
-		build = new Build(player, level, frame, allowed.get(), demo, new BuildRequest("the demo house", SizeTier.AUTO),
-				Tunables.DEMO_BLOCKS_PER_TICK, new Budget(Tunables.MAX_TOOL_CALLS));
+		// Slow on purpose: something to watch, check on with /aibuild status and cancel half-way. Its own caps, so
+		// the demo works whatever the config says.
+		build = new Build(player, level, frame, allowed.get(), demo(), new BuildRequest("the demo house", SizeTier.AUTO),
+				Tunables.DEMO_BLOCKS_PER_TICK, new Budget(Tunables.MAX_TOOL_CALLS), cfg);
 		return Outcome.STARTED;
 	}
 
@@ -334,7 +383,7 @@ public final class BuildManager {
 			reply(player, Messages.failed("that build's dimension doesn't exist any more"));
 			return Outcome.NOTHING;
 		}
-		undo = new Undo(player.getUUID(), stored.get(), new UndoRunner(level, stored.get().journal(), Tunables.BLOCKS_PER_TICK));
+		undo = new Undo(player.getUUID(), stored.get(), new UndoRunner(level, stored.get().journal(), config().placementRate()));
 		return Outcome.STARTED;
 	}
 
@@ -347,7 +396,8 @@ public final class BuildManager {
 			reply(player, Messages.ownerOnly());
 			return Outcome.REFUSED;
 		}
-		LocalFrame frame = Sites.ahead(player);
+		AiBuilderConfig cfg = config();
+		LocalFrame frame = Sites.ahead(player, cfg.siteGap());
 		ServerLevel level = player.level();
 		Optional<Box> allowed = BuildBox.allowed(SizeTier.AUTO, frame.origin().y(), level.getMinY(), level.getMaxY());
 		if (allowed.isEmpty()) {
@@ -357,7 +407,8 @@ public final class BuildManager {
 		UUID owner = player.getUUID();
 		List<UndoJournal<BlockState, CompoundTag>> earlier = UndoStore.get(server).builds(owner).stream()
 				.filter(build -> build.dimension().equals(level.dimension())).map(StoredBuild::journal).toList();
-		McWorldReader reader = new McWorldReader(level, frame, allowed.get(), SizeTier.AUTO, player::blockPosition, earlier, new UndoJournal<>());
+		McWorldReader reader = new McWorldReader(level, frame, allowed.get(), SizeTier.AUTO, player::blockPosition, earlier, new UndoJournal<>(),
+				cfg);
 		reply(player, Messages.surveying());
 		reader.whenRead().whenComplete((survey, error) -> {
 			if (error != null) {
@@ -499,7 +550,7 @@ public final class BuildManager {
 		boolean hudShown;
 
 		Build(ServerPlayer player, ServerLevel level, LocalFrame frame, Box allowed, AiBackend backend, BuildRequest request, int blocksPerTick,
-				Budget budget) {
+				Budget budget, AiBuilderConfig cfg) {
 			owner = player.getUUID();
 			this.level = level;
 			this.budget = budget;
@@ -510,11 +561,12 @@ public final class BuildManager {
 			world = new McWorldReader(level, frame, allowed, request.size(), () -> {
 				ServerPlayer online = server.getPlayerList().getPlayer(owner);
 				return online == null ? null : online.blockPosition();
-			}, earlier, journal);
+			}, earlier, journal, cfg);
 			stored = new StoredBuild(level.dimension(), "", journal);
-			store.push(owner, stored);
+			store.push(owner, stored, cfg.undoHistorySize());
+			long cap = cfg.sizeLimit(request.size());
 			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level), blocksPerTick,
-					Tunables.TICK_BUDGET_NANOS, request.size().maxChangedBlocks());
+					Tunables.TICK_BUDGET_NANOS, cap);
 			chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(allowed.min())), Positions.toBlockPos(frame.toWorld(allowed.max())));
 			BuildTickets.hold(level, chunks);
 			JobScheduler.add(job);
@@ -524,8 +576,8 @@ public final class BuildManager {
 				summary = finished == null ? "" : finished;
 				job.finish();
 			});
-			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, allowed, request.size(),
-					request.size().maxChangedBlocks(), sink, budget, world);
+			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Set.copyOf(cfg.bannedBlocks())), frame, allowed, request.size(),
+					cap, sink, budget, world);
 			handle = backend.start(request, tools, new BuildEvents() {
 				@Override
 				public void status(String text) {

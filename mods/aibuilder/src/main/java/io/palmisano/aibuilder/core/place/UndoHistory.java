@@ -19,9 +19,14 @@ public final class UndoHistory<J> {
 	}
 
 	public void push(UUID player, J entry) {
+		push(player, entry, max);
+	}
+
+	/** Keeps the newest {@code keep} (undo_history_size), never more than {@code max}. */
+	public void push(UUID player, J entry, int keep) {
 		Deque<J> builds = byPlayer.computeIfAbsent(player, p -> new ArrayDeque<>());
 		builds.addFirst(entry);
-		while (builds.size() > max) {
+		while (builds.size() > Math.max(1, Math.min(keep, max))) {
 			builds.removeLast();
 		}
 	}

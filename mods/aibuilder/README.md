@@ -49,6 +49,26 @@ Builds leave your own blocks alone: anything that doesn't look like natural terr
 village) counts as yours, and a build won't replace it unless you ask for that. It's a rule of thumb, so a log cabin
 looks like trees to it; `/aibuild undo` is always there.
 
+## Settings
+
+`config/aibuilder.json` in the game folder is written the first time a build starts, with every setting at its
+default; edits apply to the next build, no restart needed. A value that's wrong falls back to its default, with a
+warning in the log.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `model`, `effort` | `claude-opus-5-5`, `high` | The Claude model builds use, and how hard it thinks (`low` … `max`) |
+| `claude_path` | empty | Where Claude Code is, if AI Builder doesn't find it by itself |
+| `size_limits` | 15,000 / 100,000 / 350,000 / 1,000,000 | Blocks one build may change, Small to Epic |
+| `blocks_per_tick`, `animate_build` | 250, `true` | How fast blocks go in; `false` places 8 times as many a tick (the game's time per tick still caps it) |
+| `max_tool_iterations`, `max_tokens_per_build`, `max_build_minutes` | 150, 500,000, 45 | When a build is stopped |
+| `undo_history_size` | 5 | Builds per player that `/aibuild undo` can take back (up to 50) |
+| `protect_player_blocks` | `true` | Builds leave blocks that look player-made alone; `false` lets them replace anything but unbreakable blocks |
+| `site_gap` | 3 | How far in front of you a build starts |
+| `banned_blocks` | TNT, spawners, fire… | Blocks a build never places (unbreakable blocks never anyway) |
+| `backend` | `claude_code` | `scripted` makes every prompt build the demo house, with no Claude |
+| `allowed_players`, `require_op`, `op_level`, `rate_limit_per_hour` | | Who may build on a server, and how often (see below) |
+
 ## When a build can't start or stops early
 
 | Chat says | What it means |

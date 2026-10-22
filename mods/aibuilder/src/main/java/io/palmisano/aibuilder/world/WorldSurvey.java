@@ -49,6 +49,7 @@ public final class WorldSurvey implements Tickable {
 	private final int width;
 	private final int depth;
 	private final boolean protect;
+	private final boolean heuristic;
 	private final List<UndoJournal<BlockState, CompoundTag>> earlier;
 	private final Set<ChunkPos> chunks;
 	private final CompletableFuture<Void> loaded;
@@ -58,9 +59,12 @@ public final class WorldSurvey implements Tickable {
 	private final CompletableFuture<Survey> result = new CompletableFuture<>();
 	private int next;
 
-	/** Server thread. */
+	/**
+	 * Server thread. {@code protect}: read the masks (the site's survey); {@code heuristic}: protect what looks
+	 * player-made (the config's protect_player_blocks; unbreakable blocks are protected either way).
+	 */
 	public WorldSurvey(ServerLevel level, LocalFrame frame, Box allowed, int minX, int minZ, int width, int depth, boolean protect,
-			List<UndoJournal<BlockState, CompoundTag>> earlier) {
+			boolean heuristic, List<UndoJournal<BlockState, CompoundTag>> earlier) {
 		this.level = level;
 		this.frame = frame;
 		this.allowed = allowed;
@@ -69,6 +73,7 @@ public final class WorldSurvey implements Tickable {
 		this.width = width;
 		this.depth = depth;
 		this.protect = protect;
+		this.heuristic = heuristic;
 		this.earlier = List.copyOf(earlier);
 		this.chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(new Pos(minX, 0, minZ))),
 				Positions.toBlockPos(frame.toWorld(new Pos(minX + width - 1, 0, minZ + depth - 1))));
@@ -139,7 +144,7 @@ public final class WorldSurvey implements Tickable {
 				}
 				if (ProtectionHeuristic.isUnbreakable(state)) {
 					mask.unbreakable(local);
-				} else if (!ProtectionHeuristic.isNatural(state) && !leftByAnEarlierBuild(pos, state)) {
+				} else if (heuristic && !ProtectionHeuristic.isNatural(state) && !leftByAnEarlierBuild(pos, state)) {
 					mask.protect(local);
 					protectedCount++;
 					kinds.merge(id(state), 1, Integer::sum);

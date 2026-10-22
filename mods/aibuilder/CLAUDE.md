@@ -36,6 +36,7 @@ B key ──► AiBuilderClient ──► BuilderScreen ──Build──► Bui
 | Where | What |
 |---|---|
 | `core/request/` | **Pure**: `SizeTier` (size, block cap), `BuildPrompt`, `PromptHistory`, `Messages` (all chat copy). |
+| `core/config/` | **Pure**: `AiBuilderConfig` (`config/aibuilder.json`, spec §14: every key with its default; a bad value falls back with a warning; `_`-keys are comments) and `ConfigFile` (written whole with the defaults on the first run, never rewritten). `BuildManager.config()` reads it again whenever the file changes, so edits apply to the next build. The demo (`/aibuild test`) keeps its own caps. |
 | `core/frame/` | **Pure**: `Facing` (yaw snap), `LocalFrame` (local ↔ world), `Directions` (forward/left… ↔ the template's compass). |
 | `core/blocks/` | **Pure**: `Validator` (unknown, banned, compass words, bad property/value, with suggestions) over a `BlockCatalog`. |
 | `core/shapes/` | **Pure**: `Shapes` (fill, wall, line, cylinder, sphere, cone, arch), `Roofs`, `Staircases` → local blocks. |

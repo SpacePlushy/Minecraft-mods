@@ -132,7 +132,8 @@ public final class UndoStore extends SavedData {
 
 	public static final SavedDataType<UndoStore> TYPE = new SavedDataType<>(AiBuilderMod.id("undo"), UndoStore::new, CODEC, null);
 
-	private final UndoHistory<StoredBuild> history = new UndoHistory<>(Tunables.UNDO_HISTORY);
+	/** The config's undo_history_size is kept at each push; a world saved with a bigger one loads whole. */
+	private final UndoHistory<StoredBuild> history = new UndoHistory<>(Tunables.UNDO_HISTORY_CEILING);
 
 	public UndoStore() {
 	}
@@ -143,7 +144,12 @@ public final class UndoStore extends SavedData {
 	}
 
 	public void push(UUID player, StoredBuild build) {
-		history.push(player, build);
+		push(player, build, Tunables.UNDO_HISTORY);
+	}
+
+	/** Keeps the player's newest {@code keep} builds (the config's undo_history_size). */
+	public void push(UUID player, StoredBuild build, int keep) {
+		history.push(player, build, keep);
 		setDirty();
 	}
 

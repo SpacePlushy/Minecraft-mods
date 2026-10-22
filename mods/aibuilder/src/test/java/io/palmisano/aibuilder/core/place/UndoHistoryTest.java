@@ -24,6 +24,21 @@ class UndoHistoryTest {
 	}
 
 	/** A running build sits in the history (saved with the world) without being taken off it. */
+	/** undo_history_size (spec §14): each push keeps as many as the config asks for, never more than the ceiling. */
+	@Test
+	void pushKeepsAsManyAsAsked() {
+		UndoHistory<Integer> history = new UndoHistory<>(50);
+		for (int i = 1; i <= 12; i++) {
+			history.push(frankie, i, 10);
+		}
+		assertEquals(10, history.size(frankie));
+		history.push(frankie, 13, 3);
+		assertEquals(3, history.size(frankie));
+		assertEquals(Optional.of(13), history.peek(frankie));
+		history.push(frankie, 14, 99);
+		assertEquals(4, history.size(frankie));
+	}
+
 	@Test
 	void peekLeavesTheNewestInPlace() {
 		UndoHistory<String> history = new UndoHistory<>(5);

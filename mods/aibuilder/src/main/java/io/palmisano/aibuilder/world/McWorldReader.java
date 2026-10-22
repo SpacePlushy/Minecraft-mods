@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.world;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -11,7 +12,7 @@ import java.util.stream.Collectors;
 
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.blocks.ItemCatalog;
-import io.palmisano.aibuilder.core.blocks.Validator;
+import io.palmisano.aibuilder.core.config.AiBuilderConfig;
 import io.palmisano.aibuilder.core.frame.Directions;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
@@ -54,21 +55,22 @@ public final class McWorldReader implements WorldReader {
 
 	/**
 	 * Server thread. {@code player} gives the player's position, or null when there's no one; {@code journal} is this
-	 * build's own, for check_build.
+	 * build's own, for check_build; {@code config} says whether player-made blocks are protected and what's banned.
 	 */
 	public McWorldReader(ServerLevel level, LocalFrame frame, Box allowed, SizeTier tier, Supplier<BlockPos> player,
-			List<UndoJournal<BlockState, CompoundTag>> earlier, UndoJournal<BlockState, CompoundTag> journal) {
+			List<UndoJournal<BlockState, CompoundTag>> earlier, UndoJournal<BlockState, CompoundTag> journal, AiBuilderConfig config) {
 		this.level = level;
 		this.frame = frame;
 		this.allowed = allowed;
 		this.player = player;
 		this.journal = journal;
-		this.items = new McItemCatalog(level.registryAccess(), Validator.DEFAULT_BANNED);
+		this.items = new McItemCatalog(level.registryAccess(), Set.copyOf(config.bannedBlocks()));
 		int radius = tier.size() / 2 + 8;
 		this.siteMinX = Math.floorDiv(allowed.min().x() + allowed.max().x() + 1, 2) - radius;
 		this.siteMinZ = Math.floorDiv(allowed.min().z() + allowed.max().z() + 1, 2) - radius;
 		this.siteSize = 2 * radius + 1;
-		WorldSurvey survey = new WorldSurvey(level, frame, allowed, siteMinX, siteMinZ, siteSize, siteSize, true, earlier);
+		WorldSurvey survey = new WorldSurvey(level, frame, allowed, siteMinX, siteMinZ, siteSize, siteSize, true, config.protectPlayerBlocks(),
+				earlier);
 		JobScheduler.add(survey);
 		this.site = survey.result();
 	}
@@ -117,7 +119,7 @@ public final class McWorldReader implements WorldReader {
 	private TerrainSnapshot survey(int minX, int minZ, int width, int depth) {
 		MinecraftServer server = level.getServer();
 		CompletableFuture<WorldSurvey.Survey> survey = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
-			WorldSurvey reading = new WorldSurvey(level, frame, allowed, minX, minZ, width, depth, false, List.of());
+			WorldSurvey reading = new WorldSurvey(level, frame, allowed, minX, minZ, width, depth, false, false, List.of());
 			JobScheduler.add(reading);
 			return reading;
 		}).thenCompose(WorldSurvey::result);

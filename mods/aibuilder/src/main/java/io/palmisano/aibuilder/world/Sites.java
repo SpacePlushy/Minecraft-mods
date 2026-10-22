@@ -24,10 +24,15 @@ public final class Sites {
 
 	/** Facing the way the player looks, the origin {@link Tunables#SITE_GAP} blocks ahead of their feet. */
 	public static LocalFrame ahead(ServerPlayer player) {
+		return ahead(player, Tunables.SITE_GAP);
+	}
+
+	/** The same, {@code gap} blocks ahead (the config's site_gap). */
+	public static LocalFrame ahead(ServerPlayer player, int gap) {
 		Facing facing = Facing.fromYaw(player.getYRot());
 		BlockPos feet = player.blockPosition();
-		int x = feet.getX() + facing.forwardX() * Tunables.SITE_GAP;
-		int z = feet.getZ() + facing.forwardZ() * Tunables.SITE_GAP;
+		int x = feet.getX() + facing.forwardX() * gap;
+		int z = feet.getZ() + facing.forwardZ() * gap;
 		int y = GroundFinder.find(column(player.level(), x, z), feet.getY());
 		return new LocalFrame(new Pos(x, y, z), facing);
 	}
