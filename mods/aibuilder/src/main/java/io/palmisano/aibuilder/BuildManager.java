@@ -60,6 +60,7 @@ import io.palmisano.aibuilder.core.request.Refinement;
 import io.palmisano.aibuilder.core.request.BuildSession;
 import io.palmisano.aibuilder.core.request.RateLimit;
 import io.palmisano.aibuilder.core.request.BuildStatus;
+import io.palmisano.aibuilder.core.request.HudUpdate;
 import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
@@ -801,17 +802,20 @@ public final class BuildManager {
 			if (!ServerPlayNetworking.canSend(player, BuildStatusPayload.TYPE)) {
 				return;
 			}
-			if (!player.isAlive() || player.level() != level) {
-				if (hudShown) {
+			switch (HudUpdate.decide(player.isAlive(), player.level() == level, hudShown)) {
+				case SEND -> {
+					PhaseProgress progress = sink.progress();
+					ServerPlayNetworking.send(player, new BuildStatusPayload(new BuildStatus(title.isEmpty() ? Messages.hudUntitled() : title,
+							progress.phases(), progress.current(), job.placed(), budget.used(), budget.max(), note)));
+					hudShown = true;
+				}
+				case CLEAR -> {
 					ServerPlayNetworking.send(player, new BuildStatusPayload(BuildStatus.CLEAR));
 					hudShown = false;
 				}
-				return;
+				case NOTHING -> {
+				}
 			}
-			PhaseProgress progress = sink.progress();
-			ServerPlayNetworking.send(player, new BuildStatusPayload(new BuildStatus(title.isEmpty() ? Messages.hudUntitled() : title,
-					progress.phases(), progress.current(), job.placed(), budget.used(), budget.max(), note)));
-			hudShown = true;
 		}
 
 		private void briefed(Brief brief) {

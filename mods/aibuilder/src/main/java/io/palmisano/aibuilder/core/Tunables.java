@@ -27,6 +27,12 @@ public final class Tunables {
 	public static final int GROUND_SEARCH_DOWN = 64;
 	/** Ticks between action-bar status updates. */
 	public static final int STATUS_INTERVAL_TICKS = 20;
+	/** The status panel (spec §5.3): a title, phase name or note shows at most this many characters (Claude's text). */
+	public static final int HUD_TEXT_MAX = 48;
+	/** Phases the panel lists, at most. */
+	public static final int HUD_PHASES_MAX = 12;
+	/** The panel goes when no status has come for this long (a lost connection, a crash). */
+	public static final int HUD_STALE_SECONDS = 5;
 	/** How often a running build's session record catches up with what it has built (a crash loses at most this). */
 	public static final int SESSION_REFRESH_TICKS = 100;
 	/** How long a checkpoint waits for its blocks to be placed: well inside Claude Code's 120 s MCP timeout. */

@@ -125,7 +125,7 @@ public sealed interface BlockEntityData {
 	 * too unless {@code breaks} (they become spaces), ends trimmed, at most {@code max} UTF-16 units, which is how the
 	 * game measures (an emoji is two; a book title over its 32 fails to save). A cut never splits an emoji.
 	 */
-	static String plain(String text, int max, boolean breaks) {
+	public static String plain(String text, int max, boolean breaks) {
 		StringBuilder out = new StringBuilder(text.length());
 		for (int i = 0; i < text.length();) {
 			int cp = text.codePointAt(i);

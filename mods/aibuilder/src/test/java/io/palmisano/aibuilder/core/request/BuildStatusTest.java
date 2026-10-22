@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Collections;
 import java.util.List;
 
+import io.palmisano.aibuilder.core.Tunables;
 import org.junit.jupiter.api.Test;
 
 /** What the HUD panel shows (spec §5.3). */
@@ -28,9 +29,18 @@ class BuildStatusTest {
 	@Test
 	void claudesTextIsBounded() {
 		BuildStatus status = new BuildStatus("T".repeat(100), Collections.nCopies(30, "p".repeat(100)), 0, 0, 0, 1, "");
-		assertEquals(BuildStatus.TEXT_MAX, status.title().length());
-		assertEquals(BuildStatus.PHASES_MAX, status.phases().size());
-		assertEquals(BuildStatus.TEXT_MAX, status.phases().getFirst().length());
+		assertEquals(Tunables.HUD_TEXT_MAX, status.title().length());
+		assertEquals(Tunables.HUD_PHASES_MAX, status.phases().size());
+		assertEquals(Tunables.HUD_TEXT_MAX, status.phases().getFirst().length());
+	}
+
+	/** Claude's text, shown as text: no colours or other formatting codes, no control characters. */
+	@Test
+	void formattingCodesAreDropped() {
+		BuildStatus status = new BuildStatus("§cRed §lCastle", List.of("§kwalls\u0007", "roof\ttop"), 0, 0, 0, 1, "§rStarting\nClaude");
+		assertEquals("Red Castle", status.title());
+		assertEquals(List.of("walls", "roof top"), status.phases());
+		assertEquals("Starting Claude", status.note());
 	}
 
 	@Test

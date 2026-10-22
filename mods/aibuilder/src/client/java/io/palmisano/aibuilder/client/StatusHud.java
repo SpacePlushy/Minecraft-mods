@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.client;
 
 import java.util.List;
 
+import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.request.BuildStatus;
 import io.palmisano.aibuilder.core.request.Messages;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
@@ -18,7 +19,6 @@ import net.minecraft.client.multiplayer.ClientLevel;
  * one it came from.
  */
 public final class StatusHud implements HudElement {
-	private static final long STALE_NANOS = 5_000_000_000L;
 	private static final int MARGIN = 4;
 	private static final int PAD = 4;
 	private static final int LINE = 10;
@@ -48,7 +48,7 @@ public final class StatusHud implements HudElement {
 	public static BuildStatus current() {
 		BuildStatus shown = status;
 		ClientLevel level = Minecraft.getInstance().level;
-		if (shown.isClear() || level == null || level != receivedIn || System.nanoTime() - receivedAt > STALE_NANOS) {
+		if (shown.isClear() || level == null || level != receivedIn || System.nanoTime() - receivedAt > Tunables.HUD_STALE_SECONDS * 1_000_000_000L) {
 			return BuildStatus.CLEAR;
 		}
 		return shown;
