@@ -59,6 +59,9 @@ final class ShapePass {
 	}
 
 	private void reshape(BlockPos pos) {
+		if (!loadedAround(pos)) {
+			return;
+		}
 		try {
 			BlockState state = level.getBlockState(pos);
 			if (!state.getFluidState().isEmpty()) {
@@ -74,5 +77,21 @@ final class ShapePass {
 				AiBuilderMod.LOG.warn("Couldn't update the shape at {}", pos, e);
 			}
 		}
+	}
+
+	/**
+	 * A shape update reads all six neighbours, and reading a block in an unloaded chunk loads it on the spot,
+	 * stalling the server: only update where they're all loaded. (Up and down are in the same chunk.)
+	 */
+	private boolean loadedAround(BlockPos pos) {
+		if (!level.isLoaded(pos)) {
+			return false;
+		}
+		for (Direction side : Direction.Plane.HORIZONTAL) {
+			if (!level.isLoaded(pos.relative(side))) {
+				return false;
+			}
+		}
+		return true;
 	}
 }

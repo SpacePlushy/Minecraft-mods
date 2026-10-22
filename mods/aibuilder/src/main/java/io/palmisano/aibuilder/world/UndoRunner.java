@@ -26,8 +26,8 @@ import net.minecraft.world.level.storage.TagValueInput;
 /**
  * Takes a build back (spec §10): every position that still holds the block the build left there, with the same
  * block-entity data, gets its original back, contents included; anything the player has changed since stays and is
- * counted. Supports first, bottom-up, with the build's own flags, then the finalize pass. Holds tickets on every
- * chunk the journal touches and waits for them to load, so it works however far away the build is.
+ * counted. Supports first, bottom-up, with the build's own flags, then the finalize pass. Keeps every chunk the
+ * journal touches loaded and waits for them, so it works however far away the build is.
  */
 public final class UndoRunner implements Tickable {
 	public record UndoResult(int restored, int kept) {
@@ -58,7 +58,7 @@ public final class UndoRunner implements Tickable {
 		Set<ChunkPos> touched = new LinkedHashSet<>();
 		order.forEach(p -> touched.add(ChunkPos.containing(Positions.toBlockPos(p))));
 		this.chunks = touched;
-		this.loaded = BuildTickets.holdAndLoad(level, chunks);
+		this.loaded = BuildTickets.load(level, chunks);
 	}
 
 	/** Completes on the server thread once everything is restored and finalized. */
@@ -87,14 +87,14 @@ public final class UndoRunner implements Tickable {
 		if (!shapePass.run(deadline)) {
 			return false;
 		}
-		BuildTickets.release(level, chunks);
+		BuildTickets.unload(level, chunks);
 		result.complete(new UndoResult(restored, kept));
 		return true;
 	}
 
 	@Override
 	public void failed(RuntimeException error) {
-		BuildTickets.release(level, chunks);
+		BuildTickets.unload(level, chunks);
 		result.completeExceptionally(error);
 	}
 

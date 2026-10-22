@@ -46,11 +46,20 @@ public final class BuildTickets {
 		chunks.forEach(chunk -> level.getChunkSource().addTicketWithRadius(TYPE, chunk, RADIUS));
 	}
 
-	/** {@link #hold}, completing once every chunk is loaded. Server thread. */
-	public static CompletableFuture<Void> holdAndLoad(ServerLevel level, Set<ChunkPos> chunks) {
+	/**
+	 * Keeps the chunks loaded but not ticking, which is all undo needs to read and write blocks, and completes once
+	 * they're loaded. (A ticking ticket's future would also wait for every neighbouring chunk to generate.)
+	 * Undo with {@link #unload}. Server thread.
+	 */
+	public static CompletableFuture<Void> load(ServerLevel level, Set<ChunkPos> chunks) {
 		return CompletableFuture.allOf(chunks.stream()
-				.map(chunk -> level.getChunkSource().addTicketAndLoadWithRadius(TYPE, chunk, RADIUS))
+				.map(chunk -> level.getChunkSource().addTicketAndLoadWithRadius(TYPE, chunk, 0))
 				.toArray(CompletableFuture[]::new));
+	}
+
+	/** Server thread. */
+	public static void unload(ServerLevel level, Set<ChunkPos> chunks) {
+		chunks.forEach(chunk -> level.getChunkSource().removeTicketWithRadius(TYPE, chunk, 0));
 	}
 
 	/** Server thread. */
