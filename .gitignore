@@ -24,6 +24,7 @@ bin/
 
 # Local-only tool state
 .claude/settings.local.json
+.claude/worktrees/
 .superpowers/
 
 # Python bytecode
