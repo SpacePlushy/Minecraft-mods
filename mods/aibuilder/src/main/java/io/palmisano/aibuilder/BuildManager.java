@@ -130,6 +130,8 @@ public final class BuildManager {
 	private int ratesPerHour;
 	/** The last build's backend: done once its Claude Code process has ended. */
 	private CompletableFuture<?> lastBackend = CompletableFuture.completedFuture(null);
+	/** Ticks until the running build's session record is brought up to date. */
+	private int ticksToRemember = Tunables.SESSION_REFRESH_TICKS;
 
 	private BuildManager(MinecraftServer server) {
 		this.server = server;
@@ -575,8 +577,13 @@ public final class BuildManager {
 		if (build == null) {
 			return;
 		}
-		// The running build's journal is in the undo history: an autosave mid-build writes it with the blocks.
+		// The running build's journal is in the undo history: an autosave mid-build writes it with the blocks. Its
+		// session record too, every few seconds, so a crash mid-build leaves a build to refine (M6 review).
 		build.store.setDirty();
+		if (--ticksToRemember <= 0) {
+			ticksToRemember = Tunables.SESSION_REFRESH_TICKS;
+			build.remember();
+		}
 		if (--ticksToStatus > 0) {
 			return;
 		}
@@ -597,9 +604,15 @@ public final class BuildManager {
 	 */
 	private void stop() {
 		if (build != null) {
+			// What it built so far stays refinable after the restart, as it stays undoable (M6 review).
+			build.remember();
 			build.handle.cancel();
 			build.job.cancel();
 			build.store.setDirty();
+			if (build.logging != null) {
+				build.logging.log().outcome("stopped", Messages.stopped(build.job.placed()), build.job.placed(), 0);
+				build.logging.writer().close();
+			}
 			build = null;
 		}
 		starting = null;
@@ -806,9 +819,10 @@ public final class BuildManager {
 
 		/**
 		 * The refinement record (spec §5.4): a Claude build's changes start a session, or join the one it refined, with
-		 * the Claude Code session it ran in; a build that changed nothing leaves it as it was; the demo ends it.
+		 * the Claude Code session it ran in; a build that changed nothing leaves it as it was; the demo ends it. Made
+		 * from what the build started with each time, so it's called as the build goes, at a stop and at the end.
 		 */
-		private void remember() {
+		void remember() {
 			SessionStore sessions = SessionStore.get(server);
 			if (!claude) {
 				sessions.remove(owner);
@@ -854,6 +868,10 @@ public final class BuildManager {
 			}
 			BuildTickets.release(level, chunks);
 			remember();
+			if (refines != null && handle.sessionLost()) {
+				// Nothing can resume it: the next prompt here builds new (M6 review).
+				SessionStore.get(server).remove(owner);
+			}
 			// A build that changed nothing leaves the history, so undo never answers with nothing restored. Frames count.
 			boolean undoable = !journal.isEmpty();
 			if (undoable) {

@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -67,6 +68,9 @@ class ClaudeCodeBackendTest {
 	private final Scrub scrub = new Scrub();
 	/** Where the builds' folders go; the test's own folder unless a test says otherwise. */
 	private Path root;
+	private final UUID session = UUID.randomUUID();
+	/** The request resumes {@link #session} (a refinement) instead of starting it. */
+	private boolean resume;
 	private McpHttpServer server;
 	private Budget budget = new Budget(150);
 	private Duration startupTimeout = Duration.ofSeconds(30);
@@ -97,7 +101,7 @@ class ClaudeCodeBackendTest {
 				Duration.ofSeconds(5), Duration.ofSeconds(2), scrub));
 		ToolExecutor tools = new ToolExecutor(new Validator(FakeCatalog.standard(), Validator.DEFAULT_BANNED), new LocalFrame(new Pos(0, 64, 0),
 				Facing.SOUTH), Box.of(-12, -6, 0, 11, 23, 23), SizeTier.SMALL, 15_000, sink, budget, world);
-		return backend.start(new BuildRequest(prompt, SizeTier.SMALL), tools, new BuildEvents() {
+		return backend.start(new BuildRequest(prompt, SizeTier.SMALL, session, resume), tools, new BuildEvents() {
 			@Override
 			public void status(String note) {
 				notes.add(note);
@@ -233,6 +237,36 @@ class ClaudeCodeBackendTest {
 		assertEquals(Messages.connectionLost("API Error: Connection error."), handle.reason());
 		// What it placed before the connection went is in the sink, for the undo.
 		assertEquals(1, sink.batches.size());
+	}
+
+	/**
+	 * Claude Code no longer has the session a refinement resumes (the world moved to another computer, a month went by):
+	 * the build says so and is marked so, for the record to end (M6 review).
+	 */
+	@Test
+	void aSessionThatCantBeResumedIsSaidSo() throws Exception {
+		resume = true;
+		BuildHandle handle = start("refine", "add a door", Map.of("FAKE_CLAUDE_SESSION_GONE", "1"));
+		assertEquals(BuildOutcome.FAILED, outcome(handle));
+		assertTrue(handle.sessionLost());
+		assertEquals(Messages.sessionGone("No conversation found with session ID: " + session), handle.reason());
+	}
+
+	@Test
+	void aNewSessionIsNeverLost() throws Exception {
+		BuildHandle handle = start("crash", "a hut", Map.of());
+		assertEquals(BuildOutcome.FAILED, outcome(handle));
+		assertFalse(handle.sessionLost());
+	}
+
+	/** If the temp root can't be used, the private one in its place is the same every time: refinements resume there. */
+	@Test
+	void theFallbackRootIsTheSameEveryTime() throws Exception {
+		Path elsewhere = Files.createDirectories(temp.resolve("elsewhere"));
+		Path link = Files.createSymbolicLink(temp.resolve("aibuilder-link"), elsewhere);
+		Path fallback = ClaudeCodeBackend.privateRoot(link);
+		assertEquals(temp.resolve("aibuilder-link-" + System.getProperty("user.name")), fallback);
+		assertEquals(fallback, ClaudeCodeBackend.privateRoot(link));
 	}
 
 	@Test

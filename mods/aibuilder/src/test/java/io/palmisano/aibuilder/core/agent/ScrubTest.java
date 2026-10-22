@@ -20,6 +20,16 @@ class ScrubTest {
 		assertEquals("a login [redacted]", scrub.apply("a login sk-ant-oat01-Q2xhdWRlQ29kZU9BdXRo"));
 	}
 
+	/** Logs are JSON: a key on a line of its own follows "\\n", and a word character before it is no word boundary. */
+	@Test
+	void keysAfterAnEscapeAreScrubbed() {
+		Scrub scrub = new Scrub();
+		assertEquals("{\"prompt\":\"a castle\\n[redacted]\"}", scrub.apply("{\"prompt\":\"a castle\\nsk-ant-api03-abcdefghijkl\"}"));
+		assertEquals("{\"text\":\"key:\\t[redacted]\"}", scrub.apply("{\"text\":\"key:\\tsk-ant-api03-abcdefghijkl\"}"));
+		assertEquals("my_key_[redacted]", scrub.apply("my_key_sk-ant-api03-abcdefghijkl"));
+		assertEquals("{\"h\":\"x\\nBearer [redacted]\"}", scrub.apply("{\"h\":\"x\\nBearer abcdefghijklmnopqrstuvwxyz012345\"}"));
+	}
+
 	@Test
 	void ordinaryTextStays() {
 		Scrub scrub = new Scrub();

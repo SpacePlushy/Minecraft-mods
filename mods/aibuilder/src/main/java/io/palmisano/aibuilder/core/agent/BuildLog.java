@@ -14,6 +14,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import io.palmisano.aibuilder.core.tools.ToolResult;
 
 /**
@@ -171,8 +172,26 @@ public final class BuildLog {
 		return line;
 	}
 
+	/** Every text in it scrubbed as it is, before JSON escapes it, then the line once more. */
 	private void write(JsonObject line) {
-		out.accept(scrub.apply(GSON.toJson(line)));
+		out.accept(scrub.apply(GSON.toJson(scrubbed(line))));
+	}
+
+	private JsonElement scrubbed(JsonElement json) {
+		if (json.isJsonPrimitive() && json.getAsJsonPrimitive().isString()) {
+			return new JsonPrimitive(scrub.apply(json.getAsString()));
+		}
+		if (json.isJsonArray()) {
+			JsonArray copy = new JsonArray();
+			json.getAsJsonArray().forEach(item -> copy.add(scrubbed(item)));
+			return copy;
+		}
+		if (json.isJsonObject()) {
+			JsonObject copy = new JsonObject();
+			json.getAsJsonObject().entrySet().forEach(entry -> copy.add(entry.getKey(), scrubbed(entry.getValue())));
+			return copy;
+		}
+		return json;
 	}
 
 	/** A result's first line, cut to {@link #RESULT_LIMIT} code points with "…". */

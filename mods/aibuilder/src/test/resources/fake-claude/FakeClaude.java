@@ -49,6 +49,12 @@ public class FakeClaude {
 		if (resumed != null) {
 			session = resumed;
 		}
+		if (resumed != null && "1".equals(System.getenv("FAKE_CLAUDE_SESSION_GONE"))) {
+			// What Claude Code says when the session's history isn't on this computer (any more).
+			done = true;
+			System.err.println("No conversation found with session ID: " + resumed);
+			System.exit(1);
+		}
 		// Like Claude Code's session file: two processes on one session is the mod's bug (spec §12.2), so it's refused.
 		lock = Path.of(System.getProperty("java.io.tmpdir"), "aibuilder-fake-claude-sessions", session);
 		Files.createDirectories(lock.getParent());
@@ -116,6 +122,17 @@ public class FakeClaude {
 				result(false, "success", "Built a tiny oak hut.", "completed", 0);
 			}
 			case "echo" -> result(false, "success", prompt, "completed", 0);
+			case "slow_build" -> {
+				// The walls go in (stone, so they change what an earlier test hut left), then Claude takes its time: a build
+				// the server stops half-way.
+				call("get_context", "{}");
+				call("submit_brief", "{\"title\":\"Test hut\",\"style\":\"plain\",\"size\":{\"w\":3,\"h\":3,\"d\":3},"
+						+ "\"palette\":[{\"role\":\"primary\",\"block\":\"cobblestone\"}],\"phases\":[\"walls\",\"roof\"]}");
+				call("fill", "{\"box\":[-1,0,1,1,2,3],\"block\":\"cobblestone\",\"mode\":\"hollow\"}");
+				call("checkpoint", "{\"phase\":\"walls\"}");
+				Thread.sleep(120_000);
+				result(false, "success", "done", "completed", 0);
+			}
 			case "offline" -> {
 				// The Wi-Fi goes off after the walls: Claude Code retries (no HTTP status: nothing answered), then gives up.
 				call("get_context", "{}");

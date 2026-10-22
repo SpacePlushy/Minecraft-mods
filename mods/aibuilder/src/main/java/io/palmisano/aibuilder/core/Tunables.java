@@ -27,6 +27,8 @@ public final class Tunables {
 	public static final int GROUND_SEARCH_DOWN = 64;
 	/** Ticks between action-bar status updates. */
 	public static final int STATUS_INTERVAL_TICKS = 20;
+	/** How often a running build's session record catches up with what it has built (a crash loses at most this). */
+	public static final int SESSION_REFRESH_TICKS = 100;
 	/** How long a checkpoint waits for its blocks to be placed: well inside Claude Code's 120 s MCP timeout. */
 	public static final int CHECKPOINT_TIMEOUT_SECONDS = 90;
 	/** terraform's wait for what's queued before it reads the ground again; with that read, inside the MCP timeout. */
@@ -70,6 +72,8 @@ public final class Tunables {
 	public static final int BLOCK_ENTITY_SETTLE_TICKS = 2;
 	/** survey_area's largest radius (spec §8); the default is half the tier's size plus 8. */
 	public static final int SURVEY_RADIUS_MAX = 96;
+	/** The site survey reads this far past the allowed box on every side (the fire mask needs 3, the terrain some). */
+	public static final int SITE_MARGIN = 8;
 	/** The longest survey text: Claude Code swaps a tool result over 50,000 characters for a file path (spec §8, §11). */
 	public static final int SURVEY_MAX_CHARS = 30_000;
 	/** Blocks one inspect_region call may read (spec §8). */

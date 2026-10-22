@@ -85,6 +85,15 @@ class AiBuilderConfigTest {
 		assertTrue(text.contains("only yourself"), text);
 	}
 
+	/** A hand-edited list of nothing but typos must not unban TNT and fire (M6 review). */
+	@Test
+	void aBannedListOfNothingValidKeepsTheDefaults() {
+		AiBuilderConfig.Loaded loaded = AiBuilderConfig.load("{\"banned_blocks\": [\"Fire Block\", \"TNT!\", 7]}");
+		assertEquals(AiBuilderConfig.DEFAULT.bannedBlocks(), loaded.config().bannedBlocks());
+		assertTrue(loaded.warnings().stream().anyMatch(w -> w.contains("banned_blocks") && w.contains("default")), loaded.warnings().toString());
+		assertEquals(List.of(), AiBuilderConfig.load("{\"banned_blocks\": []}").config().bannedBlocks());
+	}
+
 	@Test
 	void bannedBlocksMustBeIds() {
 		AiBuilderConfig.Loaded loaded = AiBuilderConfig.load("{\"banned_blocks\": [\"minecraft:tnt\", \"not an id\", 5, \"lava\"]}");

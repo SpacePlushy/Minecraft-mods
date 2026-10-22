@@ -11,6 +11,7 @@ import io.palmisano.aibuilder.core.config.AiBuilderConfig;
 import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
+import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.request.SizeTier;
@@ -260,6 +261,33 @@ public class SurveyGameTest {
 			helper.assertFalse(read.join().isProtected(ownLocal), "the player's earlier AI build is protected from them");
 			helper.assertTrue(read.join().isProtected(otherLocal), "other player-made planks aren't protected");
 			helper.assertTrue(read.join().isProtected(chestLocal), "the chest the player filled isn't protected");
+		});
+	}
+
+	/**
+	 * A refinement's allowed box is the build's changes grown by 16, wider than the tier's own site: what's player-made
+	 * and what burns are read to its edge, so protection and the lava rule hold there too (M6 review). This box is 61
+	 * wide; a Small site is 41.
+	 */
+	@GameTest(structure = ARENA, maxTicks = 600)
+	public void aRefinedBoxIsReadToItsEdge(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		Box wide = Box.of(-30, -1, 0, 30, 11, 15);
+		Pos planksLocal = new Pos(26, 1, 4);
+		Pos lavaLocal = new Pos(-26, 1, 4);
+		Pos logLocal = new Pos(-26, 1, 7);
+		level.setBlock(ArenaBuilds.worldPos(helper, Facing.SOUTH, planksLocal), Blocks.OAK_PLANKS.defaultBlockState(), SIDE_EFFECT_FREE);
+		level.setBlock(ArenaBuilds.worldPos(helper, Facing.SOUTH, lavaLocal), Blocks.LAVA.defaultBlockState(), SIDE_EFFECT_FREE);
+		level.setBlock(ArenaBuilds.worldPos(helper, Facing.SOUTH, logLocal), Blocks.OAK_LOG.defaultBlockState(), SIDE_EFFECT_FREE);
+		McWorldReader world = new McWorldReader(level, ArenaBuilds.frame(helper, Facing.SOUTH), wide, SizeTier.SMALL, () -> null, List.of(),
+				new UndoJournal<>(), AiBuilderConfig.DEFAULT);
+		CompletableFuture<ProtectionMask> protection = offThread(world::protection);
+		CompletableFuture<FireMask> fire = offThread(world::fire);
+		helper.succeedWhen(() -> {
+			helper.assertTrue(protection.isDone() && fire.isDone(), "the site hasn't been read");
+			helper.assertTrue(protection.join().isProtected(planksLocal), "planks 26 to the side aren't protected");
+			helper.assertTrue(fire.join().isLava(lavaLocal), "the world's lava 26 to the other side isn't seen");
+			helper.assertTrue(fire.join().isFlammable(logLocal), "the log beside it isn't seen");
 		});
 	}
 

@@ -73,7 +73,7 @@ warning in the log.
 | `undo_history_size` | 5 | Builds per player that `/aibuild undo` can take back (up to 50) |
 | `protect_player_blocks` | `true` | Builds leave blocks that look player-made alone; `false` lets them replace anything but unbreakable blocks |
 | `site_gap` | 3 | How far in front of you a build starts |
-| `banned_blocks` | TNT, spawners, fire… | Blocks a build never places (unbreakable blocks never anyway) |
+| `banned_blocks` | TNT, spawners, fire… | Blocks a build never places (unbreakable blocks never anyway). A list with no valid block id in it keeps the default; `[]` bans nothing |
 | `backend` | `claude_code` | `scripted` makes every prompt build the demo house, with no Claude |
 | `allowed_players`, `require_op`, `op_level`, `rate_limit_per_hour` | | Who may build on a server, and how often (see below) |
 
@@ -110,6 +110,7 @@ Anthropic key come out as `[redacted]`.
 | AI Builder runs on your Claude Code login … | Open a terminal, run `claude` and log in with your subscription |
 | Can't reach Claude, retrying … (action bar) | The connection dropped; Claude Code keeps trying for a while |
 | Lost the connection to Claude (…) | It gave up: check the Wi-Fi and build again. What went in stays, with **[Undo]** |
+| Claude Code couldn't pick up that build where it left off (…) | Claude Code no longer has that build's conversation (the world came from another computer, or it's over a month old): the next prompt there starts a new build |
 | Your Claude usage limit is reached (resets …) | Your plan's usage window is used up; try again after the time it gives |
 | Claude's paid extra usage would start now … | The plan's limit was reached and extra usage would have taken over: AI Builder never uses it |
 | Claude Code started with more than the build tools … | Something (an API key in the environment, a plugin, another MCP server) got past AI Builder's settings, so it refused to build with it |

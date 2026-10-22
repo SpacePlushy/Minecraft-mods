@@ -121,6 +121,15 @@ class BuildLogTest {
 		lines.forEach(BuildLogTest::parse);
 	}
 
+	/** A key pasted on a line of its own in the prompt box (M6 review). */
+	@Test
+	void aKeyOnItsOwnLineIsScrubbed() {
+		log.request("a castle\nsk-ant-api03-SECRETSECRETSECRET\n\tBearer abcdefghijklmnopqrstuvwxyz0123", "Small", false, "", "claude-opus-5-5",
+				"high", "s");
+		assertTrue(!lines.getFirst().contains("SECRETSECRET") && !lines.getFirst().contains("abcdefghijklmnopqrstuvwxyz0123"), lines.getFirst());
+		assertEquals("a castle\n[redacted]\n\tBearer [redacted]", parse(lines.getFirst()).get("prompt").getAsString());
+	}
+
 	@Test
 	void aLongResultIsCut() {
 		log.call("survey_area", new JsonObject(), new ToolResult("x".repeat(5000), false), 40);

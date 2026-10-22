@@ -28,6 +28,11 @@ public final class Messages {
 		return "your last build";
 	}
 
+	/** A refinement's Claude Code session isn't on this computer (any more): the record ends, the next prompt builds new. */
+	public static String sessionGone(String detail) {
+		return "Claude Code couldn't pick up that build where it left off (" + detail + "), so the next prompt there starts a new build.";
+	}
+
 	/** A prompt waited for the last build's Claude Code process, and it never ended. */
 	public static String stillStopping() {
 		return "The last build's Claude Code is still stopping; try again in a few seconds.";

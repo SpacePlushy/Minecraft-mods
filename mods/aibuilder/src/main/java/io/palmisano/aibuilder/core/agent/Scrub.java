@@ -14,8 +14,9 @@ public final class Scrub {
 	public static final String REDACTED = "[redacted]";
 	/** Shorter secrets would take ordinary words with them. */
 	static final int MIN_SECRET = 8;
-	private static final Pattern BEARER = Pattern.compile("(?i)\\b(bearer\\s+)[A-Za-z0-9._~+/=-]{16,}");
-	private static final Pattern ANTHROPIC_KEY = Pattern.compile("\\bsk-ant-[A-Za-z0-9_-]{8,}");
+	// No word boundary in front: logs are JSON, where a key on a line of its own follows the escape "\\n" (M6 review).
+	private static final Pattern BEARER = Pattern.compile("(?i)(bearer\\s+)[A-Za-z0-9._~+/=-]{16,}");
+	private static final Pattern ANTHROPIC_KEY = Pattern.compile("sk-ant-[A-Za-z0-9_-]{8,}");
 
 	private final List<String> secrets = new CopyOnWriteArrayList<>();
 

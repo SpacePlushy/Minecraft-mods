@@ -28,6 +28,7 @@ import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.ArchStyle;
 import io.palmisano.aibuilder.core.shapes.Axis;
 import io.palmisano.aibuilder.core.shapes.Box;
+import io.palmisano.aibuilder.core.site.SiteSquare;
 import io.palmisano.aibuilder.core.shapes.FillMode;
 import io.palmisano.aibuilder.core.shapes.LocalBlock;
 import io.palmisano.aibuilder.core.shapes.RoofStyle;
@@ -205,9 +206,10 @@ public final class ToolExecutor {
 				"Budget: " + left + " of " + budget.max() + " tool calls left."));
 	}
 
-	/** Centred on the allowed box's footprint; the default radius covers it with 8 blocks to spare. */
+	/** Centred on the allowed box's footprint; the default radius covers it with 8 blocks to spare, as the site does. */
 	private ToolResult survey(Args a) {
-		int radius = Math.max(1, Math.min(a.optInt("radius", tier.size() / 2 + 8), Tunables.SURVEY_RADIUS_MAX));
+		int fits = SiteSquare.around(allowed, tier, Tunables.SITE_MARGIN).radius();
+		int radius = Math.max(1, Math.min(a.optInt("radius", fits), Tunables.SURVEY_RADIUS_MAX));
 		int centreX = Math.floorDiv(allowed.min().x() + allowed.max().x() + 1, 2);
 		int centreZ = Math.floorDiv(allowed.min().z() + allowed.max().z() + 1, 2);
 		TerrainSnapshot snapshot = world.terrain(centreX - radius, centreZ - radius, 2 * radius + 1, 2 * radius + 1);
@@ -316,8 +318,12 @@ public final class ToolExecutor {
 		}
 		List<String> phases = a.has("phases") ? a.strings("phases") : List.of();
 		Args size = new Args(a.has("size") ? a.object("size") : null);
-		Brief brief = new Brief(a.string("title"), a.optString("style", ""), size.optInt("w", 0), size.optInt("h", 0), size.optInt("d", 0),
-				palette, phases);
+		String title = a.string("title");
+		if (title.codePointCount(0, title.length()) > Brief.TITLE_MAX) {
+			// It names the build in chat, on the panel and on the screen's mode line (a packet of at most 256 characters).
+			title = title.substring(0, title.offsetByCodePoints(0, Brief.TITLE_MAX - 1)).strip() + "…";
+		}
+		Brief brief = new Brief(title, a.optString("style", ""), size.optInt("w", 0), size.optInt("h", 0), size.optInt("d", 0), palette, phases);
 		sink.brief(brief);
 		briefed = true;
 		return ToolResult.ok("Brief noted: " + brief.title() + ".");

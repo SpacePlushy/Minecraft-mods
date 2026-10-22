@@ -40,6 +40,7 @@ import java.util.stream.Stream;
 import com.google.gson.JsonObject;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.agent.AiBackend;
+import io.palmisano.aibuilder.core.agent.AuthStatus;
 import io.palmisano.aibuilder.core.agent.BuildEvents;
 import io.palmisano.aibuilder.core.agent.BuildHandle;
 import io.palmisano.aibuilder.core.agent.BuildOutcome;
@@ -151,6 +152,7 @@ public final class ClaudeCodeBackend implements AiBackend {
 		private volatile String note = "";
 		/** The session as Claude Code's start reported it; the one asked for until then. */
 		private volatile String sessionId;
+		private volatile boolean sessionLost;
 
 		Run(BuildRequest request, ToolExecutor tools, BuildEvents events) {
 			this.request = request;
@@ -217,6 +219,11 @@ public final class ClaudeCodeBackend implements AiBackend {
 		@Override
 		public String sessionId() {
 			return sessionId;
+		}
+
+		@Override
+		public boolean sessionLost() {
+			return sessionLost;
 		}
 
 		@Override
@@ -441,6 +448,10 @@ public final class ClaudeCodeBackend implements AiBackend {
 			}
 			Stop stopped = stop.get();
 			StreamEvent.Result last = result;
+			String tail;
+			synchronized (stderrTail) {
+				tail = stderrTail.toString().strip();
+			}
 			BuildOutcome kind;
 			if (stopped != null) {
 				kind = stopped.kind();
@@ -463,12 +474,13 @@ public final class ClaudeCodeBackend implements AiBackend {
 			} else if (last != null) {
 				kind = BuildOutcome.FAILED;
 				reason = Messages.claudeStopped(last.text().isBlank() ? last.terminalReason() : last.text());
+			} else if (request.resume() && !initSeen && code != 0) {
+				// A refinement that ended before it began: Claude Code hasn't got the session ("No conversation found…").
+				kind = BuildOutcome.FAILED;
+				sessionLost = true;
+				reason = Messages.sessionGone(AuthStatus.why(tail, code));
 			} else {
 				kind = BuildOutcome.FAILED;
-				String tail;
-				synchronized (stderrTail) {
-					tail = stderrTail.toString().strip();
-				}
 				reason = Messages.claudeExited(code, tail.isEmpty() ? "" : tail.substring(tail.lastIndexOf('\n') + 1));
 			}
 			outcome.complete(kind);
@@ -536,8 +548,10 @@ public final class ClaudeCodeBackend implements AiBackend {
 
 	/**
 	 * Where builds write their token and system prompt: {@code wanted} when it's a real folder (not a link) of this
-	 * user's, made owner-only; else a private folder of its own, made once. On a shared machine someone else could have
-	 * made /tmp/aibuilder first, and could then change a build's files in it.
+	 * user's, made owner-only. On a shared machine someone else could have made /tmp/aibuilder first, and could then
+	 * change a build's files in it: then the same name with the user's after it, so Claude Code's working folder, which
+	 * its sessions are filed under, stays the same from one game to the next and refinements can resume (M6 review);
+	 * and only if that's taken too, a fresh private folder.
 	 */
 	static Path privateRoot(Path wanted) throws IOException {
 		if (ownedByMe(wanted)) {
@@ -547,10 +561,11 @@ public final class ClaudeCodeBackend implements AiBackend {
 		if (fallback != null && ownedByMe(fallback)) {
 			return fallback;
 		}
-		Path fresh = Files.createTempDirectory("aibuilder-");
-		LOG.warn("{} isn't a private folder of this user's, so builds use {}", wanted, fresh);
-		FALLBACK_ROOTS.put(wanted, fresh);
-		return fresh;
+		Path mine = wanted.resolveSibling(wanted.getFileName() + "-" + System.getProperty("user.name", "player").replaceAll("[^A-Za-z0-9._-]", "_"));
+		Path chosen = ownedByMe(mine) ? mine : Files.createTempDirectory("aibuilder-");
+		LOG.warn("{} isn't a private folder of this user's, so builds use {}", wanted, chosen);
+		FALLBACK_ROOTS.put(wanted, chosen);
+		return chosen;
 	}
 
 	/** {@code dir}, made if it isn't there, is a folder this user owns, and from now on only they can use it. */

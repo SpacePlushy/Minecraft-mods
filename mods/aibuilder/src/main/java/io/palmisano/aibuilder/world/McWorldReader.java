@@ -20,6 +20,7 @@ import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.request.SizeTier;
+import io.palmisano.aibuilder.core.site.SiteSquare;
 import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.survey.BuildProblems;
 import io.palmisano.aibuilder.core.survey.Column;
@@ -65,10 +66,11 @@ public final class McWorldReader implements WorldReader {
 		this.player = player;
 		this.journal = journal;
 		this.items = new McItemCatalog(level.registryAccess(), Set.copyOf(config.bannedBlocks()));
-		int radius = tier.size() / 2 + 8;
-		this.siteMinX = Math.floorDiv(allowed.min().x() + allowed.max().x() + 1, 2) - radius;
-		this.siteMinZ = Math.floorDiv(allowed.min().z() + allowed.max().z() + 1, 2) - radius;
-		this.siteSize = 2 * radius + 1;
+		// The whole allowed box and past it, a refinement's grown one too: protection and the lava rule hold to its edge.
+		SiteSquare square = SiteSquare.around(allowed, tier, Tunables.SITE_MARGIN);
+		this.siteMinX = square.minX();
+		this.siteMinZ = square.minZ();
+		this.siteSize = square.size();
 		WorldSurvey survey = new WorldSurvey(level, frame, allowed, siteMinX, siteMinZ, siteSize, siteSize, true, config.protectPlayerBlocks(),
 				earlier);
 		JobScheduler.add(survey);

@@ -153,6 +153,16 @@ class ToolExecutorTest {
 	}
 
 	@Test
+	void aLongTitleIsCut() {
+		ToolResult result = executor(150, 100_000).call("submit_brief", json("{\"title\":\"" + "Castle ".repeat(60) + "\",\"style\":\"plain\"}"));
+		assertTrue(!result.isError(), result.text());
+		String title = sink.brief.title();
+		int length = title.codePointCount(0, title.length());
+		assertTrue(length <= Brief.TITLE_MAX && length > Brief.TITLE_MAX - 8, title);
+		assertTrue(title.endsWith("Castle…"), title);
+	}
+
+	@Test
 	void aBriefWithAMalformedPhaseIsABadArgument() {
 		ToolResult result = executor(150, 100_000).call("submit_brief",
 				json("{\"title\":\"test house\",\"style\":\"plain\",\"phases\":[{\"name\":\"walls\"}]}"));

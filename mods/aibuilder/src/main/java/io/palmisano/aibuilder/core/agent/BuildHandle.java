@@ -18,4 +18,12 @@ public interface BuildHandle {
 	default String sessionId() {
 		return "";
 	}
+
+	/**
+	 * A refinement whose session Claude Code doesn't have (it ended before it started: the world came from another
+	 * computer, or the history was cleaned up after a month): nothing can resume it, so its record should end.
+	 */
+	default boolean sessionLost() {
+		return false;
+	}
 }

@@ -85,12 +85,13 @@ public record AiBuilderConfig(String backend, String model, String effort, Strin
 				(int) r.number("max_build_minutes", d.maxBuildMinutes, 1, 240),
 				r.bool("require_op", d.requireOp),
 				(int) r.number("op_level", d.opLevel, 0, 4),
-				r.list("allowed_players", d.allowedPlayers, v -> v.isBlank() ? "" : v.strip()),
+				r.list("allowed_players", d.allowedPlayers, v -> v.isBlank() ? "" : v.strip(), false),
 				(int) r.number("rate_limit_per_hour", d.rateLimitPerHour, 0, 1_000),
 				(int) r.number("undo_history_size", d.undoHistorySize, 1, 50),
 				r.bool("protect_player_blocks", d.protectPlayerBlocks),
 				(int) r.number("site_gap", d.siteGap, 1, 16),
-				r.list("banned_blocks", d.bannedBlocks, AiBuilderConfig::blockId));
+				// A list of nothing but typos must not unban TNT and fire; an empty list is the owner's choice (M6 review).
+				r.list("banned_blocks", d.bannedBlocks, AiBuilderConfig::blockId, true));
 		for (String key : o.keySet()) {
 			if (!key.startsWith("_") && !Reader.KEYS.contains(key)) {
 				warnings.add("config/aibuilder.json: unknown key \"" + key + "\" ignored");
@@ -235,8 +236,11 @@ public record AiBuilderConfig(String backend, String model, String effort, Strin
 			return limits;
 		}
 
-		/** Each entry through {@code clean}; "" drops an entry (with a warning unless it was empty to begin with). */
-		List<String> list(String key, List<String> fallback, Function<String, String> clean) {
+		/**
+		 * Each entry through {@code clean}; "" drops an entry (with a warning unless it was empty to begin with).
+		 * {@code fallBackWhenNoneValid}: a list that had entries and kept none is the default instead.
+		 */
+		List<String> list(String key, List<String> fallback, Function<String, String> clean, boolean fallBackWhenNoneValid) {
 			JsonElement e = get(key);
 			if (e == null) {
 				return fallback;
@@ -258,6 +262,9 @@ public record AiBuilderConfig(String backend, String model, String effort, Strin
 					continue;
 				}
 				out.put(value, true);
+			}
+			if (out.isEmpty() && !e.getAsJsonArray().isEmpty() && fallBackWhenNoneValid) {
+				return fallBack(key, fallback, "holds no valid block id, so the default list stands");
 			}
 			return List.copyOf(out.keySet());
 		}

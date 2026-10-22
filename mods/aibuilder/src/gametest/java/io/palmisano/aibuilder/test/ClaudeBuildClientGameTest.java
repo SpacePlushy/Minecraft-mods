@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -19,6 +20,7 @@ import io.palmisano.aibuilder.BuildManager;
 import io.palmisano.aibuilder.TestHooks;
 import io.palmisano.aibuilder.client.BuilderScreen;
 import io.palmisano.aibuilder.client.PromptHistoryStore;
+import io.palmisano.aibuilder.core.request.BuildSession;
 import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.world.SessionStore;
@@ -26,6 +28,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestServerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave;
 import net.fabricmc.loader.api.FabricLoader;
 
 /**
@@ -39,8 +42,12 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 		if (TestSetup.live()) {
 			return; // a live run is for LiveBuildClientGameTest alone
 		}
+		TestWorldSave save;
+		UUID player;
 		try (TestSingleplayerContext singleplayer = GameTestSupport.world(ctx)) {
 			TestServerContext server = singleplayer.getServer();
+			save = singleplayer.getWorldSave();
+			player = server.computeOnServer(s -> s.getPlayerList().getPlayers().getFirst().getUUID());
 			try {
 				// The fake's build: get_context, submit_brief, a hollow 3×3×3 oak box, a checkpoint, finish.
 				TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "build");
@@ -120,10 +127,47 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 				GameTestSupport.awaitChatCount(ctx, "Done: ", 5, 600);
 				logsNeverHoldTheToken(ctx);
 				offlineMidBuildEndsCleanly(ctx);
+				aLostSessionBuildsNewNextTime(ctx, server, owner);
+
+				// Last, a build the world is closed in the middle of (M6 review): what it built is a session to refine
+				// after a restart, as it's an undo. Its walls go in, then the fake takes its time.
+				TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "slow_build");
+				GameTestSupport.runPlayerCommand(ctx, "aibuild new a hut left half-built");
+				server.waitFor(s -> SessionStore.get(s).get(owner).map(BuildSession::prompts).orElse(List.of()).equals(List.of("a hut left half-built")),
+						600);
+				check(server.computeOnServer(s -> BuildManager.of(s).busy()), "the half-built hut finished before the world closed");
 			} finally {
 				TestHooks.claudeEnvironment = TestSetup.DEFAULT_SCENARIO;
 			}
 		}
+		try (TestSingleplayerContext again = save.open()) {
+			Optional<BuildSession> kept = again.getServer().computeOnServer(s -> SessionStore.get(s).get(player));
+			check(kept.isPresent() && kept.get().prompts().equals(List.of("a hut left half-built")) && kept.get().builds() == 1,
+					"the half-built hut's session after the world reopened: " + kept);
+		}
+	}
+
+	/**
+	 * Claude Code no longer has the session a refinement would resume (the world moved to another computer, a month went
+	 * by): the player is told, the record ends, and the next prompt there builds new (M6 review).
+	 */
+	private static void aLostSessionBuildsNewNextTime(ClientGameTestContext ctx, TestServerContext server, UUID owner) {
+		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "build");
+		int done = GameTestSupport.count("Done: ");
+		GameTestSupport.runPlayerCommand(ctx, "aibuild new a hut to lose");
+		GameTestSupport.awaitChatCount(ctx, "Done: ", done + 1, 600);
+		server.waitFor(s -> SessionStore.get(s).get(owner).isPresent() && !BuildManager.of(s).busy(), 200);
+		String session = server.computeOnServer(s -> SessionStore.get(s).get(owner).orElseThrow().claudeSession());
+		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "refine", "FAKE_CLAUDE_SESSION_GONE", "1");
+		GameTestSupport.runPlayerCommand(ctx, "aibuild add a chimney");
+		GameTestSupport.awaitChat(ctx, Messages.refining("Test hut", "add a chimney"), 200);
+		GameTestSupport.awaitChat(ctx, Messages.sessionGone("No conversation found with session ID: " + session), 600);
+		server.waitFor(s -> !BuildManager.of(s).busy(), 200);
+		check(server.computeOnServer(s -> SessionStore.get(s).get(owner).isEmpty()), "the lost session is still on record");
+		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "echo");
+		GameTestSupport.runPlayerCommand(ctx, "aibuild a chimney");
+		GameTestSupport.awaitChat(ctx, Messages.accepted("a chimney", SizeTier.AUTO), 200);
+		GameTestSupport.awaitChatCount(ctx, "Done: ", done + 2, 600);
 	}
 
 	/**
