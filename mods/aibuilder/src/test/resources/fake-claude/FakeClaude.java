@@ -36,6 +36,11 @@ public class FakeClaude {
 
 	public static void main(String[] args) throws Exception {
 		List<String> a = List.of(args);
+		if (a.size() == 2 && a.get(0).equals("--wait")) {
+			// The orphan scenario's child: it says nothing, holds the output it was handed, and goes.
+			Thread.sleep(Long.parseLong(a.get(1)) * 1000);
+			return;
+		}
 		if (a.size() >= 2 && a.get(0).equals("auth") && a.get(1).equals("status")) {
 			auth();
 			return;
@@ -192,8 +197,12 @@ public class FakeClaude {
 			}
 			case "hang" -> Thread.sleep(60_000);
 			case "orphan" -> {
-				// A child that keeps the output open after this process has gone (a helper Claude Code left running).
-				new ProcessBuilder("sleep", "4").redirectOutput(ProcessBuilder.Redirect.INHERIT).start();
+				// A child that keeps the output open after this process has gone (a helper Claude Code left running):
+				// this file again on the same Java, so it needs nothing from PATH (Windows has no `sleep`).
+				String java = ProcessHandle.current().info().command().orElse("java");
+				Path self = Path.of(FakeClaude.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+				new ProcessBuilder(java, self.toString(), "--wait", "4").redirectOutput(ProcessBuilder.Redirect.INHERIT)
+						.redirectError(ProcessBuilder.Redirect.DISCARD).start();
 				result(false, "success", "done", "completed", 0);
 			}
 			case "spam" -> {
