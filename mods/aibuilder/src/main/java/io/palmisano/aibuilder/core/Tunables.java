@@ -10,6 +10,8 @@ public final class Tunables {
 	public static final int SITE_GAP = 3;
 	/** Tool calls one build may make. */
 	public static final int MAX_TOOL_CALLS = 150;
+	/** Claude Code's own turn limit: only a backstop above the tool-call cap (spec §12.2). */
+	public static final int MAX_TURNS = 200;
 	/** Entries one set_blocks call may hold. */
 	public static final int SET_BLOCKS_MAX = 2000;
 	/** Builds per player that can be undone. */

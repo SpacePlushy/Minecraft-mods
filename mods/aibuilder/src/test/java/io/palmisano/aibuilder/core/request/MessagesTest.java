@@ -22,6 +22,14 @@ class MessagesTest {
 	}
 
 	@Test
+	void claudeCodeProblemsUseTheSpecsWords() {
+		assertEquals("AI Builder needs Claude Code: install it, or set claude_path in config/aibuilder.json.", Messages.notInstalled());
+		assertEquals("AI Builder runs on your Claude Code login: open a terminal, run claude and log in.", Messages.notLoggedIn());
+		assertEquals("AI Builder runs on a Claude subscription (Pro or Max), but Claude Code is logged in with api_key. Run claude and log in"
+				+ " with your subscription.", Messages.notSubscription("api_key"));
+	}
+
+	@Test
 	void tooLongSaysHowLong() {
 		assertEquals("That prompt is too long: 2,345 characters, the limit is 2,000.",
 				Messages.problem(Problem.TOO_LONG, "a".repeat(2345)));

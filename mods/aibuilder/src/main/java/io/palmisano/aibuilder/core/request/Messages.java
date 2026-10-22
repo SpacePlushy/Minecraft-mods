@@ -100,6 +100,19 @@ public final class Messages {
 		return "Full survey (" + String.format(Locale.ROOT, "%,d", characters) + " characters, what Claude reads) saved to " + path + ".";
 	}
 
+	public static String notInstalled() {
+		return "AI Builder needs Claude Code: install it, or set claude_path in config/aibuilder.json.";
+	}
+
+	public static String notLoggedIn() {
+		return "AI Builder runs on your Claude Code login: open a terminal, run claude and log in.";
+	}
+
+	public static String notSubscription(String method) {
+		return "AI Builder runs on a Claude subscription (Pro or Max), but Claude Code is logged in with " + method
+				+ ". Run claude and log in with your subscription.";
+	}
+
 	/** Spec §12.2's usage-limit line; {@code resets} is "at 14:30" and the like, or "" when unknown. */
 	public static String usageLimit(String resets) {
 		return "Your Claude usage limit is reached" + (resets.isEmpty() ? "" : " (resets " + resets + ")")
