@@ -151,3 +151,11 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   nothing no longer costs an older build its undo; a checkpoint may say a word twice; the screen has its "Stop build"
   and status line (spec §5.1); and the tunable numbers live in `Tunables`. Frankie played it, and AI Builder v1 is
   merged to `main` (pull request #1).
+- **2026-10-22:** The milestones' deferred minor findings that still held are fixed on `aibuilder-minors`, test-first
+  (plan `docs/superpowers/plans/2026-10-22-aibuilder-minors-plan.md`; its ledger, `…-minors-progress.md`, has every
+  ruling and what's still deferred): odd prompts and history files, undo data a removed mod's block can't spoil,
+  set_blocks keeping the last entry for a spot, a survey that says when it was read and where the player is,
+  check_build's doors, Nether roofs and spawn ground, a plain-text status panel, Claude Code's folder on its PATH,
+  waiting on Claude Code's process itself, a build that only its owner stops or follows, and no key in an echo or a
+  log's name. A fresh Opus 5.5 review found two more, both fixed: B while sprinting on a Mac, and another player
+  reading a build's status. Pull request #2.
