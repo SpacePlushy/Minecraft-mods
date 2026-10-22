@@ -97,6 +97,7 @@ from its arguments, is more than the whole allowed box is refused as `too_many` 
 | `./gradlew runGameTest` | Headless server gametests (placement, undo, permissions, survey) in the arena structure; `build` runs them too |
 | `./gradlew runClientGameTest` | Launch the real client, run the client gametests, save screenshots to `build/run/clientGameTest/screenshots/`. **Look at them.** |
 | `python3 tools/gen_arena.py` | Rewrite the server gametests' arena (`src/gametest/resources/data/aibuilder-test/gametest/structure/arena.snbt`) |
+| `AIBUILDER_LIVE=1 ./gradlew runClientGameTest --no-daemon` | One live build with the **real** Claude Code on the owner's login (uses their plan's usage), and no other test: `AIBUILDER_LIVE_PROMPT`, `AIBUILDER_LIVE_SIZE`; screenshots in `build/run/clientGameTest/screenshots`, the stream in `build/run/clientGameTest/logs/aibuilder/` |
 
 ## Gotchas (26.3)
 
@@ -142,3 +143,10 @@ from its arguments, is more than the whole allowed box is refused as `too_many` 
   `ConventionalBlockTags.ORES` (vanilla has only some per-ore tags). `level.getHeight(WORLD_SURFACE, x, z) - 1` is
   a column's highest non-air block, without a scan.
 - With `enableGameTests = true`, `./gradlew build` runs the server gametests too.
+- **A game started from inside Claude Code** (`./gradlew runClient` from the desktop app's shell) inherits ~35
+  `CLAUDE_*` variables and `ANTHROPIC_BASE_URL`; a child `claude` would join that session or its proxy. `ClaudeLaunch`
+  drops every `ANTHROPIC_*` and `CLAUDE*` variable but `CLAUDE_CONFIG_DIR` (the M4 spike).
+- A player's commands carry `player.commandSource()`, an object of its own, not the player; the stack's source is
+  private (`mixin/CommandSourceStackAccessor`). `makeMockServerPlayerInLevel()`'s player always reports creative.
+- Unit tests write log4j's `logs/` into the mod folder (git-ignored). Fabric marks gametest runs with the
+  `fabric-api.gametest` / `fabric.client.gametest` properties, passed by Loom's run tasks.

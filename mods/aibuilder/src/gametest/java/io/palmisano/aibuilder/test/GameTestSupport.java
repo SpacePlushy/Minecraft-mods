@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.test;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.IntConsumer;
 
 import io.palmisano.aibuilder.TestHooks;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -70,6 +71,32 @@ final class GameTestSupport {
 			check(i < maxTicks, "chat never showed " + count + " lines starting \"" + prefix + "\"; it showed " + CHAT);
 			ctx.waitTick();
 		}
+	}
+
+	/**
+	 * Waits, up to {@code maxTicks}, for a line starting with any of {@code prefixes}, and returns it; {@code every}
+	 * runs every {@code everyTicks} meanwhile (with the count so far), for progress screenshots of a long build.
+	 */
+	static String awaitChatAny(ClientGameTestContext ctx, int maxTicks, int everyTicks, IntConsumer every, String... prefixes) {
+		for (int i = 0; ; i++) {
+			for (String line : CHAT) {
+				for (String prefix : prefixes) {
+					if (line.startsWith(prefix)) {
+						return line;
+					}
+				}
+			}
+			check(i < maxTicks, "chat never showed a line starting with any of " + List.of(prefixes) + "; it showed " + CHAT);
+			if (i > 0 && i % everyTicks == 0) {
+				every.accept(i / everyTicks);
+			}
+			ctx.waitTick();
+		}
+	}
+
+	/** Every line so far, oldest first. */
+	static List<String> chat() {
+		return List.copyOf(CHAT);
 	}
 
 	static void check(boolean ok, String msg) {

@@ -16,6 +16,9 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 public class PromptServerClientGameTest implements FabricClientGameTest {
 	@Override
 	public void runTest(ClientGameTestContext ctx) {
+		if (TestSetup.live()) {
+			return; // a live run is for LiveBuildClientGameTest alone
+		}
 		try (TestSingleplayerContext singleplayer = GameTestSupport.world(ctx)) {
 			GameTestSupport.runPlayerCommand(ctx, "aibuild hello world");
 			built(ctx, "hello world", SizeTier.AUTO, 1);

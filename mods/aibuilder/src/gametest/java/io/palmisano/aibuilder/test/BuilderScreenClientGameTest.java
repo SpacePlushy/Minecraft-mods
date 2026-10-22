@@ -28,6 +28,9 @@ public class BuilderScreenClientGameTest implements FabricClientGameTest {
 
 	@Override
 	public void runTest(ClientGameTestContext ctx) {
+		if (TestSetup.live()) {
+			return; // a live run is for LiveBuildClientGameTest alone
+		}
 		writeHistory("{oops"); // a corrupt history file must not stop the screen from opening
 		try (TestSingleplayerContext singleplayer = GameTestSupport.world(ctx)) {
 			// B opens an empty screen.

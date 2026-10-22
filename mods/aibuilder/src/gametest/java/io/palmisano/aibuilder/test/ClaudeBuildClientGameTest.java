@@ -21,6 +21,9 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContex
 public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 	@Override
 	public void runTest(ClientGameTestContext ctx) {
+		if (TestSetup.live()) {
+			return; // a live run is for LiveBuildClientGameTest alone
+		}
 		try (TestSingleplayerContext singleplayer = GameTestSupport.world(ctx)) {
 			TestServerContext server = singleplayer.getServer();
 			try {

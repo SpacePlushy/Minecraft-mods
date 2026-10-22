@@ -57,3 +57,20 @@ the test fixtures in `mods/aibuilder/src/test/resources/stream/` (local paths re
 - **No `EndConversation`** in the init check's allow list is needed; it stays allowed in case a later version adds it.
 - **The rate-limit rule.** Stop at once when `isUsingOverage` is true or `status` doesn't start with `allowed`;
   `allowed_warning` is only a warning.
+
+## The first live build (M4 Task 8, 2026-10-22)
+
+`AIBUILDER_LIVE=1 ./gradlew runClientGameTest --no-daemon` with "a small cozy cabin" at Small, on a superflat world,
+through the whole mod (screen packet, checks, MCP server, backend, tools, placement, chat).
+
+| | |
+|---|---|
+| Result | "Done: 937 blocks placed." with Claude's summary in chat; 4 min 15 s from launch to the end of the test |
+| Claude's work | 37 tool calls (several per turn): get_context, survey_area, submit_brief, foundation, walls, log frame, a gable roof, a chimney with a campfire, a porch, windows, furniture, flower boxes, a path, a garden and a spruce tree; two checkpoints; three inspect_region checks; finish |
+| Tokens | 23,957 output tokens; Claude Code's own list-price estimate $0.84 (the subscription pays nothing extra) |
+| Usage | five-hour window 5% → 6%; seven-day 52% → 52% |
+| Rejections | one: an invented `chopping_block_placeholder`, refused with suggestions; Claude carried on |
+| What looked wrong | nothing in the build; the end-of-test camera framed it badly (fixed: the shots now face the middle of the site) |
+
+The result's `subtype` is `error_during_execution`: after `finish` the job ends and the mod stops Claude Code (it
+would otherwise spend tokens on a closing message), which Claude Code reports as an aborted turn.

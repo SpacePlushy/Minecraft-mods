@@ -42,7 +42,7 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 | M1 Skeleton | ✅ built, waiting for Frankie's test | Press B, type, Build, and chat echoes your prompt | Press B, type, Build; try `/aibuild hello`; rebind B in Options → Controls |
 | M2 Placement engine | ✅ built, waiting for Frankie's test | `/aibuild test` builds a scripted house in front of you, with undo and cancel | Face each direction and run `/aibuild test`: door toward you, stairs the right way; `/aibuild undo`; `/aibuild cancel` half-way, then undo |
 | M3 Survey | ✅ built (play-test after M6) | `/aibuild survey` shows what Claude will "see" | Plains, a mountain, a beach, a forest |
-| M4 Claude | ⬜ | Real builds from your prompts | "small cabin", then "castle"; cancel one; undo; log out of Claude Code and read the message |
+| M4 Claude | ✅ built (play-test after M6) | Real builds from your prompts | "small cabin", then "castle"; cancel one; undo; log out of Claude Code and read the message |
 | M5 Quality | ⬜ | Better builds: phases, self-check, the HUD | Builds have depth, lit interiors, working doors |
 | M6 Polish | ⬜ | Config, refinement ("add a moat"), logs, error handling, permissions | The brief's manual checklist |
 
@@ -110,3 +110,10 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   chest you filled stays protected even if a build placed it; a second terraform builds on the first; Claude is told
   to build around protected blocks; cocoa, bee nests, Nether fungus and other natural blocks no longer count as
   player-made; lily pads, bamboo and cactus aren't the ground. The smaller findings are in the M3 ledger.
+- **2026-10-22:** M4 built from `docs/superpowers/plans/2026-10-22-aibuilder-m4-plan.md`, after a spike that ran
+  Claude Code for real (`…-m4-spike.md`). Prompts now build: AI Builder checks Claude Code is installed and logged in
+  with a subscription, launches it with only the build tools, serves those over a localhost MCP server, follows its
+  stream (start check, notes, tokens, usage limits), and stops it at a cancel, a cap (150 calls, 500k tokens, 45
+  minutes), the plan's limit, or where paid extra usage would begin. The first live build, a small cabin, took four
+  minutes and came out well. Also: the owner is checked by UUID and command blocks can't speak for them, the change
+  cap counts real changes, and every gametest uses a fake Claude Code.

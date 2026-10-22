@@ -6,7 +6,7 @@ Each mod is a small, self-contained project under [`mods/`](mods/).
 | Mod | What it does | Minecraft | Status |
 |---|---|---|---|
 | [**Drone**](mods/drone/) | A rideable quadcopter that flies like a real camera drone: it tilts into moves, carries momentum, brakes, and holds altitude | 26.3 | v1 done, play-tested |
-| [**AI Builder**](mods/aibuilder/) | Press B, type anything ("castle", "a cozy cabin with a dock"), and Claude builds it in front of you | 26.3 | M1–M3 built (`/aibuild test` builds a demo house, with undo; `/aibuild survey` shows what Claude will see); M4–M6 in progress |
+| [**AI Builder**](mods/aibuilder/) | Press B, type anything ("castle", "a cozy cabin with a dock"), and Claude builds it in front of you | 26.3 | M1–M4 built: prompts build for real with Claude Code on your own login (`/aibuild test`, `/aibuild survey`, undo); M5–M6 in progress |
 
 ![The drone mod's quadcopters](mods/drone/docs/drone-showcase.png)
 
