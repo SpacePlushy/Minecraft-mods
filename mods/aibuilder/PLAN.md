@@ -31,6 +31,7 @@ The full table, with the reasons, is spec §2.
 | Directions | Tool calls say forward/back/left/right, never north/east: the brief's frame is a mirror image of the compass | Claude |
 | Undo | Saved with the world, last 5 builds per player; keeps anything you changed after the build, like a chest you filled | Claude |
 | Ground and fluids | Builds stand on the floor under your feet (so the Nether and caves work); water and lava never flow, lava stays clear of anything flammable | Claude |
+| Finishing | M3–M6 are finished without a stop for a play-test between them; Claude makes the remaining calls. Real Claude runs on Frankie's login are OK for the M4 spike, live tests and a showcase world built at the end. Frankie's real game and worlds stay untouched | Frankie (2026-10-22) |
 
 ## Milestones
 
