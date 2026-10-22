@@ -30,6 +30,22 @@ public final class Messages {
 		return "Only this world's owner can use AI Builder.";
 	}
 
+	public static String notListed() {
+		return "AI Builder builds on the Claude login of whoever runs this server, so only the players in allowed_players"
+				+ " (config/aibuilder.json) can build.";
+	}
+
+	public static String needsOp(int level) {
+		return "Building with AI Builder needs operator level " + level + " on this server.";
+	}
+
+	/** {@code rate_limit_per_hour} reached; the wait rounds up to whole minutes. */
+	public static String rateLimited(int perHour, long waitMillis) {
+		long minutes = Math.max(1, (waitMillis + 59_999) / 60_000);
+		return "That's " + perHour + " builds in the last hour, as many as AI Builder starts; the next can start in " + minutes
+				+ (minutes == 1 ? " minute." : " minutes.");
+	}
+
 	/** The brief's line (spec §5.3): title, then style, footprint and the first two palette blocks it gave. */
 	public static String designing(Brief brief) {
 		List<String> about = new ArrayList<>();

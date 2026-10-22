@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -42,6 +43,8 @@ import io.palmisano.aibuilder.core.config.ConfigFile;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.request.BuildPrompt;
+import io.palmisano.aibuilder.core.request.BuildRules;
+import io.palmisano.aibuilder.core.request.RateLimit;
 import io.palmisano.aibuilder.core.request.BuildStatus;
 import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
@@ -111,6 +114,8 @@ public final class BuildManager {
 	private int ticksToStatus;
 	private AiBuilderConfig config;
 	private FileTime configTime;
+	private RateLimit rates;
+	private int ratesPerHour;
 
 	private BuildManager(MinecraftServer server) {
 		this.server = server;
@@ -160,6 +165,26 @@ public final class BuildManager {
 		return current;
 	}
 
+	/** The rate limit for the config's rate_limit_per_hour; a changed setting starts a fresh count. */
+	private RateLimit rates(AiBuilderConfig cfg) {
+		if (rates == null || ratesPerHour != cfg.rateLimitPerHour()) {
+			rates = new RateLimit(cfg.rateLimitPerHour());
+			ratesPerHour = cfg.rateLimitPerHour();
+		}
+		return rates;
+	}
+
+	/** The player may build here (spec §15); if not, they're told why. */
+	private boolean mayBuild(ServerPlayer player) {
+		AiBuilderConfig cfg = config();
+		BuildRules.Verdict verdict = BuildPermission.verdict(player, cfg);
+		if (verdict != BuildRules.Verdict.ALLOWED) {
+			reply(player, BuildPermission.refusal(verdict, cfg));
+			return false;
+		}
+		return true;
+	}
+
 	/** A build or an undo is running, or Claude Code is being checked for one. */
 	public boolean busy() {
 		return build != null || undo != null || starting != null;
@@ -171,8 +196,7 @@ public final class BuildManager {
 	 * with the Claude Code backend, exactly as {@code /aibuild test} does with its script.
 	 */
 	public void submit(ServerPlayer player, String rawPrompt, SizeTier size) {
-		if (!BuildPermission.canBuild(player)) {
-			reply(player, Messages.ownerOnly());
+		if (!mayBuild(player)) {
 			return;
 		}
 		String prompt = BuildPrompt.normalize(rawPrompt);
@@ -186,6 +210,12 @@ public final class BuildManager {
 			return;
 		}
 		AiBuilderConfig cfg = config();
+		// A guard against a loop of prompts (spec §15), before anything is checked or started.
+		OptionalLong wait = rates(cfg).tryStart(player.getUUID(), System.currentTimeMillis());
+		if (wait.isPresent()) {
+			reply(player, Messages.rateLimited(cfg.rateLimitPerHour(), wait.getAsLong()));
+			return;
+		}
 		LocalFrame frame = Sites.ahead(player, cfg.siteGap());
 		ServerLevel level = player.level();
 		Optional<Box> allowed = BuildBox.allowed(size, frame.origin().y(), level.getMinY(), level.getMaxY());
@@ -316,8 +346,7 @@ public final class BuildManager {
 
 	/** {@code /aibuild test}: the demo house through the real tools, in front of the player, no Claude. */
 	public Outcome startTest(ServerPlayer player) {
-		if (!BuildPermission.canBuild(player)) {
-			reply(player, Messages.ownerOnly());
+		if (!mayBuild(player)) {
 			return Outcome.REFUSED;
 		}
 		if (busy()) {
@@ -341,8 +370,7 @@ public final class BuildManager {
 
 	/** {@code /aibuild cancel}: stop at once; what's placed stays, finalized, and can be undone. */
 	public Outcome cancel(ServerPlayer player) {
-		if (!BuildPermission.canBuild(player)) {
-			reply(player, Messages.ownerOnly());
+		if (!mayBuild(player)) {
 			return Outcome.REFUSED;
 		}
 		if (starting != null) {
@@ -362,8 +390,7 @@ public final class BuildManager {
 
 	/** {@code /aibuild undo}: take back the player's newest build. */
 	public Outcome undo(ServerPlayer player) {
-		if (!BuildPermission.canBuild(player)) {
-			reply(player, Messages.ownerOnly());
+		if (!mayBuild(player)) {
 			return Outcome.REFUSED;
 		}
 		if (busy()) {
@@ -392,8 +419,7 @@ public final class BuildManager {
 	 * Claude would read: the summary in chat, the whole text in the log and in a file under the game folder.
 	 */
 	public Outcome survey(ServerPlayer player) {
-		if (!BuildPermission.canBuild(player)) {
-			reply(player, Messages.ownerOnly());
+		if (!mayBuild(player)) {
 			return Outcome.REFUSED;
 		}
 		AiBuilderConfig cfg = config();

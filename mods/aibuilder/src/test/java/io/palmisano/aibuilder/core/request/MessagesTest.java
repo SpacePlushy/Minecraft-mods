@@ -85,6 +85,17 @@ class MessagesTest {
 		assertEquals("Building · 1 block placed · 1 of 150 tool calls.", Messages.status("", 1, 1, 150));
 	}
 
+	/** Why a player can't build here, and what would change it (spec §15). */
+	@Test
+	void refusalsSayWhy() {
+		assertTrue(Messages.notListed().contains("allowed_players") && Messages.notListed().contains("config/aibuilder.json"), Messages.notListed());
+		assertTrue(Messages.needsOp(3).contains("operator level 3"), Messages.needsOp(3));
+		assertEquals("That's 20 builds in the last hour, as many as AI Builder starts; the next can start in 40 minutes.",
+				Messages.rateLimited(20, 40 * 60_000));
+		assertTrue(Messages.rateLimited(20, 61_000).endsWith("in 2 minutes."), "minutes round up");
+		assertTrue(Messages.rateLimited(1, 30_000).endsWith("in 1 minute."), Messages.rateLimited(1, 30_000));
+	}
+
 	/** The HUD panel's counts, under its phase list (spec §5.3). */
 	@Test
 	void hudCountsBlocksAndTheBudget() {

@@ -69,6 +69,17 @@ warning in the log.
 | `backend` | `claude_code` | `scripted` makes every prompt build the demo house, with no Claude |
 | `allowed_players`, `require_op`, `op_level`, `rate_limit_per_hour` | | Who may build on a server, and how often (see below) |
 
+## Who can build
+
+AI Builder runs on the Claude Code login of whoever runs the game, and Anthropic's terms describe a Pro or Max plan
+as one person's own use, so builds are for that person:
+
+- **Singleplayer** (opened to LAN too): only the world's owner. A friend on your LAN is told no.
+- **A dedicated server:** only the players named in `allowed_players` (names or UUIDs), and while `require_op` is
+  on (the default) only with operator level `op_level` (2). Claude Code must be installed and logged in on the
+  server itself. List only yourself.
+- At most `rate_limit_per_hour` (20) builds an hour per player, as a guard against a runaway loop of prompts.
+
 ## When a build can't start or stops early
 
 | Chat says | What it means |

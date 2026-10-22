@@ -1,16 +1,21 @@
 package io.palmisano.aibuilder.test;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.palmisano.aibuilder.BuildManager;
 import io.palmisano.aibuilder.BuildPermission;
+import io.palmisano.aibuilder.core.config.AiBuilderConfig;
+import io.palmisano.aibuilder.core.request.BuildRules;
+import io.palmisano.aibuilder.core.request.SizeTier;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.permissions.LevelBasedPermissionSet;
 
 /**
  * Builds run on the world owner's own Claude login (spec §15). A test server has no singleplayer owner, so every
@@ -51,6 +56,31 @@ public class PermissionGameTest {
 		} finally {
 			server.setSingleplayerProfile(before);
 		}
+		helper.succeed();
+	}
+
+	/**
+	 * A server's rules (spec §15): only allowed_players, with op_level while require_op. For anyone else nothing
+	 * starts, not even the Claude Code check (M6 Review Focus).
+	 */
+	@SuppressWarnings("removal")
+	@GameTest
+	public void strangersAreRefusedBeforeAnyCheck(GameTestHelper helper) {
+		ServerPlayer player = helper.makeMockServerPlayerInLevel();
+		MinecraftServer server = helper.getLevel().getServer();
+		helper.assertValueEqual(BuildPermission.verdict(player, AiBuilderConfig.DEFAULT), BuildRules.Verdict.NOT_LISTED, "nobody listed");
+		AiBuilderConfig listed = AiBuilderConfig.load("{\"allowed_players\": [\"" + player.getGameProfile().name() + "\"]}").config();
+		helper.assertValueEqual(BuildPermission.verdict(player, listed), BuildRules.Verdict.NEEDS_OP, "listed, not an op");
+		// Level 2, the config's default op_level (a test server's own default for ops is lower).
+		server.getPlayerList().op(player.nameAndId(), Optional.of(LevelBasedPermissionSet.GAMEMASTER), Optional.of(false));
+		try {
+			helper.assertValueEqual(BuildPermission.verdict(player, listed), BuildRules.Verdict.ALLOWED, "listed and an op");
+		} finally {
+			server.getPlayerList().deop(player.nameAndId());
+		}
+		BuildManager manager = BuildManager.of(server);
+		manager.submit(player, "a house", SizeTier.SMALL);
+		helper.assertFalse(manager.busy(), "a stranger's prompt started something");
 		helper.succeed();
 	}
 
