@@ -44,7 +44,7 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 | M3 Survey | ✅ built (play-test after M6) | `/aibuild survey` shows what Claude will "see" | Plains, a mountain, a beach, a forest |
 | M4 Claude | ✅ built (play-test after M6) | Real builds from your prompts | "small cabin", then "castle"; cancel one; undo; log out of Claude Code and read the message |
 | M5 Quality | ✅ built (play-test after M6) | Better builds: phases, self-check, the HUD, signs, chests, books, banners and item frames; lava kept clear of wood | Builds have depth, lit interiors, working doors; the panel top left; a sign or a chest in a build reads right |
-| M6 Polish | ⬜ | Config, refinement ("add a moat"), logs, error handling, permissions | The brief's manual checklist |
+| M6 Polish | ✅ built (play-test after M6) | Config, refinement ("add a moat"), logs, error handling, permissions | "a stone castle", then "add a moat" next to it; edit `config/aibuilder.json`; turn the Wi-Fi off mid-build; a LAN friend is refused |
 
 ## Good to know
 
@@ -125,3 +125,12 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   a gatehouse" at Medium, came out well (22,504 blocks, 107 tool calls, 17 minutes; Claude ran `check_build` four
   times and fixed what it found). It showed two things, fixed: an overhang out in the open counted as a roof, and
   checkpoints that named two phases moved the panel only one.
+- **2026-10-22:** M6 built from `docs/superpowers/plans/2026-10-22-aibuilder-m6-plan.md`: `config/aibuilder.json`
+  (every setting; a bad value falls back to its default; edits apply to the next build); who may build (the owner
+  only in singleplayer and on LAN, on a server the players in `allowed_players` with op) and at most 20 builds an
+  hour; refinement: a prompt next to your last build changes it, in the same Claude Code session, with room to build
+  16 blocks past it (`/aibuild new` and the screen's toggle build new instead); a log of every build, secrets
+  scrubbed; and clear messages when Claude Code is broken or the connection drops. The live check, "a stone castle"
+  at Medium (15,374 blocks, 131 tool calls, 11 minutes) and then "add a moat around the castle, with a drawbridge at
+  the gate" typed beside it (5,381 blocks, 35 calls, 2 minutes), came out well: Claude picked up its own castle and
+  dug a lined moat with lily pads and a drawbridge.

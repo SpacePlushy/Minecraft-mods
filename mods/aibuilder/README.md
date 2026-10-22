@@ -4,13 +4,15 @@ A mod for **Minecraft Java Edition 26.3** (Fabric) where you press **B**, type a
 with a dock", "a Japanese garden with a koi pond"), and Claude designs it and builds it in front of you, block by
 block, while you watch. It never moves you, ignores your inventory, and `/aibuild undo` puts the land back.
 
-**Status: M5.** Real builds: type a prompt and Claude builds it, using Claude Code on your own Claude login (Pro or
-Max). A panel in the top-left corner shows the build's plan as it goes: its phases ticking off, the blocks placed
-and how much of its budget it has used. Claude checks its own work before it finishes (dark rooms, blocked doors,
-floating torches, low ceilings, water that would spill) and dresses builds with signs, stocked chests, a lectern
-with a book, banners and item frames. Lava never goes in next to anything that burns. `/aibuild test` builds a
-demo house without Claude, `/aibuild survey` shows how Claude sees the land, and `/aibuild undo` takes any build
-back, item frames included. The plan, milestone by milestone, is in [`PLAN.md`](PLAN.md).
+**Status: M6, all six milestones built.** Type a prompt and Claude builds it, using Claude Code on your own Claude
+login (Pro or Max). A panel in the top-left corner shows the build's plan as it goes: its phases ticking off, the
+blocks placed and how much of its budget it has used. Claude checks its own work before it finishes (dark rooms,
+blocked doors, floating torches, low ceilings, water that would spill) and dresses builds with signs, stocked
+chests, a lectern with a book, banners and item frames. Lava never goes in next to anything that burns. Type a
+follow-up next to a build ("add a moat") and Claude changes that build. Every build leaves a log, and a settings
+file sets the caps, the speed and who may build. `/aibuild test` builds a demo house without Claude, `/aibuild
+survey` shows how Claude sees the land, and `/aibuild undo` takes any build back, item frames included. The plan,
+milestone by milestone, is in [`PLAN.md`](PLAN.md).
 
 ## What you need
 
@@ -28,6 +30,8 @@ back, item frames included. The plan, milestone by milestone, is in [`PLAN.md`](
 ![The status panel during a real build: the castle's nine phases, two ticked off, 22,006 blocks placed, 91 of 150 tool calls](docs/hud.png)
 
 ![Through the gate of "Stonehold Castle", built by Claude from "a medieval stone castle with a gatehouse" at Medium size: 22,504 blocks in 17 minutes, with a portcullis, banners and a welcome sign](docs/castle-gate.png)
+
+![A castle from "a stone castle" (Medium, 15,374 blocks in 11 minutes), then "add a moat around the castle, with a drawbridge at the gate" typed beside it: Claude picked up its own castle and added a lined moat with lily pads all the way round and a drawbridge at the gate, 5,381 blocks in 2 minutes](docs/castle-moat.png)
 
 ## Using it
 
@@ -102,7 +106,10 @@ Anthropic key come out as `[redacted]`.
 | Chat says | What it means |
 |---|---|
 | AI Builder needs Claude Code … | Claude Code isn't installed where AI Builder looks: install it from claude.com/claude-code |
+| Claude Code couldn't run (…) | Claude Code is there but broke when asked whether it's logged in (a damaged install, say). Run `claude` in a terminal to see the problem, or reinstall it |
 | AI Builder runs on your Claude Code login … | Open a terminal, run `claude` and log in with your subscription |
+| Can't reach Claude, retrying … (action bar) | The connection dropped; Claude Code keeps trying for a while |
+| Lost the connection to Claude (…) | It gave up: check the Wi-Fi and build again. What went in stays, with **[Undo]** |
 | Your Claude usage limit is reached (resets …) | Your plan's usage window is used up; try again after the time it gives |
 | Claude's paid extra usage would start now … | The plan's limit was reached and extra usage would have taken over: AI Builder never uses it |
 | Claude Code started with more than the build tools … | Something (an API key in the environment, a plugin, another MCP server) got past AI Builder's settings, so it refused to build with it |
