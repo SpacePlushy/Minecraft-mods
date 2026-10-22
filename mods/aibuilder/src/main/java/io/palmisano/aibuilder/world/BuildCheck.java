@@ -12,6 +12,7 @@ import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.survey.BuildProblems.Kind;
 import io.palmisano.aibuilder.core.survey.BuildProblems.Problem;
+import io.palmisano.aibuilder.core.survey.Darkness;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -19,6 +20,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.DoorBlock;
@@ -27,7 +30,7 @@ import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.chunk.LevelChunk;
-import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 /**
  * check_build's look over a build (spec §8), on the server tick within a time budget (at least one position a
@@ -38,6 +41,8 @@ import net.minecraft.world.level.levelgen.Heightmap;
  */
 public final class BuildCheck implements Tickable {
 	private static final Direction[] SIDES = {Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
+	/** How high a player steps up without jumping: a carpet, a bottom slab or a closed trapdoor is no higher. */
+	private static final double STEP = Attributes.STEP_HEIGHT.value().getDefaultValue();
 
 	private final ServerLevel level;
 	private final LocalFrame frame;
@@ -147,7 +152,7 @@ public final class BuildCheck implements Tickable {
 		}
 	}
 
-	/** A door's lower half with something solid at feet or head height on either side of it. */
+	/** A door's lower half with something solid at head height on either side of it, or at the feet higher than a step. */
 	private void door(BlockPos pos, BlockState state) {
 		if (!(state.getBlock() instanceof DoorBlock) || state.getValue(DoorBlock.HALF) != DoubleBlockHalf.LOWER) {
 			return;
@@ -155,7 +160,7 @@ public final class BuildCheck implements Tickable {
 		Direction facing = state.getValue(DoorBlock.FACING);
 		for (Direction side : new Direction[] {facing, facing.getOpposite()}) {
 			BlockPos feet = pos.relative(side);
-			if (solid(feet) || solid(feet.above())) {
+			if (aboveAStep(feet) || solid(feet.above())) {
 				report(Kind.DOOR, pos, "");
 				return;
 			}
@@ -190,7 +195,7 @@ public final class BuildCheck implements Tickable {
 	/** A walkable spot (2 blocks of air over a floor) under a roof, at block light 0: monsters spawn there. */
 	private void dark(BlockPos spot) {
 		// Free first: inside a solid build most spots aren't, and only free ones need remembering.
-		if (!free(spot) || !seen.add(spot.asLong()) || !free(spot.above()) || !floor(spot.below())) {
+		if (!free(spot) || !seen.add(spot.asLong()) || !free(spot.above()) || !spawnGround(spot.below())) {
 			return;
 		}
 		if (roofed(spot) && level.getBrightness(LightLayer.BLOCK, spot) == 0) {
@@ -198,15 +203,15 @@ public final class BuildCheck implements Tickable {
 		}
 	}
 
-	/**
-	 * Indoors: little of the sky reaches it. Out in the open under an overhang (a tower's battlements, a tree) sky
-	 * light is still 14, inside a room it's lower. Without a sky (the Nether), anything solid above it, leaves aside.
-	 */
+	/** Indoors ({@link Darkness}): little of the sky reaches it; without a sky, a roof close above it. */
 	private boolean roofed(BlockPos spot) {
-		if (level.dimensionType().hasSkyLight()) {
-			return level.getBrightness(LightLayer.SKY, spot) <= Tunables.CHECK_BUILD_INDOOR_SKY_LIGHT;
-		}
-		return level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spot.getX(), spot.getZ()) > spot.getY() + 2;
+		return Darkness.indoors(level.dimensionType().hasSkyLight(), level.getBrightness(LightLayer.SKY, spot), up -> roof(spot.above(up)));
+	}
+
+	/** Something that keeps the weather off: anything solid or a fluid, leaves aside. */
+	private boolean roof(BlockPos pos) {
+		BlockState state = loaded(pos);
+		return state != null && !state.is(BlockTags.LEAVES) && (!state.getFluidState().isEmpty() || !state.getCollisionShape(level, pos).isEmpty());
 	}
 
 	private void report(Kind kind, BlockPos pos, String detail) {
@@ -225,6 +230,22 @@ public final class BuildCheck implements Tickable {
 	private boolean solid(BlockPos pos) {
 		BlockState state = loaded(pos);
 		return state != null && !state.getCollisionShape(level, pos).isEmpty();
+	}
+
+	/** Solid higher than a step: walking into it stops a player. */
+	private boolean aboveAStep(BlockPos pos) {
+		BlockState state = loaded(pos);
+		if (state == null) {
+			return false;
+		}
+		VoxelShape shape = state.getCollisionShape(level, pos);
+		return !shape.isEmpty() && shape.max(Direction.Axis.Y) > STEP;
+	}
+
+	/** Ground a monster can spawn on, by vanilla's own rule (for a zombie): not glass, leaves or a bottom slab. */
+	private boolean spawnGround(BlockPos pos) {
+		BlockState state = loaded(pos);
+		return state != null && state.isValidSpawn(level, pos, EntityTypes.ZOMBIE);
 	}
 
 	/** Something to stand on: a full top face (not a bottom slab, where nothing spawns). */

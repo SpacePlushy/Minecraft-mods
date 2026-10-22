@@ -3,17 +3,21 @@ package io.palmisano.aibuilder.test;
 import static io.palmisano.aibuilder.test.ArenaBuilds.ARENA;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.config.AiBuilderConfig;
 import io.palmisano.aibuilder.core.frame.Facing;
+import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.survey.BuildProblems;
 import io.palmisano.aibuilder.test.ArenaBuilds.ArenaBuild;
 import io.palmisano.aibuilder.world.BuildCheck;
 import io.palmisano.aibuilder.world.JobScheduler;
+import io.palmisano.aibuilder.world.McWorldReader;
 import io.palmisano.aibuilder.world.Occupancy;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -91,6 +95,68 @@ public class CheckBuildGameTest {
 			helper.assertTrue(report.contains("door (1)") && report.contains("(1, 1, 4)"), "the blocked door: " + report);
 			helper.assertFalse(report.contains("(-1, 1, 4)"), "the open door: " + report);
 		});
+	}
+
+	/**
+	 * Something no higher than a step at the feet (a carpet, a bottom slab, a closed trapdoor) is walked over: those
+	 * doors are fine. A full block there isn't.
+	 */
+	@GameTest(structure = ARENA, maxTicks = 1200, skyAccess = true)
+	public void aCarpetDoesntBlockADoor(GameTestHelper helper) {
+		ArenaBuild build = start(helper, """
+				{"tool": "fill", "args": {"box": [-6, 1, 4, 6, 3, 4], "block": "stone"}},
+				{"tool": "set_blocks", "args": {"blocks": [
+				  {"pos": [-4, 1, 4], "block": "oak_door", "state": {"facing": "forward"}}, {"pos": [-4, 1, 5], "block": "white_carpet"},
+				  {"pos": [-1, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
+				  {"pos": [-1, 1, 5], "block": "oak_slab", "state": {"type": "bottom"}},
+				  {"pos": [2, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
+				  {"pos": [2, 1, 3], "block": "oak_trapdoor", "state": {"half": "bottom", "open": "false"}},
+				  {"pos": [5, 1, 4], "block": "oak_door", "state": {"facing": "forward"}}, {"pos": [5, 1, 5], "block": "stone"}]}}""");
+		helper.succeedWhen(() -> {
+			String report = report(helper, build);
+			helper.assertTrue(report.contains("door (1)") && report.contains("(5, 1, 4)"), "only the door with stone at its feet: " + report);
+		});
+	}
+
+	/** Nothing spawns on glass: a dark room with a glass floor has nowhere monsters could appear. */
+	@GameTest(structure = ARENA, maxTicks = 1200, skyAccess = true)
+	public void aGlassFloorIsntSpawningGround(GameTestHelper helper) {
+		ArenaBuild build = start(helper, """
+				{"tool": "fill", "args": {"box": [-3, 1, 2, 1, 4, 6], "block": "stone", "mode": "hollow"}},
+				{"tool": "fill", "args": {"box": [-2, 1, 3, 0, 1, 5], "block": "glass"}}""");
+		helper.succeedWhen(() -> {
+			String report = report(helper, build);
+			helper.assertFalse(report.contains("dark"), "the room with a glass floor: " + report);
+		});
+	}
+
+	/** check_build called again while one is still reading (a retry after a timeout) waits on that one: one read. */
+	@GameTest(structure = ARENA, maxTicks = 2400, skyAccess = true)
+	public void twoChecksAtOnceShareOneRead(GameTestHelper helper) {
+		// A problem to find, so each read's answer is a list of its own (an empty one is the JDK's one empty list).
+		ArenaBuild build = ArenaBuilds.start(helper, Facing.SOUTH, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "slab roof", "style": "test"}},
+				  {"tool": "fill", "args": {"box": [-3, 2, 3, -1, 2, 5], "block": "stone"}},
+				  {"tool": "finish", "args": {"summary": "a roof too low"}}
+				]}""", Occupancy.players(helper.getLevel()), Tunables.BLOCKS_PER_TICK);
+		AtomicReference<CompletableFuture<List<BuildProblems.Problem>>> first = new AtomicReference<>();
+		AtomicReference<CompletableFuture<List<BuildProblems.Problem>>> second = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenExecute(() -> {
+					McWorldReader world = new McWorldReader(helper.getLevel(), build.frame(), ArenaBuilds.ALLOWED, SizeTier.SMALL, () -> null,
+							List.of(), build.journal(), AiBuilderConfig.DEFAULT);
+					// From other threads, as the tools call it: the server thread does the reading.
+					first.set(CompletableFuture.supplyAsync(world::check));
+					second.set(CompletableFuture.supplyAsync(world::check));
+				})
+				.thenWaitUntil(() -> helper.assertTrue(first.get().isDone() && second.get().isDone(), "the checks haven't finished"))
+				.thenExecute(() -> {
+					helper.assertFalse(first.get().join().isEmpty(), "the low roof wasn't found");
+					helper.assertTrue(first.get().join() == second.get().join(), "the second check read the build again");
+				})
+				.thenSucceed();
 	}
 
 	/** A ceiling one block over the floor leaves no room to walk; two blocks is fine. */

@@ -48,6 +48,8 @@ public final class McWorldReader implements WorldReader {
 	private final LocalFrame frame;
 	private final Box allowed;
 	private final Supplier<ServerPlayer> player;
+	/** The check_build read under way, or the last one; guarded by this. */
+	private CompletableFuture<List<BuildProblems.Problem>> checking;
 	private final int siteMinX;
 	private final int siteMinZ;
 	private final int siteSize;
@@ -178,15 +180,24 @@ public final class McWorldReader implements WorldReader {
 		return items;
 	}
 
-	/** Read over ticks on the server (BuildCheck), waited for here. */
+	/**
+	 * Read over ticks on the server (BuildCheck), waited for here. One at a time: a call while a check is still reading
+	 * (a retry after a timeout) waits on that one instead of starting another over the same build.
+	 */
 	@Override
 	public List<BuildProblems.Problem> check() {
-		MinecraftServer server = level.getServer();
-		CompletableFuture<List<BuildProblems.Problem>> check = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
-			BuildCheck reading = new BuildCheck(level, frame, allowed, journal, Tunables.TICK_BUDGET_NANOS);
-			JobScheduler.add(reading);
-			return reading;
-		}).thenCompose(BuildCheck::result);
+		CompletableFuture<List<BuildProblems.Problem>> check;
+		synchronized (this) {
+			if (checking == null || checking.isDone()) {
+				MinecraftServer server = level.getServer();
+				checking = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
+					BuildCheck reading = new BuildCheck(level, frame, allowed, journal, Tunables.TICK_BUDGET_NANOS);
+					JobScheduler.add(reading);
+					return reading;
+				}).thenCompose(BuildCheck::result);
+			}
+			check = checking;
+		}
 		return await(check, Tunables.CHECK_BUILD_TIMEOUT_SECONDS);
 	}
 

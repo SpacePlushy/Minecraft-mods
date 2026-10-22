@@ -17,7 +17,7 @@ public final class BuildProblems {
 	public enum Kind {
 		UNSUPPORTED("unsupported", "would break or fall as soon as something next to it changes"),
 		DARK("dark", "walkable, under a roof, block light 0: monsters can spawn here; add light"),
-		DOOR("door", "can't be walked through: stone or another solid block at feet or head height on a side"),
+		DOOR("door", "can't be walked through: a solid block at head height on a side, or one higher than a step at the feet"),
 		LOW("low", "walkable but less than 2 blocks of headroom"),
 		SPILL("spill", "fluid beside an open side or over air: it would flow if anything disturbed it");
 
