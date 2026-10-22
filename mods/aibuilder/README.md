@@ -4,7 +4,7 @@ A mod for **Minecraft Java Edition 26.3** (Fabric) where you press **B**, type a
 with a dock", "a Japanese garden with a koi pond"), and Claude designs it and builds it in front of you, block by
 block, while you watch. It never moves you, ignores your inventory, and `/aibuild undo` puts the land back.
 
-**Status: M6, all six milestones built.** Type a prompt and Claude builds it, using Claude Code on your own Claude
+**Status: v1, done.** Type a prompt and Claude builds it, using Claude Code on your own Claude
 login (Pro or Max). A panel in the top-left corner shows the build's plan as it goes: its phases ticking off, the
 blocks placed and how much of its budget it has used. Claude checks its own work before it finishes (dark rooms,
 blocked doors, floating torches, low ceilings, water that would spill) and dresses builds with signs, stocked

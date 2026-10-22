@@ -39,12 +39,12 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 
 | # | Status | What you'll be able to do | How to try it (`cd mods/aibuilder && ./gradlew runClient`) |
 |---|---|---|---|
-| M1 Skeleton | ✅ built, waiting for Frankie's test | Press B, type, Build, and chat echoes your prompt | Press B, type, Build; try `/aibuild hello`; rebind B in Options → Controls |
-| M2 Placement engine | ✅ built, waiting for Frankie's test | `/aibuild test` builds a scripted house in front of you, with undo and cancel | Face each direction and run `/aibuild test`: door toward you, stairs the right way; `/aibuild undo`; `/aibuild cancel` half-way, then undo |
-| M3 Survey | ✅ built (play-test after M6) | `/aibuild survey` shows what Claude will "see" | Plains, a mountain, a beach, a forest |
-| M4 Claude | ✅ built (play-test after M6) | Real builds from your prompts | "small cabin", then "castle"; cancel one; undo; log out of Claude Code and read the message |
-| M5 Quality | ✅ built (play-test after M6) | Better builds: phases, self-check, the HUD, signs, chests, books, banners and item frames; lava kept clear of wood | Builds have depth, lit interiors, working doors; the panel top left; a sign or a chest in a build reads right |
-| M6 Polish | ✅ built (play-test after M6) | Config, refinement ("add a moat"), logs, error handling, permissions | "a stone castle", then "add a moat" next to it; edit `config/aibuilder.json`; turn the Wi-Fi off mid-build; a LAN friend is refused |
+| M1 Skeleton | ✅ done, play-tested | Press B, type, Build, and chat echoes your prompt | Press B, type, Build; try `/aibuild hello`; rebind B in Options → Controls |
+| M2 Placement engine | ✅ done, play-tested | `/aibuild test` builds a scripted house in front of you, with undo and cancel | Face each direction and run `/aibuild test`: door toward you, stairs the right way; `/aibuild undo`; `/aibuild cancel` half-way, then undo |
+| M3 Survey | ✅ done, play-tested | `/aibuild survey` shows what Claude will "see" | Plains, a mountain, a beach, a forest |
+| M4 Claude | ✅ done, play-tested | Real builds from your prompts | "small cabin", then "castle"; cancel one; undo; log out of Claude Code and read the message |
+| M5 Quality | ✅ done, play-tested | Better builds: phases, self-check, the HUD, signs, chests, books, banners and item frames; lava kept clear of wood | Builds have depth, lit interiors, working doors; the panel top left; a sign or a chest in a build reads right |
+| M6 Polish | ✅ done, play-tested | Config, refinement ("add a moat"), logs, error handling, permissions | "a stone castle", then "add a moat" next to it; edit `config/aibuilder.json`; turn the Wi-Fi off mid-build; a LAN friend is refused |
 
 ## Good to know
 
@@ -145,3 +145,8 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   castle (48,394 blocks) and its moat with a drawbridge (21,349), a temple in a cherry grove (16,990), a lighthouse on
   the rocks (4,294), a desert bazaar (10,507) and a wizard's tower in the dark forest (4,982), in 70 minutes. All six
   milestones are built; Frankie's play-test comes next, then the pull request to `main`.
+- **2026-10-22:** The pull request's automated review found five more problems, all fixed test-first: a bed's head or a
+  door's top half now passes the same checks as the block (the box, protection, the lava rule); a build that changes
+  nothing no longer costs an older build its undo; a checkpoint may say a word twice; the screen has its "Stop build"
+  and status line (spec §5.1); and the tunable numbers live in `Tunables`. Frankie played it, and AI Builder v1 is
+  merged to `main` (pull request #1).
