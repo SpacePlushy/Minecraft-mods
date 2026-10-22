@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "io.palmisano.aibuilder.test.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"GlSurfaceVsyncMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
