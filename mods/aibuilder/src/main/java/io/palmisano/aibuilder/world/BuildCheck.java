@@ -187,19 +187,26 @@ public final class BuildCheck implements Tickable {
 		}
 	}
 
-	/**
-	 * A walkable spot (2 blocks of air over a floor) under a roof, at block light 0: monsters spawn there. A tree's
-	 * canopy isn't a roof.
-	 */
+	/** A walkable spot (2 blocks of air over a floor) under a roof, at block light 0: monsters spawn there. */
 	private void dark(BlockPos spot) {
 		// Free first: inside a solid build most spots aren't, and only free ones need remembering.
 		if (!free(spot) || !seen.add(spot.asLong()) || !free(spot.above()) || !floor(spot.below())) {
 			return;
 		}
-		boolean roofed = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spot.getX(), spot.getZ()) > spot.getY() + 2;
-		if (roofed && level.getBrightness(LightLayer.BLOCK, spot) == 0) {
+		if (roofed(spot) && level.getBrightness(LightLayer.BLOCK, spot) == 0) {
 			report(Kind.DARK, spot, "");
 		}
+	}
+
+	/**
+	 * Indoors: little of the sky reaches it. Out in the open under an overhang (a tower's battlements, a tree) sky
+	 * light is still 14, inside a room it's lower. Without a sky (the Nether), anything solid above it, leaves aside.
+	 */
+	private boolean roofed(BlockPos spot) {
+		if (level.dimensionType().hasSkyLight()) {
+			return level.getBrightness(LightLayer.SKY, spot) <= Tunables.CHECK_BUILD_INDOOR_SKY_LIGHT;
+		}
+		return level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, spot.getX(), spot.getZ()) > spot.getY() + 2;
 	}
 
 	private void report(Kind kind, BlockPos pos, String detail) {

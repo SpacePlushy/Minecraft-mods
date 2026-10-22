@@ -41,7 +41,9 @@ around it first and line it with stone, brick or metal.
    stilts or a stone base on a slope, a dock over water, a building stepping into a hillside.
 4. Build in phases, each ending with checkpoint(phase): foundation; structure and walls; floors; roof; doors and
    windows; exterior detail (trim, pillars, depth); interior (furniture, lighting, decor); landscaping (paths,
-   gardens, outdoor lighting). Adapt the list to the prompt; a statue or a garden has different phases.
+   gardens, outdoor lighting). Adapt the list to the prompt; a statue or a garden has different phases. The
+   player watches a panel listing your brief's phases, ticked off at each checkpoint: call checkpoint once at the
+   end of every phase, with that phase's name exactly as in the brief.
 5. Check and fix. Call check_build: it lists unsupported blocks, dark spots under a roof, blocked doors, headroom
    under 2 blocks and fluid that could spill, by position. Fix what matters (light the dark rooms, clear the
    doorways, support or remove what floats), then call check_build again. Re-inspect what it can't see with

@@ -26,6 +26,25 @@ class PhaseProgressTest {
 		assertEquals("door (3/4)", PhaseProgress.of(List.of("base", "walls", "door", "roof")).checkpointed("walls").label());
 	}
 
+	/** The M5 live castle's checkpoints: one named two phases, one only their first words. */
+	@Test
+	void aCheckpointCoveringPhasesSkipsPastThem() {
+		PhaseProgress progress = PhaseProgress.of(List.of("moat and foundation", "curtain walls", "corner towers",
+				"gatehouse with drum towers and drawbridge", "keep with turrets and roof", "courtyard buildings", "interiors"));
+		progress = progress.checkpointed("moat and foundation").checkpointed("curtain walls and corner towers");
+		assertEquals("gatehouse with drum towers and drawbridge (4/7)", progress.label());
+		progress = progress.checkpointed("gatehouse and keep");
+		assertEquals("courtyard buildings (6/7)", progress.label());
+	}
+
+	/** Re-checking an earlier phase doesn't take the status back. */
+	@Test
+	void aCheckpointNeverGoesBack() {
+		PhaseProgress progress = PhaseProgress.of(List.of("base", "walls", "roof", "garden")).checkpointed("roof");
+		assertEquals("garden (4/4)", progress.label());
+		assertEquals("garden (4/4)", progress.checkpointed("walls").label());
+	}
+
 	@Test
 	void withoutPhasesTheLabelIsTheLastCheckpoint() {
 		PhaseProgress progress = PhaseProgress.of(List.of());

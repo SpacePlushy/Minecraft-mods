@@ -64,6 +64,21 @@ public class CheckBuildGameTest {
 		});
 	}
 
+	/**
+	 * An overhang high up isn't a roof: out in the open, sky light still reaches the ground under it (the M5 live
+	 * castle listed 184 "dark" spots in rings round its towers, under their battlements).
+	 */
+	@GameTest(structure = ARENA, maxTicks = 1200, skyAccess = true)
+	public void anOverhangIsntARoof(GameTestHelper helper) {
+		ArenaBuild build = start(helper, """
+				{"tool": "fill", "args": {"box": [0, 1, 5, 0, 8, 5], "block": "stone"}},
+				{"tool": "fill", "args": {"box": [-1, 9, 4, 1, 9, 6], "block": "stone"}}""");
+		helper.succeedWhen(() -> {
+			String report = report(helper, build);
+			helper.assertFalse(report.contains("dark"), "the ground round a pillar, under its cap: " + report);
+		});
+	}
+
 	/** A door with stone at head height on one side can't be walked through; the one next to it can. */
 	@GameTest(structure = ARENA, maxTicks = 1200, skyAccess = true)
 	public void aBlockedDoorIsFound(GameTestHelper helper) {

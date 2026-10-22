@@ -4,9 +4,13 @@ A mod for **Minecraft Java Edition 26.3** (Fabric) where you press **B**, type a
 with a dock", "a Japanese garden with a koi pond"), and Claude designs it and builds it in front of you, block by
 block, while you watch. It never moves you, ignores your inventory, and `/aibuild undo` puts the land back.
 
-**Status: M4.** Real builds: type a prompt and Claude builds it, using Claude Code on your own Claude login (Pro or
-Max). `/aibuild test` builds a demo house without Claude, `/aibuild survey` shows how Claude sees the land, and
-`/aibuild undo` takes any build back. The plan, milestone by milestone, is in [`PLAN.md`](PLAN.md).
+**Status: M5.** Real builds: type a prompt and Claude builds it, using Claude Code on your own Claude login (Pro or
+Max). A panel in the top-left corner shows the build's plan as it goes: its phases ticking off, the blocks placed
+and how much of its budget it has used. Claude checks its own work before it finishes (dark rooms, blocked doors,
+floating torches, low ceilings, water that would spill) and dresses builds with signs, stocked chests, a lectern
+with a book, banners and item frames. Lava never goes in next to anything that burns. `/aibuild test` builds a
+demo house without Claude, `/aibuild survey` shows how Claude sees the land, and `/aibuild undo` takes any build
+back, item frames included. The plan, milestone by milestone, is in [`PLAN.md`](PLAN.md).
 
 ## What you need
 
@@ -21,12 +25,16 @@ Max). `/aibuild test` builds a demo house without Claude, `/aibuild survey` show
 
 ![The demo house built by /aibuild test, facing the player, with the chat lines it printed](docs/demo-house.png)
 
+![The status panel during a real build: the castle's nine phases, two ticked off, 22,006 blocks placed, 91 of 150 tool calls](docs/hud.png)
+
+![Through the gate of "Stonehold Castle", built by Claude from "a medieval stone castle with a gatehouse" at Medium size: 22,504 blocks in 17 minutes, with a portcullis, banners and a welcome sign](docs/castle-gate.png)
+
 ## Using it
 
 | Do | What happens |
 |---|---|
 | Press **B** in a world | The AI Builder screen opens (rebind it in Options → Controls → Key Binds → AI Builder) |
-| Type what you want, pick a **Size**, press **Build** | Claude looks at the land, plans, then builds in front of you while the action bar shows the phase and the block count. It takes a few minutes; chat says `Done: …` with a clickable **[Undo]** at the end |
+| Type what you want, pick a **Size**, press **Build** | Claude looks at the land, plans, then builds in front of you while the panel in the top-left corner ticks off its phases and the action bar shows the block count. It takes a few minutes; chat says `Done: …` with a clickable **[Undo]** at the end |
 | Click a recent prompt (▲ ▼ scroll through the last 10) | It goes back in the box, ready to build again |
 | `/aibuild <prompt>` in chat | Same as Build, at Auto size |
 | `/aibuild test` | Builds the demo house 3 blocks in front of you, facing the way you face, slowly enough to watch (about 10 seconds). The action bar shows the phase and the block count; chat says `Done: …` with a clickable **[Undo]** |

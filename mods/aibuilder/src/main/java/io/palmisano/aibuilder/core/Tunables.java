@@ -77,6 +77,8 @@ public final class Tunables {
 	public static final int CHECK_BUILD_TIMEOUT_SECONDS = 60;
 	/** How long check_build waits for the light engine to catch up with what was placed before it reads light. */
 	public static final int CHECK_BUILD_LIGHT_WAIT_SECONDS = 5;
+	/** check_build's "indoors": sky light at most this (open sky is 15, under an overhang in the open 14). */
+	public static final int CHECK_BUILD_INDOOR_SKY_LIGHT = 13;
 	/** How long undo waits for a far build's item frames to load (entities load after their chunk) before going on. */
 	public static final int UNDO_ENTITY_WAIT_SECONDS = 10;
 	/** Placement feel (spec §9): blocks a tick that get a sound and a puff of particles; how loud next to a player's; how many particles. */

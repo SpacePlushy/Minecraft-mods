@@ -1,6 +1,7 @@
 package io.palmisano.aibuilder.test;
 
 import io.palmisano.aibuilder.AiBuilderMod;
+import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.net.BuildPromptPayload;
@@ -52,16 +53,25 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 			ctx.waitTicks(40);
 			ctx.takeScreenshot("aibuilder-live-player-view");
 
-			// Back and up, then from the front-left and the left side, each looking at the middle of the site.
-			String middle = " facing 0.5 " + (feetY + 3) + " 14.5";
-			server.runCommand("tp @a 0.5 " + (feetY + 16) + " -12.5" + middle);
+			// Back and up, then from the front-left and the left side, each looking at the middle of the site, as far
+			// off as the tier is big (a Small site's middle is 15 blocks ahead, a Medium's 27). As a spectator, so
+			// nothing falls (the M5 castle's player did, from 32 up), and once the chat has faded.
+			server.runCommand("gamemode spectator @a");
+			ctx.waitTicks(200);
+			int span = size == SizeTier.AUTO ? SizeTier.LARGE.size() : size.size();
+			double middleZ = Tunables.SITE_GAP + span / 2.0 - 0.5;
+			String middle = " facing 0.5 " + (feetY + span / 8) + " " + middleZ;
+			server.runCommand("tp @a 0.5 " + (feetY + Math.round(span * 0.66)) + " " + (0.5 - span / 2) + middle);
 			ctx.waitTicks(80);
+			singleplayer.getConnection().waitForChunksRender();
 			ctx.takeScreenshot("aibuilder-live-overview");
-			server.runCommand("tp @a 18.5 " + (feetY + 9) + " -4.5" + middle);
+			server.runCommand("tp @a " + (0.5 + Math.round(span * 0.75)) + " " + (feetY + Math.round(span * 0.36)) + " " + (0.5 - span / 5) + middle);
 			ctx.waitTicks(80);
+			singleplayer.getConnection().waitForChunksRender();
 			ctx.takeScreenshot("aibuilder-live-front-left");
-			server.runCommand("tp @a 26.5 " + (feetY + 8) + " 14.5" + middle);
+			server.runCommand("tp @a " + (0.5 + Math.round(span * 1.1)) + " " + (feetY + span / 3) + " " + middleZ + middle);
 			ctx.waitTicks(80);
+			singleplayer.getConnection().waitForChunksRender();
 			ctx.takeScreenshot("aibuilder-live-side");
 		}
 	}

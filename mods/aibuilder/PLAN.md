@@ -43,7 +43,7 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 | M2 Placement engine | ✅ built, waiting for Frankie's test | `/aibuild test` builds a scripted house in front of you, with undo and cancel | Face each direction and run `/aibuild test`: door toward you, stairs the right way; `/aibuild undo`; `/aibuild cancel` half-way, then undo |
 | M3 Survey | ✅ built (play-test after M6) | `/aibuild survey` shows what Claude will "see" | Plains, a mountain, a beach, a forest |
 | M4 Claude | ✅ built (play-test after M6) | Real builds from your prompts | "small cabin", then "castle"; cancel one; undo; log out of Claude Code and read the message |
-| M5 Quality | ⬜ | Better builds: phases, self-check, the HUD | Builds have depth, lit interiors, working doors |
+| M5 Quality | ✅ built (play-test after M6) | Better builds: phases, self-check, the HUD, signs, chests, books, banners and item frames; lava kept clear of wood | Builds have depth, lit interiors, working doors; the panel top left; a sign or a chest in a build reads right |
 | M6 Polish | ⬜ | Config, refinement ("add a moat"), logs, error handling, permissions | The brief's manual checklist |
 
 ## Good to know
@@ -117,3 +117,11 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   minutes), the plan's limit, or where paid extra usage would begin. The first live build, a small cabin, took four
   minutes and came out well. Also: the owner is checked by UUID and command blocks can't speak for them, the change
   cap counts real changes, and every gametest uses a fake Claude Code.
+- **2026-10-22:** M5 built from `docs/superpowers/plans/2026-10-22-aibuilder-m5-plan.md`: lava is kept clear of
+  anything that burns (the world's too); `check_build` gives Claude the facts to fix (unsupported blocks, dark rooms,
+  blocked doors, low ceilings, fluid that would spill), read over ticks; `place_block_entity` dresses builds with sign
+  text, container items, a lectern's book, banner patterns and item frames, which undo takes down first; a status panel
+  top left ticks off the plan's phases; blocks go in with a soft sound. The live check, "a medieval stone castle with
+  a gatehouse" at Medium, came out well (22,504 blocks, 107 tool calls, 17 minutes; Claude ran `check_build` four
+  times and fixed what it found). It showed two things, fixed: an overhang out in the open counted as a roof, and
+  checkpoints that named two phases moved the panel only one.
