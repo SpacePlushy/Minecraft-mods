@@ -13,4 +13,9 @@ public interface BuildHandle {
 	 * it's the player's whole line, shown as it is; for CAPPED, which limit ("the 150 tool-call limit").
 	 */
 	String reason();
+
+	/** The Claude Code session the build ran in, as its start reported it (a refinement resumes it); "" for none. */
+	default String sessionId() {
+		return "";
+	}
 }

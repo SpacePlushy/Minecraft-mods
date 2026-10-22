@@ -45,6 +45,17 @@ class ClaudeLaunchTest {
 		assertFalse(args.contains("--no-session-persistence"), "refinements resume the session");
 	}
 
+	/** A refinement (spec §12.2): --resume with the build's session, and every other flag again (resume restores none). */
+	@Test
+	void resumeUsesTheSession() {
+		List<String> fresh = launch(List.of("claude"));
+		List<String> resumed = ClaudeLaunch.arguments(List.of("claude"), MCP, PROMPT, ClaudeSettings.DEFAULT, SESSION, true);
+		assertFalse(resumed.contains("--session-id"), resumed.toString());
+		assertEquals(SESSION.toString(), resumed.get(resumed.indexOf("--resume") + 1));
+		List<String> others = new java.util.ArrayList<>(fresh.subList(0, fresh.indexOf("--session-id")));
+		assertEquals(others, resumed.subList(0, resumed.indexOf("--resume")), "every other flag, in the same order");
+	}
+
 	@Test
 	void theSettingsAreUsed() {
 		List<String> args = ClaudeLaunch.arguments(List.of("claude"), MCP, PROMPT, new ClaudeSettings("claude-sonnet-5-5", "medium", 90), SESSION);

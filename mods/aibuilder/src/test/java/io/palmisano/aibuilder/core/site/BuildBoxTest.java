@@ -19,6 +19,20 @@ class BuildBoxTest {
 		assertEquals(-4, BuildBox.allowed(SizeTier.MEDIUM, -60, -64, 319).orElseThrow().min().y());
 	}
 
+	/**
+	 * A refinement's box (spec §5.4): what the build changed, grown by 16 on every side but down by at most a quarter of
+	 * the tier's size, inside the world's heights.
+	 */
+	@Test
+	void refinedBoxGrowsSixteenDownAtMostAQuarter() {
+		Box hut = Box.of(-1, 0, 1, 1, 2, 3);
+		assertEquals(Box.of(-17, -6, -15, 17, 18, 19), BuildBox.refined(hut, SizeTier.SMALL, 64, -64, 319), "Small: down 6 (24 / 4)");
+		assertEquals(Box.of(-17, -12, -15, 17, 18, 19), BuildBox.refined(hut, SizeTier.MEDIUM, 64, -64, 319), "Medium: down 12");
+		assertEquals(Box.of(-17, -16, -15, 17, 18, 19), BuildBox.refined(hut, SizeTier.LARGE, 64, -64, 319), "Large: down 16 (not 20)");
+		assertEquals(Box.of(-17, -3, -15, 17, 18, 19), BuildBox.refined(hut, SizeTier.LARGE, -61, -64, 319), "the world's floor");
+		assertEquals(Box.of(-17, -16, -15, 17, 4, 19), BuildBox.refined(hut, SizeTier.LARGE, 315, -64, 319), "the build limit");
+	}
+
 	/** Flying above the build limit or below the world: no room at all, rather than a box turned upside down. */
 	@Test
 	void outsideTheWorldsHeightThereIsNoBox() {

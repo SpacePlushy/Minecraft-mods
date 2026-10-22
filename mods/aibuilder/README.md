@@ -37,6 +37,8 @@ back, item frames included. The plan, milestone by milestone, is in [`PLAN.md`](
 | Type what you want, pick a **Size**, press **Build** | Claude looks at the land, plans, then builds in front of you while the panel in the top-left corner ticks off its phases and the action bar shows the block count. It takes a few minutes; chat says `Done: …` with a clickable **[Undo]** at the end |
 | Click a recent prompt (▲ ▼ scroll through the last 10) | It goes back in the box, ready to build again |
 | `/aibuild <prompt>` in chat | Same as Build, at Auto size |
+| Type another prompt near your last build | Claude changes that build ("add a moat", "make the towers taller"): it picks up its own plan where it left off and may build up to 16 blocks past what it built. The screen says **Refining: *name***; click that to make a new build there instead. Each change is its own undo |
+| `/aibuild new <prompt>` | A new build, even next to your last one |
 | `/aibuild test` | Builds the demo house 3 blocks in front of you, facing the way you face, slowly enough to watch (about 10 seconds). The action bar shows the phase and the block count; chat says `Done: …` with a clickable **[Undo]** |
 | `/aibuild undo` | Takes back your newest build (repeat for older ones, up to 5), even after the game crashed or restarted. Anything you changed since, like a chest you filled, stays |
 | `/aibuild cancel` | Stops the build at once (Claude too); what's placed stays and can be undone |
@@ -44,6 +46,8 @@ back, item frames included. The plan, milestone by milestone, is in [`PLAN.md`](
 | `/aibuild survey` | Reads the spot in front of you the way a build does and shows what Claude will "see": heights, water, trees and any player-made blocks, with the full text saved in `aibuilder/surveys/` |
 
 The screen remembers your last 10 prompts and the size you picked last. Prompts can be up to 2,000 characters.
+A prompt changes your last build when you stand within 48 blocks of it in the same world, after a restart too; it
+keeps that build's size. Undoing a change takes back just the change.
 Only the world's owner can build. Builds never move you: a spot you're standing in waits until you step away.
 Builds leave your own blocks alone: anything that doesn't look like natural terrain or plants (a house, a farm, a
 village) counts as yours, and a build won't replace it unless you ask for that. It's a rule of thumb, so a log cabin

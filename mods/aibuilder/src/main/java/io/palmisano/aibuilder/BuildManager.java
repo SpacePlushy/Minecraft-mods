@@ -10,6 +10,7 @@ import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,9 +18,13 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import io.palmisano.aibuilder.backend.ClaudeChecks;
 import io.palmisano.aibuilder.backend.ClaudeCodeBackend;
@@ -44,6 +49,10 @@ import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.request.BuildPrompt;
 import io.palmisano.aibuilder.core.request.BuildRules;
+import io.palmisano.aibuilder.core.frame.Pos;
+import io.palmisano.aibuilder.world.SessionStore;
+import io.palmisano.aibuilder.core.request.Refinement;
+import io.palmisano.aibuilder.core.request.BuildSession;
 import io.palmisano.aibuilder.core.request.RateLimit;
 import io.palmisano.aibuilder.core.request.BuildStatus;
 import io.palmisano.aibuilder.core.request.Messages;
@@ -116,6 +125,8 @@ public final class BuildManager {
 	private FileTime configTime;
 	private RateLimit rates;
 	private int ratesPerHour;
+	/** The last build's backend: done once its Claude Code process has ended. */
+	private CompletableFuture<?> lastBackend = CompletableFuture.completedFuture(null);
 
 	private BuildManager(MinecraftServer server) {
 		this.server = server;
@@ -190,12 +201,55 @@ public final class BuildManager {
 		return build != null || undo != null || starting != null;
 	}
 
+	/** The last build's Claude Code process is still ending (a cancel waits up to 5 s for it). */
+	public boolean lastProcessRunning() {
+		return !lastBackend.isDone();
+	}
+
+	/** What a player who asks while {@link #busy()} is told. */
+	private String busyLine() {
+		return undo != null ? Messages.undoing() : build != null || starting != null ? Messages.busy() : Messages.stillStopping();
+	}
+
+	/**
+	 * For the screen's mode line (spec §5.1): the title of the build a prompt from where the player stands would refine,
+	 * or "" for a new one.
+	 */
+	public String refining(ServerPlayer player) {
+		if (config().backend().equals("scripted")) {
+			return "";
+		}
+		return refinable(player, false).map(s -> s.title().isBlank() ? Messages.untitledBuild() : s.title()).orElse("");
+	}
+
+	private Optional<BuildSession> refinable(ServerPlayer player, boolean forceNew) {
+		Optional<BuildSession> last = SessionStore.get(server).get(player.getUUID());
+		return Refinement.decide(last.orElse(null), forceNew, Positions.toPos(player.blockPosition()),
+				player.level().dimension().identifier().toString()).filter(s -> sessionUuid(s) != null);
+	}
+
+	private static UUID sessionUuid(BuildSession session) {
+		try {
+			return UUID.fromString(session.claudeSession());
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
+	}
+
 	/**
 	 * A prompt from {@code /aibuild <prompt>} or the screen: a real build. The site is taken where the player stands
 	 * now; Claude Code is found and its login checked on a worker (a process, about a second); then the build starts
 	 * with the Claude Code backend, exactly as {@code /aibuild test} does with its script.
 	 */
 	public void submit(ServerPlayer player, String rawPrompt, SizeTier size) {
+		submit(player, rawPrompt, size, false);
+	}
+
+	/**
+	 * The same; next to the player's last build (48 blocks, the same dimension) it refines that build (spec §5.4): its
+	 * frame, its Claude Code session resumed, the box of its changes grown by 16. {@code forceNew}: a new build anyway.
+	 */
+	public void submit(ServerPlayer player, String rawPrompt, SizeTier size, boolean forceNew) {
 		if (!mayBuild(player)) {
 			return;
 		}
@@ -206,35 +260,55 @@ public final class BuildManager {
 			return;
 		}
 		if (busy()) {
-			reply(player, undo != null ? Messages.undoing() : Messages.busy());
+			reply(player, busyLine());
 			return;
 		}
 		AiBuilderConfig cfg = config();
+		boolean scripted = cfg.backend().equals("scripted");
+		Optional<BuildSession> refines = scripted ? Optional.empty() : refinable(player, forceNew);
 		// A guard against a loop of prompts (spec §15), before anything is checked or started.
 		OptionalLong wait = rates(cfg).tryStart(player.getUUID(), System.currentTimeMillis());
 		if (wait.isPresent()) {
 			reply(player, Messages.rateLimited(cfg.rateLimitPerHour(), wait.getAsLong()));
 			return;
 		}
-		LocalFrame frame = Sites.ahead(player, cfg.siteGap());
 		ServerLevel level = player.level();
-		Optional<Box> allowed = BuildBox.allowed(size, frame.origin().y(), level.getMinY(), level.getMaxY());
-		if (allowed.isEmpty()) {
-			reply(player, Messages.noRoom());
-			return;
+		LocalFrame frame;
+		Box allowed;
+		BuildRequest request;
+		if (refines.isPresent()) {
+			BuildSession session = refines.get();
+			frame = new LocalFrame(session.origin(), session.facing());
+			allowed = BuildBox.refined(session.changed(), session.size(), session.origin().y(), level.getMinY(), level.getMaxY());
+			request = new BuildRequest(Refinement.prompt(session, prompt), session.size(), sessionUuid(session), true);
+		} else {
+			frame = Sites.ahead(player, cfg.siteGap());
+			Optional<Box> box = BuildBox.allowed(size, frame.origin().y(), level.getMinY(), level.getMaxY());
+			if (box.isEmpty()) {
+				reply(player, Messages.noRoom());
+				return;
+			}
+			allowed = box.get();
+			request = new BuildRequest(prompt, size);
 		}
-		if (cfg.backend().equals("scripted")) {
+		String acceptedLine = refines.map(s -> Messages.refining(s.title().isBlank() ? Messages.untitledBuild() : s.title(), prompt))
+				.orElse(Messages.accepted(prompt, size));
+		if (scripted) {
 			// Offline (spec §14): every prompt builds the demo house through the real tools, no Claude.
-			reply(player, Messages.accepted(prompt, size));
-			build = new Build(player, level, frame, allowed.get(), demo(), new BuildRequest(prompt, size), cfg.placementRate(), budget(cfg), cfg);
+			reply(player, acceptedLine);
+			build = new Build(player, level, frame, allowed, demo(), request, cfg.placementRate(), budget(cfg), cfg, null, prompt);
 			return;
 		}
 		Starting start = new Starting(player.getUUID());
 		starting = start;
-		reply(player, Messages.accepted(prompt, size));
+		reply(player, acceptedLine);
 		Map<String, String> environment = childEnvironment();
 		List<String> override = TestHooks.claudeCommand;
-		CompletableFuture.supplyAsync(() -> check(override, environment, cfg.claudePath()), CHECKS).whenComplete((checked, error) -> server.execute(() -> {
+		// One Claude Code process at a time, so a session is never resumed from two (spec §12.2): a prompt typed while
+		// the last build's process is still ending (right after "Done:", or in a cancel's grace) starts once it has.
+		CompletableFuture<?> previous = lastBackend;
+		CompletableFuture.supplyAsync(() -> ended(previous) ? check(override, environment, cfg.claudePath())
+				: new Checked(List.of(), Messages.stillStopping()), CHECKS).whenComplete((checked, error) -> server.execute(() -> {
 			if (starting != start) {
 				return;
 			}
@@ -251,8 +325,8 @@ public final class BuildManager {
 				return;
 			}
 			try {
-				build = new Build(owner, level, frame, allowed.get(), claudeBackend(checked.command(), environment, owner, cfg),
-						new BuildRequest(prompt, size), cfg.placementRate(), budget(cfg), cfg);
+				build = new Build(owner, level, frame, allowed, claudeBackend(checked.command(), environment, owner, cfg), request,
+						cfg.placementRate(), budget(cfg), cfg, refines.orElse(null), prompt);
 			} catch (IOException e) {
 				tell(start.owner, Component.literal(Messages.failed("the mod's tool server couldn't start: " + e.getMessage())));
 			}
@@ -286,6 +360,21 @@ public final class BuildManager {
 	}
 
 	private record Checked(List<String> command, String problem) {
+	}
+
+	/** Waits for a Claude Code process to end (on a worker); false if it hasn't within PREVIOUS_PROCESS_WAIT_SECONDS. */
+	private static boolean ended(CompletableFuture<?> process) {
+		try {
+			process.get(Tunables.PREVIOUS_PROCESS_WAIT_SECONDS, TimeUnit.SECONDS);
+			return true;
+		} catch (ExecutionException | CancellationException e) {
+			return true;
+		} catch (TimeoutException e) {
+			return false;
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return false;
+		}
 	}
 
 	/** A prompt waiting for its Claude Code check; a cancel meanwhile drops it. Server thread. */
@@ -350,7 +439,7 @@ public final class BuildManager {
 			return Outcome.REFUSED;
 		}
 		if (busy()) {
-			reply(player, undo != null ? Messages.undoing() : Messages.busy());
+			reply(player, busyLine());
 			return Outcome.BUSY;
 		}
 		AiBuilderConfig cfg = config();
@@ -364,7 +453,7 @@ public final class BuildManager {
 		// Slow on purpose: something to watch, check on with /aibuild status and cancel half-way. Its own caps, so
 		// the demo works whatever the config says.
 		build = new Build(player, level, frame, allowed.get(), demo(), new BuildRequest("the demo house", SizeTier.AUTO),
-				Tunables.DEMO_BLOCKS_PER_TICK, new Budget(Tunables.MAX_TOOL_CALLS), cfg);
+				Tunables.DEMO_BLOCKS_PER_TICK, new Budget(Tunables.MAX_TOOL_CALLS), cfg, null, "the demo house");
 		return Outcome.STARTED;
 	}
 
@@ -394,7 +483,7 @@ public final class BuildManager {
 			return Outcome.REFUSED;
 		}
 		if (busy()) {
-			reply(player, build != null ? Messages.busy() : Messages.undoing());
+			reply(player, busyLine());
 			return Outcome.BUSY;
 		}
 		// Left in the history until the undo has finished, so a crash half-way loses nothing.
@@ -574,12 +663,25 @@ public final class BuildManager {
 		String title = "";
 		/** The owner's client has the HUD up. Server thread. */
 		boolean hudShown;
+		/** The session this build refines, or null for a new one; the player's own words; where it is; how big. */
+		final BuildSession refines;
+		final String playerPrompt;
+		final LocalFrame frame;
+		final BuildRequest request;
+		/** Only Claude builds have a session to refine: a scripted one (the demo) ends the last. */
+		final boolean claude;
 
 		Build(ServerPlayer player, ServerLevel level, LocalFrame frame, Box allowed, AiBackend backend, BuildRequest request, int blocksPerTick,
-				Budget budget, AiBuilderConfig cfg) {
+				Budget budget, AiBuilderConfig cfg, BuildSession refines, String playerPrompt) {
 			owner = player.getUUID();
 			this.level = level;
 			this.budget = budget;
+			this.refines = refines;
+			this.playerPrompt = playerPrompt;
+			this.frame = frame;
+			this.request = request;
+			this.claude = backend instanceof ClaudeCodeBackend;
+			this.title = refines == null ? "" : refines.title();
 			store = UndoStore.get(server);
 			// The player's earlier builds here are theirs to change: the survey doesn't protect what those left.
 			List<UndoJournal<BlockState, CompoundTag>> earlier = store.builds(owner).stream()
@@ -616,6 +718,7 @@ public final class BuildManager {
 				}
 			});
 			handle.outcome().thenAccept(outcome -> server.execute(() -> backendEnded(outcome)));
+			lastBackend = handle.outcome();
 		}
 
 		void cancel() {
@@ -669,6 +772,48 @@ public final class BuildManager {
 			job.finish();
 		}
 
+		/**
+		 * The refinement record (spec §5.4): a Claude build's changes start a session, or join the one it refined, with
+		 * the Claude Code session it ran in; a build that changed nothing leaves it as it was; the demo ends it.
+		 */
+		private void remember() {
+			SessionStore sessions = SessionStore.get(server);
+			if (!claude) {
+				sessions.remove(owner);
+				return;
+			}
+			if (journal.isEmpty()) {
+				return;
+			}
+			Box changes = changedBox();
+			String session = handle.sessionId().isBlank() ? request.session().toString() : handle.sessionId();
+			sessions.put(owner, refines != null ? refines.refined(playerPrompt, changes, session, title)
+					: new BuildSession(level.dimension().identifier().toString(), title, frame.origin(), frame.facing(), request.size(), changes,
+							session, List.of(playerPrompt), 1, false));
+		}
+
+		/** What this build changed (its frames included), as a local box. */
+		private Box changedBox() {
+			int minX = Integer.MAX_VALUE;
+			int minY = Integer.MAX_VALUE;
+			int minZ = Integer.MAX_VALUE;
+			int maxX = Integer.MIN_VALUE;
+			int maxY = Integer.MIN_VALUE;
+			int maxZ = Integer.MIN_VALUE;
+			List<Pos> all = new ArrayList<>(journal.positions());
+			journal.spawned().forEach(s -> all.add(s.pos()));
+			for (Pos world : all) {
+				Pos p = frame.toLocal(world);
+				minX = Math.min(minX, p.x());
+				minY = Math.min(minY, p.y());
+				minZ = Math.min(minZ, p.z());
+				maxX = Math.max(maxX, p.x());
+				maxY = Math.max(maxY, p.y());
+				maxZ = Math.max(maxZ, p.z());
+			}
+			return Box.of(minX, minY, minZ, maxX, maxY, maxZ);
+		}
+
 		/** Server thread, once the job has placed everything and finalized. */
 		private void ended(Integer skipped, Throwable error) {
 			// Whatever ended the job (a failure too), the backend has nothing left to build with: stop it.
@@ -676,6 +821,7 @@ public final class BuildManager {
 				handle.cancel();
 			}
 			BuildTickets.release(level, chunks);
+			remember();
 			// A build that changed nothing leaves the history, so undo never answers with nothing restored. Frames count.
 			boolean undoable = !journal.isEmpty();
 			if (undoable) {
@@ -734,6 +880,9 @@ public final class BuildManager {
 					tell(owner, Component.literal(Messages.failed(reason(error))));
 				} else {
 					UndoStore.get(server).remove(owner, stored);
+					// The player's newest build is the session's newest (every build updates or ends it).
+					SessionStore sessions = SessionStore.get(server);
+					sessions.get(owner).ifPresent(s -> s.undone().ifPresentOrElse(back -> sessions.put(owner, back), () -> sessions.remove(owner)));
 					tell(owner, Component.literal(Messages.undone(result.restored(), result.kept())));
 				}
 				if (undo == this) {

@@ -11,6 +11,7 @@ import java.util.function.Function;
 import com.mojang.blaze3d.platform.InputConstants;
 import io.palmisano.aibuilder.client.AiBuilderClient;
 import io.palmisano.aibuilder.client.BuilderScreen;
+import io.palmisano.aibuilder.core.request.BuildPrompt;
 import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
@@ -18,8 +19,12 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.network.chat.Component;
 
 /** B opens the builder screen: it sends the prompt, remembers the size and recent prompts, and holds up at the edges. */
 @SuppressWarnings("UnstableApiUsage")
@@ -46,6 +51,8 @@ public class BuilderScreenClientGameTest implements FabricClientGameTest {
 			ctx.getInput().typeChars(BARN);
 			check(screen(ctx, BuilderScreen::prompt).equals(BARN), "the box should hold the typed text, got " + screen(ctx, BuilderScreen::prompt));
 			check(screen(ctx, BuilderScreen::buildEnabled), "Build should be on once there is a prompt");
+			String overCounter = screen(ctx, BuilderScreenClientGameTest::firstWidgetOverCounter);
+			check(overCounter == null, "widget over the character counter: " + overCounter);
 			BuilderScreen opened = ctx.computeOnClient(mc -> (BuilderScreen) mc.gui.screen());
 			ctx.getInput().pressKey(InputConstants.KEY_B);
 			ctx.waitTicks(3);
@@ -60,6 +67,8 @@ public class BuilderScreenClientGameTest implements FabricClientGameTest {
 			check(screen(ctx, BuilderScreen::prompt).equals(BARN), "resizing the window lost the prompt");
 			String offScreen = screen(ctx, BuilderScreenClientGameTest::firstWidgetOffScreen);
 			check(offScreen == null, "widget off screen: " + offScreen);
+			String overCounterSmall = screen(ctx, BuilderScreenClientGameTest::firstWidgetOverCounter);
+			check(overCounterSmall == null, "widget over the character counter at 320x240: " + overCounterSmall);
 			ctx.takeScreenshot("aibuilder-screen-small");
 			ctx.getInput().resizeWindow(window[0], window[1]);
 			ctx.waitFor(mc -> mc.gui.screen() != null && mc.gui.screen().width == guiWidth);
@@ -144,6 +153,24 @@ public class BuilderScreenClientGameTest implements FabricClientGameTest {
 
 	private static <T> T screen(ClientGameTestContext ctx, Function<BuilderScreen, T> read) {
 		return ctx.computeOnClient(mc -> read.apply((BuilderScreen) mc.gui.screen()));
+	}
+
+	/** The first widget over the box's n/2,000 counter (drawn 4 below the box's right corner, a line high), or null. */
+	private static String firstWidgetOverCounter(BuilderScreen s) {
+		Font font = Minecraft.getInstance().font;
+		MultiLineEditBox box = s.children().stream().filter(c -> c instanceof MultiLineEditBox).map(c -> (MultiLineEditBox) c).findFirst().orElseThrow();
+		String counter = Component.translatable("gui.multiLineEditBox.character_limit", s.prompt().length(), BuildPrompt.MAX_CODE_POINTS).getString();
+		int top = box.getY() + box.getHeight() + 4;
+		int bottom = top + font.lineHeight;
+		int right = box.getX() + box.getWidth();
+		int left = right - font.width(counter);
+		for (var child : s.children()) {
+			if (child != box && child instanceof AbstractWidget w && w.getX() < right && w.getX() + w.getWidth() > left && w.getY() < bottom
+					&& w.getY() + w.getHeight() > top) {
+				return "\"" + w.getMessage().getString() + "\" at " + w.getX() + "," + w.getY() + ", the counter at " + left + "," + top;
+			}
+		}
+		return null;
 	}
 
 	/** The first widget not wholly inside the screen, described, or null when all fit. */

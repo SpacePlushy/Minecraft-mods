@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import io.palmisano.aibuilder.AiBuilderMod;
+import io.palmisano.aibuilder.net.BuildModePayload;
 import io.palmisano.aibuilder.net.BuildStatusPayload;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -21,6 +22,7 @@ public class AiBuilderClient implements ClientModInitializer {
 		KeyMappingHelper.registerKeyMapping(OPEN_BUILDER);
 		// Fabric runs play payload handlers on the client thread.
 		ClientPlayNetworking.registerGlobalReceiver(BuildStatusPayload.TYPE, (payload, context) -> StatusHud.show(payload.status()));
+		ClientPlayNetworking.registerGlobalReceiver(BuildModePayload.TYPE, (payload, context) -> BuilderScreen.refining(payload.refining()));
 		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, AiBuilderMod.id("build_status"), new StatusHud());
 		// Drain every click each tick, so a press while another screen is open never opens the builder later.
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {

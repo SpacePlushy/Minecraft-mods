@@ -1,5 +1,6 @@
 package io.palmisano.aibuilder;
 
+import io.palmisano.aibuilder.net.BuildModePayload;
 import io.palmisano.aibuilder.net.BuildPromptPayload;
 import io.palmisano.aibuilder.net.BuildStatusPayload;
 import io.palmisano.aibuilder.world.BuildTickets;
@@ -23,10 +24,14 @@ public class AiBuilderMod implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		PayloadTypeRegistry.serverboundPlay().register(BuildPromptPayload.TYPE, BuildPromptPayload.CODEC);
+		PayloadTypeRegistry.serverboundPlay().register(BuildModePayload.Query.TYPE, BuildModePayload.Query.CODEC);
 		PayloadTypeRegistry.clientboundPlay().register(BuildStatusPayload.TYPE, BuildStatusPayload.CODEC);
+		PayloadTypeRegistry.clientboundPlay().register(BuildModePayload.TYPE, BuildModePayload.CODEC);
 		// Fabric runs play payload handlers on the server thread.
 		ServerPlayNetworking.registerGlobalReceiver(BuildPromptPayload.TYPE, (payload, context) -> BuildManager
-				.of(context.player().level().getServer()).submit(context.player(), payload.prompt(), payload.size()));
+				.of(context.player().level().getServer()).submit(context.player(), payload.prompt(), payload.size(), payload.forceNew()));
+		ServerPlayNetworking.registerGlobalReceiver(BuildModePayload.Query.TYPE, (payload, context) -> context.responseSender()
+				.sendPacket(new BuildModePayload(BuildManager.of(context.player().level().getServer()).refining(context.player()))));
 		CommandRegistrationCallback.EVENT.register((dispatcher, buildContext, selection) -> AiBuildCommand.register(dispatcher));
 		BuildTickets.register();
 		JobScheduler.register();

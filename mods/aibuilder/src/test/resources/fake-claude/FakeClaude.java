@@ -4,12 +4,14 @@
 
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -25,6 +27,7 @@ public class FakeClaude {
 	static String url;
 	static String token;
 	static String session = UUID.randomUUID().toString();
+	static Path lock;
 	static int nextId;
 	static int turns;
 	static volatile boolean done;
@@ -39,15 +42,45 @@ public class FakeClaude {
 		if (given != null) {
 			session = given;
 		}
+		// A refinement goes on in the build's session (spec §12.2).
+		String resumed = after(a, "--resume");
+		if (resumed != null) {
+			session = resumed;
+		}
+		// Like Claude Code's session file: two processes on one session is the mod's bug (spec §12.2), so it's refused.
+		lock = Path.of(System.getProperty("java.io.tmpdir"), "aibuilder-fake-claude-sessions", session);
+		Files.createDirectories(lock.getParent());
+		try {
+			Files.createFile(lock);
+		} catch (FileAlreadyExistsException e) {
+			done = true;
+			System.err.println("session " + session + " is in use by another process");
+			System.exit(4);
+		}
+		lock.toFile().deleteOnExit();
 		String prompt = new String(System.in.readAllBytes(), StandardCharsets.UTF_8);
 		String scenario = System.getenv().getOrDefault("FAKE_CLAUDE_SCENARIO", "build");
 		// Ended by a signal (a cancel, a cap): finish the turn the way Claude Code does on SIGINT.
 		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
 			if (!done) {
 				done = true;
+				if (scenario.equals("slow_exit")) {
+					// A process that takes its time to end after a cancel, within the mod's 5 s grace.
+					try {
+						Thread.sleep(4_000);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				}
 				OUT.println("{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"num_turns\":" + turns
 						+ ",\"terminal_reason\":\"aborted_tools\",\"session_id\":\"" + session + "\"}");
 				OUT.flush();
+				// halt skips deleteOnExit.
+				try {
+					Files.deleteIfExists(lock);
+				} catch (IOException e) {
+					// a stale lock only refuses that session, which nothing resumes after a test run
+				}
 				Runtime.getRuntime().halt(0);
 			}
 		}));
@@ -81,6 +114,20 @@ public class FakeClaude {
 				result(false, "success", "Built a tiny oak hut.", "completed", 0);
 			}
 			case "echo" -> result(false, "success", prompt, "completed", 0);
+			case "refine" -> {
+				// What a refinement is given: the session it resumes and the box get_context now gives.
+				String context = call("get_context", "{}");
+				String box = context == null ? null : group(context, "the allowed box is (x -?\\d+\\.\\.-?\\d+, y -?\\d+\\.\\.-?\\d+, z -?\\d+\\.\\.-?\\d+)");
+				call("finish", "{\"summary\":" + quote("Resumed " + resumed + "; the allowed box is " + box) + "}");
+				result(false, "success", "Refined.", "completed", 0);
+			}
+			case "slow_exit" -> {
+				call("get_context", "{}");
+				call("submit_brief", "{\"title\":\"Test hut\",\"style\":\"plain\",\"size\":{\"w\":3,\"h\":3,\"d\":3},"
+						+ "\"palette\":[{\"role\":\"primary\",\"block\":\"oak_planks\"}],\"phases\":[\"walls\"]}");
+				Thread.sleep(60_000);
+				result(false, "success", "done", "completed", 0);
+			}
 			case "extra_tool", "api_key", "plugin" -> {
 				call("get_context", "{}");
 				Thread.sleep(30_000);
@@ -147,8 +194,8 @@ public class FakeClaude {
 		return tools;
 	}
 
-	/** One model turn that calls one tool: the assistant line, the call over HTTP, the tool result line. */
-	static void call(String tool, String arguments) throws Exception {
+	/** One model turn that calls one tool: the assistant line, the call over HTTP, the tool result line. Returns its text. */
+	static String call(String tool, String arguments) throws Exception {
 		turns++;
 		String useId = "toolu_" + UUID.randomUUID().toString().replace("-", "");
 		OUT.println("{\"type\":\"assistant\",\"message\":{\"id\":\"msg_" + UUID.randomUUID() + "\",\"model\":\"claude-opus-5-5\",\"role\":\"assistant\","
@@ -161,6 +208,7 @@ public class FakeClaude {
 		String text = reply == null ? "unauthorized" : group(reply, "\"text\":\"((?:[^\"\\\\]|\\\\.)*)\"");
 		OUT.println("{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"tool_use_id\":\"" + useId + "\",\"type\":\"tool_result\",\"content\":"
 				+ "[{\"type\":\"text\",\"text\":\"" + (text == null ? "" : text) + "\"}]}]},\"session_id\":\"" + session + "\"}");
+		return text;
 	}
 
 	static void rateLimit(String status, boolean overage) {

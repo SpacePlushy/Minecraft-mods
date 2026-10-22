@@ -25,12 +25,18 @@ public final class ClaudeLaunch {
 
 	/** {@code command} (the binary, or a test's fake), then every flag; never {@code --bare} (it skips the login). */
 	public static List<String> arguments(List<String> command, Path mcpConfig, Path systemPrompt, ClaudeSettings settings, UUID session) {
+		return arguments(command, mcpConfig, systemPrompt, settings, session, false);
+	}
+
+	/** The same; {@code resume}: a refinement goes on in that session (spec §12.2), with every other flag again. */
+	public static List<String> arguments(List<String> command, Path mcpConfig, Path systemPrompt, ClaudeSettings settings, UUID session,
+			boolean resume) {
 		List<String> args = new ArrayList<>(command);
 		args.addAll(List.of("-p", "--verbose", "--output-format", "stream-json", "--include-partial-messages", "--strict-mcp-config", "--mcp-config",
 				mcpConfig.toString(), "--tools", "", "--allowedTools", "mcp__" + InitCheck.SERVER + "__*", "--permission-mode", "dontAsk",
 				"--permission-prompts", "none", "--restricted", "--disable-slash-commands", "--system-prompt-file", systemPrompt.toString(),
-				"--model", settings.model(), "--effort", settings.effort(), "--max-turns", Integer.toString(settings.maxTurns()), "--session-id",
-				session.toString()));
+				"--model", settings.model(), "--effort", settings.effort(), "--max-turns", Integer.toString(settings.maxTurns()),
+				resume ? "--resume" : "--session-id", session.toString()));
 		return args;
 	}
 

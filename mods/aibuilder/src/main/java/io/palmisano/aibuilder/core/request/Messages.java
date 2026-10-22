@@ -17,6 +17,22 @@ public final class Messages {
 				+ " /aibuild cancel stops it.";
 	}
 
+	/** A prompt that refines the last build (spec §5.4); /aibuild new builds new instead. */
+	public static String refining(String title, String prompt) {
+		return "AI Builder: changing " + title + ": \"" + prompt + "\". Claude plans before it builds, so give it a few minutes;"
+				+ " /aibuild cancel stops it, and /aibuild new builds something new instead.";
+	}
+
+	/** A refined build that never got a title from its brief. */
+	public static String untitledBuild() {
+		return "your last build";
+	}
+
+	/** A prompt waited for the last build's Claude Code process, and it never ended. */
+	public static String stillStopping() {
+		return "The last build's Claude Code is still stopping; try again in a few seconds.";
+	}
+
 	public static String problem(BuildPrompt.Problem problem, String prompt) {
 		return switch (problem) {
 			case EMPTY -> "Type something for AI Builder to build.";

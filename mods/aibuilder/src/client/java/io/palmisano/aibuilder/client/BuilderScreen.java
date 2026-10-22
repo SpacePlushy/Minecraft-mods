@@ -6,8 +6,10 @@ import java.util.List;
 import io.palmisano.aibuilder.core.request.BuildPrompt;
 import io.palmisano.aibuilder.core.request.PromptHistory;
 import io.palmisano.aibuilder.core.request.SizeTier;
+import io.palmisano.aibuilder.net.BuildModePayload;
 import io.palmisano.aibuilder.net.BuildPromptPayload;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.MultiLineEditBox;
@@ -24,7 +26,7 @@ import net.minecraft.network.chat.Component;
 public class BuilderScreen extends Screen {
 	private static final int MAX_COLUMN_WIDTH = 320;
 	private static final int BOX_TOP = 42;
-	private static final int MAX_BOX_HEIGHT = 72;
+	private static final int MAX_BOX_HEIGHT = 63;
 	private static final int MIN_BOX_HEIGHT = 36;
 	private static final int ROW_STEP = 22;
 
@@ -38,12 +40,30 @@ public class BuilderScreen extends Screen {
 	private final List<Button> recentRows = new ArrayList<>();
 	private Button upButton;
 	private Button downButton;
+	private Button modeButton;
+	/** The title a prompt from here would refine, as the server last said; "" for a new build. Client thread. */
+	private static String refining = "";
+	/** The mode toggle: a new build here even next to the last one (spec §5.1). */
+	private boolean forceNew;
 
 	public BuilderScreen(PromptHistoryStore store) {
 		super(Component.translatable("gui.aibuilder.title"));
 		this.store = store;
 		this.history = store.load();
 		this.size = history.lastSize();
+		// Asked again each time the screen opens: where the player stands decides it.
+		refining = "";
+		if (ClientPlayNetworking.canSend(BuildModePayload.Query.TYPE)) {
+			ClientPlayNetworking.send(new BuildModePayload.Query());
+		}
+	}
+
+	/** The server's answer to the mode question. Client thread. */
+	static void refining(String title) {
+		refining = title;
+		if (Minecraft.getInstance().gui.screen() instanceof BuilderScreen screen && screen.modeButton != null) {
+			screen.showMode();
+		}
 	}
 
 	@Override
@@ -54,7 +74,9 @@ public class BuilderScreen extends Screen {
 		addRenderableOnly(new StringWidget((width - font.width(title)) / 2, 12, font.width(title), font.lineHeight, title, font));
 		addRenderableOnly(new StringWidget(left, 30, column, font.lineHeight, Component.translatable("gui.aibuilder.prompt"), font));
 
-		int boxHeight = Math.clamp(height - 120, MIN_BOX_HEIGHT, MAX_BOX_HEIGHT);
+		// The box draws its n/2,000 counter 4 below its right corner, a line high; the rows under it start past that.
+		int counterRoom = 4 + font.lineHeight + 2;
+		int boxHeight = Math.clamp(height - 114 - counterRoom, MIN_BOX_HEIGHT, MAX_BOX_HEIGHT);
 		promptBox = MultiLineEditBox.builder()
 				.setX(left)
 				.setY(BOX_TOP)
@@ -64,12 +86,14 @@ public class BuilderScreen extends Screen {
 		promptBox.setValue(draft);
 		addRenderableWidget(promptBox);
 
-		int sizeRow = BOX_TOP + boxHeight + 6;
+		int sizeRow = BOX_TOP + boxHeight + counterRoom;
 		addRenderableWidget(CycleButton.builder((SizeTier tier) -> Component.literal(tier.label()), size)
 				.withValues(SizeTier.values())
 				.create(left, sizeRow, 100, 20, Component.translatable("gui.aibuilder.size"), (button, tier) -> chooseSize(tier)));
-		addRenderableOnly(new StringWidget(left + 108, sizeRow + 6, column - 108, font.lineHeight,
-				Component.translatable("gui.aibuilder.mode.new"), font));
+		modeButton = addRenderableWidget(Button.builder(Component.empty(), button -> toggleMode())
+				.bounds(left + 108, sizeRow, column - 108, 20)
+				.build());
+		showMode();
 
 		int buttonRow = sizeRow + 26;
 		int half = (column - 4) / 2;
@@ -167,6 +191,26 @@ public class BuilderScreen extends Screen {
 		setFocused(promptBox);
 	}
 
+	private void toggleMode() {
+		forceNew = !forceNew;
+		showMode();
+	}
+
+	/** "Refining: <title>", or "New build here"; the button toggles between them only when there's a build to refine. */
+	private void showMode() {
+		modeButton.setMessage(Component.literal(buttonLabel(modeLine(), modeButton.getWidth() - 8)));
+		modeButton.active = !refining.isEmpty();
+	}
+
+	public String modeLine() {
+		return refining.isEmpty() || forceNew ? Component.translatable("gui.aibuilder.mode.new").getString()
+				: Component.translatable("gui.aibuilder.mode.refine", refining).getString();
+	}
+
+	public boolean forceNew() {
+		return forceNew;
+	}
+
 	private void chooseSize(SizeTier tier) {
 		size = tier;
 		history = history.withSize(tier);
@@ -179,7 +223,7 @@ public class BuilderScreen extends Screen {
 			onClose();
 			return;
 		}
-		ClientPlayNetworking.send(new BuildPromptPayload(draft, size));
+		ClientPlayNetworking.send(new BuildPromptPayload(draft, size, forceNew && !refining.isEmpty()));
 		history = history.withPrompt(draft).withSize(size);
 		store.save(history);
 		onClose();

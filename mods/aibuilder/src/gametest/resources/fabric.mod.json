@@ -18,7 +18,8 @@
 			"io.palmisano.aibuilder.test.SiteGameTest",
 			"io.palmisano.aibuilder.test.SurveyGameTest",
 			"io.palmisano.aibuilder.test.CheckBuildGameTest",
-			"io.palmisano.aibuilder.test.BlockEntityGameTest"
+			"io.palmisano.aibuilder.test.BlockEntityGameTest",
+			"io.palmisano.aibuilder.test.RefinementGameTest"
 		],
 		"fabric-client-gametest": [
 			"io.palmisano.aibuilder.test.SmokeClientGameTest",

@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.core.site;
 
 import java.util.Optional;
 
+import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
 
@@ -23,5 +24,17 @@ public final class BuildBox {
 			return Optional.empty();
 		}
 		return Optional.of(Box.of(-w / 2, bottom, 0, w / 2 - 1, top, w - 1));
+	}
+
+	/**
+	 * A refinement's box (spec §5.4): everything the build has changed so far ({@code changed}, local), grown by 16 on
+	 * every side, down by at most a quarter of the tier's size, clipped to the world's heights as above.
+	 */
+	public static Box refined(Box changed, SizeTier tier, int originY, int minY, int topY) {
+		int grow = Tunables.REFINE_GROW;
+		int bottom = Math.max(changed.min().y() - Math.min(grow, tier.size() / 4), minY - originY);
+		int top = Math.min(changed.max().y() + grow, topY - originY);
+		return Box.of(changed.min().x() - grow, Math.min(bottom, top), changed.min().z() - grow, changed.max().x() + grow, top,
+				changed.max().z() + grow);
 	}
 }

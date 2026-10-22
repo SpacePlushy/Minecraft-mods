@@ -22,7 +22,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -141,9 +140,12 @@ public final class ClaudeCodeBackend implements AiBackend {
 		private volatile StreamEvent.Result result;
 		/** The note the action bar shows, kept to come back to after a retry. */
 		private volatile String note = "";
+		/** The session as Claude Code's start reported it; the one asked for until then. */
+		private volatile String sessionId;
 
 		Run(BuildRequest request, ToolExecutor tools, BuildEvents events) {
 			this.request = request;
+			this.sessionId = request.session().toString();
 			this.tools = tools;
 			this.budget = tools.budget();
 			this.events = events;
@@ -160,7 +162,7 @@ public final class ClaudeCodeBackend implements AiBackend {
 				Path systemPrompt = buildDir.resolve("builder_system.md");
 				Files.writeString(systemPrompt, config.systemPrompt(), StandardCharsets.UTF_8);
 				ProcessBuilder builder = new ProcessBuilder(ClaudeLaunch.arguments(config.command(), mcp, systemPrompt, config.settings(),
-						UUID.randomUUID()));
+						request.session(), request.resume()));
 				builder.directory(work.toFile());
 				builder.environment().clear();
 				builder.environment().putAll(config.environment());
@@ -196,6 +198,11 @@ public final class ClaudeCodeBackend implements AiBackend {
 		@Override
 		public String reason() {
 			return reason;
+		}
+
+		@Override
+		public String sessionId() {
+			return sessionId;
 		}
 
 		@Override
@@ -274,6 +281,9 @@ public final class ClaudeCodeBackend implements AiBackend {
 			switch (event) {
 				case StreamEvent.Init init -> {
 					initSeen = true;
+					if (!init.sessionId().isBlank()) {
+						sessionId = init.sessionId();
+					}
 					LOG.info("Claude Code {} is building with {}", init.version(), init.model());
 					Optional<String> problem = InitCheck.problem(init);
 					if (problem.isPresent()) {

@@ -67,10 +67,15 @@ final class GameTestSupport {
 
 	/** Waits until chat has shown {@code count} lines starting with {@code prefix}. */
 	static void awaitChatCount(ClientGameTestContext ctx, String prefix, int count, int maxTicks) {
-		for (int i = 0; CHAT.stream().filter(line -> line.startsWith(prefix)).count() < count; i++) {
+		for (int i = 0; count(prefix) < count; i++) {
 			check(i < maxTicks, "chat never showed " + count + " lines starting \"" + prefix + "\"; it showed " + CHAT);
 			ctx.waitTick();
 		}
+	}
+
+	/** How many lines so far start with {@code prefix}. */
+	static int count(String prefix) {
+		return (int) CHAT.stream().filter(line -> line.startsWith(prefix)).count();
 	}
 
 	/**

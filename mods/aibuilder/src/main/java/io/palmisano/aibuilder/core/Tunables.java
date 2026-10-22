@@ -14,6 +14,9 @@ public final class Tunables {
 	public static final int MAX_TURNS = 200;
 	/** Entries one set_blocks call may hold. */
 	public static final int SET_BLOCKS_MAX = 2000;
+	/** Refinement (spec §5.4): how near (sideways) to the last build a prompt refines it, and how far its box grows. */
+	public static final int REFINE_REACH = 48;
+	public static final int REFINE_GROW = 16;
 	/** Builds per player that can be undone. */
 	public static final int UNDO_HISTORY = 5;
 	/** The most builds a player's undo history may keep, whatever the config says (its undo_history_size goes to 50). */
@@ -38,6 +41,8 @@ public final class Tunables {
 	public static final int CAP_GRACE_SECONDS = 60;
 	/** After SIGINT, how long Claude Code has to end its turn before it's destroyed (spec §12.2). */
 	public static final int CANCEL_GRACE_SECONDS = 5;
+	/** How long a prompt waits for the last build's Claude Code process to end; it's destroyed after the cancel grace. */
+	public static final int PREVIOUS_PROCESS_WAIT_SECONDS = 2 * CANCEL_GRACE_SECONDS;
 	/** How long Claude Code may take to start (its system/init line) before the build fails. */
 	public static final int STARTUP_TIMEOUT_SECONDS = 60;
 	/**

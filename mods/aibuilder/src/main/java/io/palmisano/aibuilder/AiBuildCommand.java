@@ -29,9 +29,13 @@ public final class AiBuildCommand {
 				.then(Commands.literal("cancel").executes(context -> run(context, BuildManager::cancel)))
 				.then(Commands.literal("status").executes(context -> run(context, BuildManager::status)))
 				.then(Commands.literal("survey").executes(context -> run(context, BuildManager::survey)))
+				// Always a new build in front of the player, even next to the last one (spec §5.2).
+				.then(Commands.literal("new").then(Commands.argument("prompt", StringArgumentType.greedyString())
+						.executes(context -> run(context,
+								(manager, player) -> manager.submit(player, StringArgumentType.getString(context, "prompt"), SizeTier.AUTO, true)))))
 				.then(Commands.argument("prompt", StringArgumentType.greedyString())
 						.executes(context -> run(context,
-								(manager, player) -> manager.submit(player, StringArgumentType.getString(context, "prompt"), SizeTier.AUTO)))));
+								(manager, player) -> manager.submit(player, StringArgumentType.getString(context, "prompt"), SizeTier.AUTO, false)))));
 	}
 
 	private static int run(CommandContext<CommandSourceStack> context, BiConsumer<BuildManager, ServerPlayer> action)

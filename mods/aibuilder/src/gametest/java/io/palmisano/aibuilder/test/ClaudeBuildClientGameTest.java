@@ -7,11 +7,15 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.UUID;
 
 import io.palmisano.aibuilder.BuildManager;
 import io.palmisano.aibuilder.TestHooks;
+import io.palmisano.aibuilder.client.BuilderScreen;
+import io.palmisano.aibuilder.client.PromptHistoryStore;
 import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
+import io.palmisano.aibuilder.world.SessionStore;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestServerContext;
@@ -86,10 +90,55 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 				GameTestSupport.awaitChatCount(ctx, Messages.notLoggedIn(), 2, 600);
 				ctx.waitTicks(5);
 				check(!server.computeOnServer(s -> BuildManager.of(s).busy()), "a build started without a login");
+
+				// Refinement (spec §5.4): a prompt next to the last build changes that build, in the same Claude Code
+				// session, inside the box of what it built grown by 16 (here clipped by the world's floor, 3 below).
+				UUID owner = server.computeOnServer(s -> s.getPlayerList().getPlayers().getFirst().getUUID());
+				TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "build");
+				GameTestSupport.runPlayerCommand(ctx, "aibuild a hut to refine");
+				server.waitFor(s -> SessionStore.get(s).get(owner).isPresent() && !BuildManager.of(s).busy());
+				String session = server.computeOnServer(s -> SessionStore.get(s).get(owner).orElseThrow().claudeSession());
+				// The screen says the next prompt changes the hut; its toggle makes it a new build instead.
+				ctx.runOnClient(mc -> mc.gui.setScreen(new BuilderScreen(PromptHistoryStore.standard())));
+				ctx.waitFor(mc -> mc.gui.screen() instanceof BuilderScreen screen && screen.modeLine().equals("Refining: Test hut"), 100);
+				ctx.clickScreenButton("Refining: Test hut");
+				String toggled = ctx.computeOnClient(mc -> ((BuilderScreen) mc.gui.screen()).modeLine());
+				check(toggled.equals("New build here"), "the screen's toggle: " + toggled);
+				ctx.runOnClient(mc -> mc.gui.setScreen(null));
+				TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "refine");
+				GameTestSupport.runPlayerCommand(ctx, "aibuild add a door");
+				GameTestSupport.awaitChat(ctx, Messages.refining("Test hut", "add a door"), 200);
+				GameTestSupport.awaitChat(ctx, "Resumed " + session + "; the allowed box is x -17..17, y -3..18, z -15..19", 600);
+				server.waitFor(s -> !BuildManager.of(s).busy());
+				aPromptWaitsForTheLastProcess(ctx, server, session);
+				GameTestSupport.awaitChatCount(ctx, "Done: ", 5, 600);
 			} finally {
 				TestHooks.claudeEnvironment = TestSetup.DEFAULT_SCENARIO;
 			}
 		}
+	}
+
+	/**
+	 * One Claude Code process at a time, so a session is never resumed from two (M6 Review Focus; the fake refuses a
+	 * session in use): right after a cancel, while the process that ran the hut's session takes its time to end, the
+	 * next prompt, a refinement of the hut, is taken and starts once that process has ended.
+	 */
+	private static void aPromptWaitsForTheLastProcess(ClientGameTestContext ctx, TestServerContext server, String session) {
+		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "slow_exit");
+		int designed = GameTestSupport.count("Designing: Test hut");
+		int stopped = GameTestSupport.count("Stopped: ");
+		GameTestSupport.runPlayerCommand(ctx, "aibuild add a slow porch");
+		GameTestSupport.awaitChat(ctx, Messages.refining("Test hut", "add a slow porch"), 200);
+		GameTestSupport.awaitChatCount(ctx, "Designing: Test hut", designed + 1, 600);
+		GameTestSupport.runPlayerCommand(ctx, "aibuild cancel");
+		GameTestSupport.awaitChatCount(ctx, "Stopped: ", stopped + 1, 200);
+		check(server.computeOnServer(s -> BuildManager.of(s).lastProcessRunning()), "the slow process ended before the next prompt");
+		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "refine");
+		GameTestSupport.runPlayerCommand(ctx, "aibuild add a window");
+		GameTestSupport.awaitChat(ctx, Messages.refining("Test hut", "add a window"), 100);
+		GameTestSupport.awaitChatCount(ctx, "Resumed " + session + "; the allowed box is x -17..17, y -3..18, z -15..19", 2, 600);
+		check(GameTestSupport.chat().stream().noneMatch(line -> line.startsWith("Claude Code exited")), "two processes on one session: "
+				+ GameTestSupport.chat());
 	}
 
 	private static String read(Path file) {
