@@ -22,7 +22,8 @@ import io.palmisano.aibuilder.core.shapes.Box;
  */
 public final class SurveyEncoder {
 	/** Keys for surface blocks: letters and symbols, never digits, which are run lengths. */
-	private static final String KEYS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&*+=@^~!<>";
+	/** No "=": it joins a key to its block in the palette. */
+	private static final String KEYS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&*+@^~!<>";
 	private static final char OTHER = '?';
 	/** A column with no floor within reach below: a drop, or the void. */
 	private static final char NO_FLOOR = '_';

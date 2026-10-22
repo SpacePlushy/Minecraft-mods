@@ -47,12 +47,16 @@ public class DemoBuildClientGameTest implements FabricClientGameTest {
 			BlockPos door = new BlockPos(0, feetY, Tunables.SITE_GAP + 2);
 			BlockPos underDoor = door.below();
 
-			// What Claude would see of this spot: the summary in chat, the full text saved beside the game.
+			// What Claude would see of this spot: the summary in chat, the full text saved beside the game. Two in one
+			// second are two files.
+			Path surveys = server.computeOnServer(s -> s.getServerDirectory().resolve("aibuilder/surveys"));
+			int before = surveyFiles(surveys);
+			GameTestSupport.runPlayerCommand(ctx, "aibuild survey");
 			GameTestSupport.runPlayerCommand(ctx, "aibuild survey");
 			GameTestSupport.awaitChatStartingWith(ctx, "Survey: ", 200);
-			GameTestSupport.awaitChatStartingWith(ctx, "Full survey (", 200);
-			Path surveys = server.computeOnServer(s -> s.getServerDirectory().resolve("aibuilder/surveys"));
-			GameTestSupport.check(Files.isDirectory(surveys) && Files.list(surveys).findAny().isPresent(), "no survey saved in " + surveys);
+			GameTestSupport.awaitChatCount(ctx, "Full survey (", 2, 200);
+			int saved = surveyFiles(surveys) - before;
+			GameTestSupport.check(saved == 2, saved + " new surveys saved in " + surveys + ", not 2");
 
 			GameTestSupport.runPlayerCommand(ctx, "aibuild test");
 			GameTestSupport.runPlayerCommand(ctx, "aibuild test");
@@ -116,5 +120,15 @@ public class DemoBuildClientGameTest implements FabricClientGameTest {
 	private static void faceSouthAtTheStart(ClientGameTestContext ctx, TestServerContext server, String y) {
 		server.runCommand("tp @a 0.5 " + y + " 0.5 0 0");
 		ctx.waitFor(mc -> mc.player != null && mc.player.getYRot() == 0 && Math.abs(mc.player.getZ() - 0.5) < 0.01);
+	}
+
+	/** How many surveys the folder holds (it lives in the game folder, so earlier runs' are there too). */
+	private static int surveyFiles(Path folder) throws IOException {
+		if (!Files.isDirectory(folder)) {
+			return 0;
+		}
+		try (var files = Files.list(folder)) {
+			return (int) files.count();
+		}
 	}
 }

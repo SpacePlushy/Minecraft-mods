@@ -1,6 +1,7 @@
 package io.palmisano.aibuilder.core.survey;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -53,6 +54,15 @@ class SurveyEncoderTest {
 	}
 
 	/** A drop with nothing within reach below: marked, and left out of the floor's numbers. */
+	/** "=" joins a key to its block in the palette, so it's never a key. */
+	@Test
+	void equalsIsNeverAKey() {
+		String text = SurveyEncoder.encode(snapshot(0, 0, 60, 1, (x, z) -> new Column(0, 0, Column.NONE, "minecraft:block_" + x, 0, 0, false, 0, "")),
+				Box.of(0, -1, 0, 59, 4, 0), 30_000);
+		String row = text.lines().dropWhile(line -> !line.startsWith("Surface (")).skip(1).findFirst().orElseThrow();
+		assertFalse(row.substring(5).contains("="), row);
+	}
+
 	@Test
 	void noFloorColumnsAreMarkedAndLeftOutOfTheStats() {
 		Column drop = new Column(Column.NONE, Column.NONE, Column.NONE, "minecraft:air", 0, 0, false, 0, "");

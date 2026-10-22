@@ -43,8 +43,9 @@ import io.palmisano.aibuilder.core.survey.SurveyEncoder;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 
 /**
- * Runs the write tools: expands each shape, validates its blocks, drops positions outside the allowed box, maps
- * the rest to the world through the frame and queues them as one batch. A bad entry never fails the whole call.
+ * Runs Claude's tools (spec §8). The read tools look through the {@link WorldReader}; the write tools expand each
+ * shape, validate its blocks, drop positions outside the allowed box, map the rest to the world through the frame and
+ * queue them as one batch. A bad entry never fails the whole call.
  */
 public final class ToolExecutor {
 	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
@@ -203,7 +204,7 @@ public final class ToolExecutor {
 						+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks.",
 				"World: " + facts.dimension() + ", biome " + facts.biome() + ", " + facts.time() + ", " + facts.weather()
 						+ "; the ground block at the origin is " + facts.groundBlock() + ".",
-				"The player stands at x " + facts.player().x() + ", y " + facts.player().y() + ", z " + facts.player().z() + ".",
+				whereThePlayerIs(facts),
 				"Budget: " + left + " of " + budget.max() + " tool calls left."));
 	}
 
@@ -214,7 +215,16 @@ public final class ToolExecutor {
 		int centreX = Math.floorDiv(allowed.min().x() + allowed.max().x() + 1, 2);
 		int centreZ = Math.floorDiv(allowed.min().z() + allowed.max().z() + 1, 2);
 		TerrainSnapshot snapshot = world.terrain(centreX - radius, centreZ - radius, 2 * radius + 1, 2 * radius + 1);
-		return ToolResult.ok(SurveyEncoder.encode(snapshot, allowed, Tunables.SURVEY_MAX_CHARS));
+		// The site is read once, as the build begins (it decides what's protected); a refinement's player may stand in it.
+		String note = "As the site was when this build began: blocks it has placed since aren't in it (inspect_region shows blocks as they"
+				+ " are now). " + whereThePlayerIs(world.facts());
+		return ToolResult.ok(note + "\n" + SurveyEncoder.encode(snapshot, allowed, Tunables.SURVEY_MAX_CHARS - note.length() - 1));
+	}
+
+	/** Where the player is, in the frame (spec §5.5); nowhere when they're offline or in another dimension. */
+	private static String whereThePlayerIs(WorldFacts facts) {
+		Pos p = facts.player();
+		return p == null ? "The player isn't in this world right now." : "The player stands at x " + p.x() + ", y " + p.y() + ", z " + p.z() + ".";
 	}
 
 	private ToolResult inspect(Args a) {
@@ -232,7 +242,13 @@ public final class ToolExecutor {
 					+ String.format(Locale.ROOT, "%,d", Tunables.INSPECT_MAX_BLOCKS) + " blocks a call; this box holds " + blocks(box.volume())
 					+ ". Look at it in parts.");
 		}
-		return ToolResult.ok(RegionEncoder.encode(box, world.states(box)));
+		String text = RegionEncoder.encode(box, world.states(box));
+		if (text.length() > Tunables.INSPECT_MAX_CHARS) {
+			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": this box's text would run to " + String.format(Locale.ROOT, "%,d", text.length())
+					+ " characters, past the " + String.format(Locale.ROOT, "%,d", Tunables.INSPECT_MAX_CHARS) + " one read returns (a line a row, so"
+					+ " a tall or deep, narrow box is the longest); look at it in parts, wider and flatter");
+		}
+		return ToolResult.ok(text);
 	}
 
 	private ToolResult search(Args a) {

@@ -71,9 +71,11 @@ public final class FakeWorld implements WorldReader {
 		return out;
 	}
 
+	public WorldFacts facts = new WorldFacts("minecraft:overworld", "minecraft:plains", "morning", "clear", "minecraft:grass_block", new Pos(0, 1, -3));
+
 	@Override
 	public WorldFacts facts() {
-		return new WorldFacts("minecraft:overworld", "minecraft:plains", "morning", "clear", "minecraft:grass_block", new Pos(0, 1, -3));
+		return facts;
 	}
 
 	@Override

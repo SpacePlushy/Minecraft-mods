@@ -4,8 +4,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -534,32 +536,51 @@ public final class BuildManager {
 		UUID owner = player.getUUID();
 		List<UndoJournal<BlockState, CompoundTag>> earlier = UndoStore.get(server).builds(owner).stream()
 				.filter(build -> build.dimension().equals(level.dimension())).map(StoredBuild::journal).toList();
-		McWorldReader reader = new McWorldReader(level, frame, allowed.get(), SizeTier.AUTO, player::blockPosition, earlier, new UndoJournal<>(),
+		McWorldReader reader = new McWorldReader(level, frame, allowed.get(), SizeTier.AUTO, () -> player, earlier, new UndoJournal<>(),
 				cfg);
 		reply(player, Messages.surveying());
-		reader.whenRead().whenComplete((survey, error) -> {
+		String name = player.getName().getString();
+		Path folder = server.getServerDirectory().resolve("aibuilder/surveys");
+		// Encoding a wide site and writing the file take a while: off the server thread. Chat goes back on it, and a
+		// failure anywhere is said, not left at "Reading the site…".
+		reader.whenRead().thenApplyAsync(survey -> {
+			String text = SurveyEncoder.encode(survey.terrain(), allowed.get(), Tunables.SURVEY_MAX_CHARS);
+			AiBuilderMod.LOG.info("Survey of the site in front of {}:\n{}", name, text);
+			return new SavedSurvey(text, saveSurvey(folder, text));
+		}, CHECKS).whenComplete((survey, error) -> server.execute(() -> {
 			if (error != null) {
 				tell(owner, Component.literal(Messages.failed(reason(error))));
 				return;
 			}
-			String text = SurveyEncoder.encode(survey.terrain(), allowed.get(), Tunables.SURVEY_MAX_CHARS);
-			AiBuilderMod.LOG.info("Survey of the site in front of {}:\n{}", player.getName().getString(), text);
-			String saved;
-			try {
-				Path folder = server.getServerDirectory().resolve("aibuilder/surveys");
-				Files.createDirectories(folder);
-				String name = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")) + ".txt";
-				Files.writeString(folder.resolve(name), text, StandardCharsets.UTF_8);
-				saved = "aibuilder/surveys/" + name;
-			} catch (IOException e) {
-				AiBuilderMod.LOG.warn("Couldn't save the survey", e);
-				saved = "the log only (the file couldn't be written)";
-			}
 			// The header and the summaries; the maps are too long for chat.
-			text.lines().takeWhile(line -> !line.startsWith("Surface blocks:")).forEach(line -> tell(owner, Component.literal(line)));
-			tell(owner, Component.literal(Messages.surveySaved(text.length(), saved)));
-		});
+			survey.text().lines().takeWhile(line -> !line.startsWith("Surface blocks:")).forEach(line -> tell(owner, Component.literal(line)));
+			tell(owner, Component.literal(Messages.surveySaved(survey.text().length(), survey.saved())));
+		}));
 		return Outcome.STARTED;
+	}
+
+	/** A survey's text and where it was saved, for chat. */
+	private record SavedSurvey(String text, String saved) {
+	}
+
+	/** Writes a survey under a name of its own (two in one second: -2, -3…); says where, or that only the log has it. */
+	private static String saveSurvey(Path folder, String text) {
+		try {
+			Files.createDirectories(folder);
+			String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
+			for (int n = 1; ; n++) {
+				String file = stamp + (n == 1 ? "" : "-" + n) + ".txt";
+				try {
+					Files.writeString(folder.resolve(file), text, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
+					return "aibuilder/surveys/" + file;
+				} catch (FileAlreadyExistsException e) {
+					// Another survey this second: the next number.
+				}
+			}
+		} catch (IOException e) {
+			AiBuilderMod.LOG.warn("Couldn't save the survey", e);
+			return "the log only (the file couldn't be written)";
+		}
 	}
 
 	/** {@code /aibuild status}. */
@@ -714,10 +735,7 @@ public final class BuildManager {
 			// The player's earlier builds here are theirs to change: the survey doesn't protect what those left.
 			List<UndoJournal<BlockState, CompoundTag>> earlier = store.builds(owner).stream()
 					.filter(build -> build.dimension().equals(level.dimension())).map(StoredBuild::journal).toList();
-			world = new McWorldReader(level, frame, allowed, request.size(), () -> {
-				ServerPlayer online = server.getPlayerList().getPlayer(owner);
-				return online == null ? null : online.blockPosition();
-			}, earlier, journal, cfg);
+			world = new McWorldReader(level, frame, allowed, request.size(), () -> server.getPlayerList().getPlayer(owner), earlier, journal, cfg);
 			stored = new StoredBuild(level.dimension(), "", journal);
 			store.push(owner, stored);
 			undoHistorySize = cfg.undoHistorySize();

@@ -18,12 +18,14 @@ import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.survey.Column;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
+import io.palmisano.aibuilder.core.tools.WorldFacts;
 import io.palmisano.aibuilder.test.ArenaBuilds.ArenaBuild;
 import io.palmisano.aibuilder.world.BlockEntityHash;
 import io.palmisano.aibuilder.world.McWorldReader;
 import io.palmisano.aibuilder.world.Occupancy;
 import io.palmisano.aibuilder.world.Positions;
 import io.palmisano.aibuilder.world.ProtectionHeuristic;
+import net.fabricmc.fabric.api.entity.FakePlayer;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -31,6 +33,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
@@ -288,6 +291,26 @@ public class SurveyGameTest {
 			helper.assertTrue(protection.join().isProtected(planksLocal), "planks 26 to the side aren't protected");
 			helper.assertTrue(fire.join().isLava(lavaLocal), "the world's lava 26 to the other side isn't seen");
 			helper.assertTrue(fire.join().isFlammable(logLocal), "the log beside it isn't seen");
+		});
+	}
+
+	/** get_context places the player only when they're in the build's world: offline or in another dimension, nowhere. */
+	@GameTest(structure = ARENA, maxTicks = 200)
+	public void aPlayerElsewhereIsNowhere(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		ServerLevel nether = level.getServer().getLevel(Level.NETHER);
+		LocalFrame frame = ArenaBuilds.frame(helper, Facing.SOUTH);
+		CompletableFuture<WorldFacts> here = offThread(new McWorldReader(level, frame, ArenaBuilds.ALLOWED, SizeTier.SMALL, () -> FakePlayer.get(level),
+				List.of(), new UndoJournal<>(), AiBuilderConfig.DEFAULT)::facts);
+		CompletableFuture<WorldFacts> away = offThread(new McWorldReader(level, frame, ArenaBuilds.ALLOWED, SizeTier.SMALL, () -> FakePlayer.get(nether),
+				List.of(), new UndoJournal<>(), AiBuilderConfig.DEFAULT)::facts);
+		CompletableFuture<WorldFacts> offline = offThread(new McWorldReader(level, frame, ArenaBuilds.ALLOWED, SizeTier.SMALL, () -> null,
+				List.of(), new UndoJournal<>(), AiBuilderConfig.DEFAULT)::facts);
+		helper.succeedWhen(() -> {
+			helper.assertTrue(here.isDone() && away.isDone() && offline.isDone(), "the facts haven't come back");
+			helper.assertTrue(here.join().player() != null, "a player in this world has no position");
+			helper.assertTrue(away.join().player() == null, "a player in the Nether has a position here: " + away.join().player());
+			helper.assertTrue(offline.join().player() == null, "nobody has a position: " + offline.join().player());
 		});
 	}
 

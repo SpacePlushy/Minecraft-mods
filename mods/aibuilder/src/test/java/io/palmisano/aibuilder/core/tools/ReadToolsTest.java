@@ -68,7 +68,42 @@ class ReadToolsTest {
 	void surveyUsesTheSnapshot() {
 		String text = tools().call("survey_area", json("{}")).text();
 		assertEquals("terrain -20 -8 41 41", world.requests.getFirst());
-		assertTrue(text.startsWith("Survey: 41×41 columns"), text);
+		assertTrue(text.contains("\nSurvey: 41×41 columns"), text);
+	}
+
+	/** Mid-build, the site survey is still the one read as the build began: the text says so. */
+	@Test
+	void aSurveySaysWhenItWasRead() {
+		String text = tools().call("survey_area", json("{}")).text();
+		assertTrue(text.startsWith("As the site was when this build began: blocks it has placed since aren't in it (inspect_region shows"
+				+ " blocks as they are now)."), text.lines().findFirst().orElse(""));
+	}
+
+	/** In a refinement the player may stand inside the build: the survey says where (spec §5.5). */
+	@Test
+	void aSurveySaysWhereThePlayerIs() {
+		String first = tools().call("survey_area", json("{}")).text().lines().findFirst().orElse("");
+		assertTrue(first.endsWith(" The player stands at x 0, y 1, z -3."), first);
+	}
+
+	/** The owner offline, or in another dimension: no position, rather than one made up. */
+	@Test
+	void noPlayerIsNoPosition() {
+		world.facts = new WorldFacts("minecraft:overworld", "minecraft:plains", "morning", "clear", "minecraft:grass_block", null);
+		String context = tools().call("get_context", json("{}")).text();
+		assertTrue(context.contains("\nThe player isn't in this world right now.\n"), context);
+		assertFalse(context.contains("stands at"), context);
+		String survey = tools().call("survey_area", json("{}")).text().lines().findFirst().orElse("");
+		assertTrue(survey.endsWith(" The player isn't in this world right now."), survey);
+	}
+
+	/** A line of text a row: a tall, narrow box would run past what one read returns. */
+	@Test
+	void aRegionTooLongToReadIsRefused() {
+		ToolResult result = tools().call("inspect_region", json("{\"box\":[0,-2048,1,0,2047,1]}"));
+		String first = result.text().lines().findFirst().orElse("");
+		assertTrue(result.isError() && first.startsWith("too_many: "), first);
+		assertTrue(first.contains("look at it in parts"), first);
 	}
 
 	@Test

@@ -33,6 +33,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.block.state.BlockState;
@@ -46,7 +47,7 @@ public final class McWorldReader implements WorldReader {
 	private final ServerLevel level;
 	private final LocalFrame frame;
 	private final Box allowed;
-	private final Supplier<BlockPos> player;
+	private final Supplier<ServerPlayer> player;
 	private final int siteMinX;
 	private final int siteMinZ;
 	private final int siteSize;
@@ -55,10 +56,10 @@ public final class McWorldReader implements WorldReader {
 	private final ItemCatalog items;
 
 	/**
-	 * Server thread. {@code player} gives the player's position, or null when there's no one; {@code journal} is this
+	 * Server thread. {@code player} gives the build's owner, or null when they're offline; {@code journal} is this
 	 * build's own, for check_build; {@code config} says whether player-made blocks are protected and what's banned.
 	 */
-	public McWorldReader(ServerLevel level, LocalFrame frame, Box allowed, SizeTier tier, Supplier<BlockPos> player,
+	public McWorldReader(ServerLevel level, LocalFrame frame, Box allowed, SizeTier tier, Supplier<ServerPlayer> player,
 			List<UndoJournal<BlockState, CompoundTag>> earlier, UndoJournal<BlockState, CompoundTag> journal, AiBuilderConfig config) {
 		this.level = level;
 		this.frame = frame;
@@ -155,8 +156,9 @@ public final class McWorldReader implements WorldReader {
 			String biome = level.getBiome(origin).unwrapKey().map(key -> key.identifier().toString()).orElse("unknown");
 			String time = dimension.equals("minecraft:overworld") ? timeOfDay(level.getOverworldClockTime() % 24_000) : "no day or night here";
 			String weather = level.isThundering() ? "a thunderstorm" : level.isRaining() ? "raining" : "clear";
-			BlockPos at = player.get();
-			Pos local = at == null ? new Pos(0, 1, -Tunables.SITE_GAP) : frame.toLocal(Positions.toPos(at));
+			ServerPlayer online = player.get();
+			// Offline, or in another dimension: nowhere in this build's frame.
+			Pos local = online == null || online.level() != level ? null : frame.toLocal(Positions.toPos(online.blockPosition()));
 			return new WorldFacts(dimension, biome, time, weather, id(level.getBlockState(origin)), local);
 		});
 	}
