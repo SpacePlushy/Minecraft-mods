@@ -40,6 +40,9 @@ public final class Tunables {
 	public static final int SURVEY_MAX_CHARS = 30_000;
 	/** Blocks one inspect_region call may read (spec §8). */
 	public static final int INSPECT_MAX_BLOCKS = 4096;
+	/** How long a read tool waits for the world: a survey (read over ticks), and a region or the facts. */
+	public static final int SURVEY_TIMEOUT_SECONDS = 60;
+	public static final int READ_TIMEOUT_SECONDS = 10;
 	/** search_blocks: results by default, and at most. */
 	public static final int SEARCH_LIMIT_DEFAULT = 20;
 	public static final int SEARCH_LIMIT_MAX = 50;

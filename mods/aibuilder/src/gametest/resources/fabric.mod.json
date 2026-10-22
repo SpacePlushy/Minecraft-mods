@@ -12,7 +12,8 @@
 			"io.palmisano.aibuilder.test.PlacementGameTest",
 			"io.palmisano.aibuilder.test.UndoGameTest",
 			"io.palmisano.aibuilder.test.PermissionGameTest",
-			"io.palmisano.aibuilder.test.SiteGameTest"
+			"io.palmisano.aibuilder.test.SiteGameTest",
+			"io.palmisano.aibuilder.test.SurveyGameTest"
 		],
 		"fabric-client-gametest": [
 			"io.palmisano.aibuilder.test.SmokeClientGameTest",

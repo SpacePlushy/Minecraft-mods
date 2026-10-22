@@ -66,6 +66,7 @@ public class UndoGameTest {
 		ArenaBuild build = start(helper, """
 				{"calls": [
 				  {"tool": "submit_brief", "args": {"title": "cover", "style": "test"}},
+				  {"tool": "clear", "args": {"box": [-1, 1, 3, 1, 2, 5], "include_protected": true}},
 				  {"tool": "fill", "args": {"box": [-1, 1, 3, 1, 2, 5], "block": "stone"}},
 				  {"tool": "finish", "args": {"summary": "a stone block"}}
 				]}""");

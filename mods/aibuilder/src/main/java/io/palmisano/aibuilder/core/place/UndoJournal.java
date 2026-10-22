@@ -53,6 +53,11 @@ public final class UndoJournal<S, D> {
 		record.writtenDataHash = dataHash;
 	}
 
+	/** Whether this build changed {@code pos}. */
+	public boolean has(Pos pos) {
+		return records.containsKey(pos);
+	}
+
 	/** In the order they were first changed. */
 	public List<Pos> positions() {
 		return List.copyOf(records.keySet());

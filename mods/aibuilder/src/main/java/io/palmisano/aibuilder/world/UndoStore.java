@@ -141,6 +141,11 @@ public final class UndoStore extends SavedData {
 		return build;
 	}
 
+	/** The player's builds that can still be undone, newest first. */
+	public List<StoredBuild> builds(UUID player) {
+		return List.copyOf(history.all().getOrDefault(player, new java.util.ArrayDeque<>()));
+	}
+
 	/** The player's newest build, left in place. */
 	public Optional<StoredBuild> peek(UUID player) {
 		return history.peek(player);

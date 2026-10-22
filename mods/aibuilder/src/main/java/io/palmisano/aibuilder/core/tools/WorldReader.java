@@ -28,27 +28,4 @@ public interface WorldReader {
 
 	/** Protected spots in the allowed box, read when the build started. */
 	ProtectionMask protection();
-
-	/** A world that can't be read: nothing is protected, and the read tools say so. */
-	WorldReader NONE = new WorldReader() {
-		@Override
-		public TerrainSnapshot terrain(int minX, int minZ, int width, int depth) {
-			throw new Unreadable("the world can't be read here");
-		}
-
-		@Override
-		public List<String> states(Box local) {
-			throw new Unreadable("the world can't be read here");
-		}
-
-		@Override
-		public WorldFacts facts() {
-			throw new Unreadable("the world can't be read here");
-		}
-
-		@Override
-		public ProtectionMask protection() {
-			return ProtectionMask.none();
-		}
-	};
 }

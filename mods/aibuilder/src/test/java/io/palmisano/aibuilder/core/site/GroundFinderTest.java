@@ -30,6 +30,12 @@ class GroundFinderTest {
 		assertEquals(62, GroundFinder.find(y -> y <= 59 ? Cell.GROUND : y <= 62 ? Cell.FLUID : Cell.OPEN, 64));
 	}
 
+	/** Standing in water (or searching from inside a deep pond): up to its surface, not the block under the feet. */
+	@Test
+	void inWaterTheSurfaceIsTheFloor() {
+		assertEquals(66, GroundFinder.find(y -> y <= 59 ? Cell.GROUND : y <= 66 ? Cell.FLUID : Cell.OPEN, 64));
+	}
+
 	@Test
 	void underACavernRoofTheFloorWins() {
 		assertEquals(60, GroundFinder.find(y -> y <= 60 || (y >= 71 && y <= 80) ? Cell.GROUND : Cell.OPEN, 61));

@@ -6,6 +6,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.Set;
+import java.util.List;
 import java.util.UUID;
 
 import io.palmisano.aibuilder.core.Tunables;
@@ -25,11 +26,11 @@ import io.palmisano.aibuilder.core.site.BuildBox;
 import io.palmisano.aibuilder.core.tools.Brief;
 import io.palmisano.aibuilder.core.tools.Budget;
 import io.palmisano.aibuilder.core.tools.ToolExecutor;
-import io.palmisano.aibuilder.core.tools.WorldReader;
 import io.palmisano.aibuilder.world.BuildTickets;
 import io.palmisano.aibuilder.world.JobScheduler;
 import io.palmisano.aibuilder.world.McBlockCatalog;
 import io.palmisano.aibuilder.world.McBuildSink;
+import io.palmisano.aibuilder.world.McWorldReader;
 import io.palmisano.aibuilder.world.Occupancy;
 import io.palmisano.aibuilder.world.PlacementJob;
 import io.palmisano.aibuilder.world.Positions;
@@ -267,6 +268,7 @@ public final class BuildManager {
 		final ServerLevel level;
 		final UndoJournal<BlockState, CompoundTag> journal = new UndoJournal<>();
 		final UndoStore store;
+		final McWorldReader world;
 		final Budget budget = new Budget(Tunables.MAX_TOOL_CALLS);
 		final PlacementJob job;
 		final McBuildSink sink;
@@ -280,6 +282,13 @@ public final class BuildManager {
 			owner = player.getUUID();
 			level = player.level();
 			store = UndoStore.get(server);
+			// The player's earlier builds here are theirs to change: the survey doesn't protect what those left.
+			List<UndoJournal<BlockState, CompoundTag>> earlier = store.builds(owner).stream()
+					.filter(build -> build.dimension().equals(level.dimension())).map(StoredBuild::journal).toList();
+			world = new McWorldReader(level, frame, allowed, request.size(), () -> {
+				ServerPlayer online = server.getPlayerList().getPlayer(owner);
+				return online == null ? null : online.blockPosition();
+			}, earlier);
 			stored = new StoredBuild(level.dimension(), "", journal);
 			store.push(owner, stored);
 			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level), blocksPerTick,
@@ -291,7 +300,7 @@ public final class BuildManager {
 			// The sink's callbacks come from the backend's thread.
 			sink = new McBuildSink(job, brief -> server.execute(() -> briefed(brief)), summary -> job.finish());
 			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, allowed, request.size(),
-					request.size().maxChangedBlocks(), sink, budget, WorldReader.NONE);
+					request.size().maxChangedBlocks(), sink, budget, world);
 			handle = backend.start(request, tools);
 			handle.outcome().thenAccept(outcome -> server.execute(() -> backendEnded(outcome)));
 		}

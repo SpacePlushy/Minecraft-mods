@@ -1,0 +1,192 @@
+package io.palmisano.aibuilder.world;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
+import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.frame.Directions;
+import io.palmisano.aibuilder.core.frame.LocalFrame;
+import io.palmisano.aibuilder.core.frame.Pos;
+import io.palmisano.aibuilder.core.place.ProtectionMask;
+import io.palmisano.aibuilder.core.place.UndoJournal;
+import io.palmisano.aibuilder.core.request.SizeTier;
+import io.palmisano.aibuilder.core.shapes.Box;
+import io.palmisano.aibuilder.core.survey.Column;
+import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
+import io.palmisano.aibuilder.core.tools.WorldFacts;
+import io.palmisano.aibuilder.core.tools.WorldReader;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.state.BlockState;
+
+/**
+ * The world as one build's tools see it. Made on the server thread when the build starts, it starts reading the site
+ * at once (the survey area, and the protection mask over the allowed box); the tools then call in from the
+ * backend's thread, and every read happens on the server thread, waited for with a timeout.
+ */
+public final class McWorldReader implements WorldReader {
+	private final ServerLevel level;
+	private final LocalFrame frame;
+	private final Box allowed;
+	private final Supplier<BlockPos> player;
+	private final int siteMinX;
+	private final int siteMinZ;
+	private final int siteSize;
+	private final CompletableFuture<WorldSurvey.Survey> site;
+
+	/** Server thread. {@code player} gives the player's position, or null when there's no one. */
+	public McWorldReader(ServerLevel level, LocalFrame frame, Box allowed, SizeTier tier, Supplier<BlockPos> player,
+			List<UndoJournal<BlockState, CompoundTag>> earlier) {
+		this.level = level;
+		this.frame = frame;
+		this.allowed = allowed;
+		this.player = player;
+		int radius = tier.size() / 2 + 8;
+		this.siteMinX = Math.floorDiv(allowed.min().x() + allowed.max().x() + 1, 2) - radius;
+		this.siteMinZ = Math.floorDiv(allowed.min().z() + allowed.max().z() + 1, 2) - radius;
+		this.siteSize = 2 * radius + 1;
+		WorldSurvey survey = new WorldSurvey(level, frame, allowed, siteMinX, siteMinZ, siteSize, siteSize, true, earlier);
+		JobScheduler.add(survey);
+		this.site = survey.result();
+	}
+
+	@Override
+	public TerrainSnapshot terrain(int minX, int minZ, int width, int depth) {
+		if (minX >= siteMinX && minZ >= siteMinZ && minX + width <= siteMinX + siteSize && minZ + depth <= siteMinZ + siteSize) {
+			TerrainSnapshot whole = await(site, Tunables.SURVEY_TIMEOUT_SECONDS).terrain();
+			List<Column> part = new ArrayList<>(width * depth);
+			for (int z = minZ; z < minZ + depth; z++) {
+				for (int x = minX; x < minX + width; x++) {
+					part.add(whole.at(x, z));
+				}
+			}
+			return new TerrainSnapshot(minX, minZ, width, depth, part);
+		}
+		// Bigger than the site: one more survey, without protection (that's only ever about the allowed box).
+		CompletableFuture<WorldSurvey.Survey> wider = new CompletableFuture<>();
+		level.getServer().execute(() -> {
+			WorldSurvey survey = new WorldSurvey(level, frame, allowed, minX, minZ, width, depth, false, List.of());
+			JobScheduler.add(survey);
+			survey.result().whenComplete((result, error) -> {
+				if (error != null) {
+					wider.completeExceptionally(error);
+				} else {
+					wider.complete(result);
+				}
+			});
+		});
+		return await(wider, Tunables.SURVEY_TIMEOUT_SECONDS).terrain();
+	}
+
+	@Override
+	public List<String> states(Box local) {
+		return onServer(() -> {
+			Rotation back = inverse(StateFactory.rotation(frame.facing()));
+			List<String> out = new ArrayList<>();
+			for (int y = local.min().y(); y <= local.max().y(); y++) {
+				for (int z = local.min().z(); z <= local.max().z(); z++) {
+					for (int x = local.min().x(); x <= local.max().x(); x++) {
+						out.add(describe(level.getBlockState(Positions.toBlockPos(frame.toWorld(new Pos(x, y, z)))).rotate(back)));
+					}
+				}
+			}
+			return out;
+		});
+	}
+
+	@Override
+	public WorldFacts facts() {
+		return onServer(() -> {
+			BlockPos origin = Positions.toBlockPos(frame.origin());
+			String dimension = level.dimension().identifier().toString();
+			String biome = level.getBiome(origin).unwrapKey().map(key -> key.identifier().toString()).orElse("unknown");
+			String time = dimension.equals("minecraft:overworld") ? timeOfDay(level.getOverworldClockTime() % 24_000) : "no day or night here";
+			String weather = level.isThundering() ? "a thunderstorm" : level.isRaining() ? "raining" : "clear";
+			BlockPos at = player.get();
+			Pos local = at == null ? new Pos(0, 1, -Tunables.SITE_GAP) : frame.toLocal(Positions.toPos(at));
+			return new WorldFacts(dimension, biome, time, weather, id(level.getBlockState(origin)), local);
+		});
+	}
+
+	@Override
+	public ProtectionMask protection() {
+		return await(site, Tunables.SURVEY_TIMEOUT_SECONDS).protection();
+	}
+
+	/** {@code id[prop=value,…]}, compass names and values as relative words; the state already turned back to the template. */
+	static String describe(BlockState state) {
+		String properties = state.getValues()
+				.map(value -> {
+					String name = value.property().getName();
+					return (Directions.isCompassToken(name) ? Directions.toLocalToken(name) : name) + "=" + Directions.toLocalValue(value.valueName());
+				})
+				.collect(Collectors.joining(","));
+		return id(state) + (properties.isEmpty() ? "" : "[" + properties + "]");
+	}
+
+	private static String timeOfDay(long ticks) {
+		if (ticks < 6_000) {
+			return "morning";
+		}
+		if (ticks < 12_000) {
+			return "afternoon";
+		}
+		if (ticks < 13_000) {
+			return "sunset";
+		}
+		return ticks < 23_000 ? "night" : "sunrise";
+	}
+
+	private static Rotation inverse(Rotation rotation) {
+		return switch (rotation) {
+			case CLOCKWISE_90 -> Rotation.COUNTERCLOCKWISE_90;
+			case COUNTERCLOCKWISE_90 -> Rotation.CLOCKWISE_90;
+			default -> rotation;
+		};
+	}
+
+	/** Runs a read on the server thread and waits for it; on the server thread itself, just runs it. */
+	private <T> T onServer(Supplier<T> read) {
+		if (level.getServer().isSameThread()) {
+			return read.get();
+		}
+		CompletableFuture<T> future = new CompletableFuture<>();
+		level.getServer().execute(() -> {
+			try {
+				future.complete(read.get());
+			} catch (RuntimeException e) {
+				future.completeExceptionally(e);
+			}
+		});
+		return await(future, Tunables.READ_TIMEOUT_SECONDS);
+	}
+
+	private <T> T await(CompletableFuture<T> future, int seconds) {
+		if (!future.isDone() && level.getServer().isSameThread()) {
+			throw new Unreadable("the world is read on the server's tick, which can't wait for itself");
+		}
+		try {
+			return future.get(seconds, TimeUnit.SECONDS);
+		} catch (TimeoutException e) {
+			throw new Unreadable("reading it took longer than " + seconds + " seconds");
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new Unreadable("interrupted");
+		} catch (ExecutionException e) {
+			throw new Unreadable(e.getCause() == null ? "it failed" : String.valueOf(e.getCause().getMessage()));
+		}
+	}
+
+	private static String id(BlockState state) {
+		return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+	}
+}

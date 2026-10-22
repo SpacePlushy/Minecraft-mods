@@ -25,6 +25,13 @@ public final class GroundFinder {
 					return y;
 				}
 			}
+		} else {
+			// In water or lava: its surface is the floor.
+			for (int y = feetY; y <= feetY + Tunables.GROUND_SEARCH_UP; y++) {
+				if (column.at(y + 1) != Cell.FLUID) {
+					return y;
+				}
+			}
 		}
 		return feetY - 1;
 	}
