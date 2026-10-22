@@ -465,7 +465,7 @@ public final class ToolExecutor {
 			return ToolResult.error(RejectReason.NOT_A_BLOCK_ENTITY.wireName() + ": " + valid.block().info().id() + " can't hold "
 					+ data.kind().name().toLowerCase(Locale.ROOT) + " data; use " + switch (data.kind()) {
 						case SIGN -> "a sign (oak_sign, oak_wall_sign, oak_hanging_sign…)";
-						case CONTAINER -> "a container (chest, barrel, shulker box, hopper…)";
+						case CONTAINER -> "storage that keeps its items (chest, trapped_chest, barrel, a shulker box, dispenser, dropper, decorated_pot)";
 						case LECTERN -> "a lectern";
 						default -> "a banner (white_banner, red_wall_banner…)";
 					});

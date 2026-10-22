@@ -13,7 +13,6 @@ import io.palmisano.aibuilder.core.blocks.BlockInfo;
 import io.palmisano.aibuilder.core.blocks.PlacementPass;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.Container;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.AbstractBannerBlock;
 import net.minecraft.world.level.block.AbstractBedBlock;
@@ -27,7 +26,12 @@ import net.minecraft.world.level.block.LanternBlock;
 import net.minecraft.world.level.block.LecternBlock;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.SignBlock;
+import net.minecraft.world.level.block.entity.BarrelBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.entity.DecoratedPotBlockEntity;
+import net.minecraft.world.level.block.entity.DispenserBlockEntity;
+import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 
@@ -105,7 +109,11 @@ public final class McBlockCatalog implements BlockCatalog {
 		}
 		try {
 			BlockEntity entity = entityBlock.newBlockEntity(BlockPos.ZERO, block.defaultBlockState());
-			return entity instanceof Container container && container.getContainerSize() > 0 ? BlockEntityKind.CONTAINER : BlockEntityKind.OTHER;
+			// Storage that keeps what it's given: not a furnace (it would smelt it), a hopper (it moves it on), or a
+			// bookshelf or jukebox (filling one updates its neighbours: water beside it would flow).
+			boolean passive = entity instanceof ChestBlockEntity || entity instanceof BarrelBlockEntity || entity instanceof ShulkerBoxBlockEntity
+					|| entity instanceof DispenserBlockEntity || entity instanceof DecoratedPotBlockEntity;
+			return passive ? BlockEntityKind.CONTAINER : BlockEntityKind.OTHER;
 		} catch (RuntimeException e) {
 			// One that needs a world around it to be made: nothing place_block_entity knows how to fill.
 			return BlockEntityKind.OTHER;

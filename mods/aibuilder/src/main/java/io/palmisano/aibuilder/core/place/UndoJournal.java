@@ -104,6 +104,11 @@ public final class UndoJournal<S, D> {
 		return records.size();
 	}
 
+	/** Nothing to undo: no block changed and no entity spawned (a build that only hung frames isn't empty). */
+	public boolean isEmpty() {
+		return records.isEmpty() && spawned.isEmpty();
+	}
+
 	public RestoreDecision decide(Pos pos, String currentBlockId, int currentDataHash) {
 		Record<S, D> record = records.get(pos);
 		boolean unchanged = record.writtenBlock != null && BlockEquivalence.same(currentBlockId, record.writtenBlock)

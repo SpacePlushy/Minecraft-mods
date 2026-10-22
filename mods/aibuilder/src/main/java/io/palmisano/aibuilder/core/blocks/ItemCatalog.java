@@ -8,5 +8,8 @@ public interface ItemCatalog {
 	/** It holds items of its own (a shulker box, a bundle), so it never goes inside a container. */
 	boolean holdsItems(String id);
 
+	/** Never handed over in a build: a banned or unbreakable block's item, or one only creative mode has (a spawn egg). */
+	boolean banned(String id);
+
 	boolean isBannerPattern(String id);
 }

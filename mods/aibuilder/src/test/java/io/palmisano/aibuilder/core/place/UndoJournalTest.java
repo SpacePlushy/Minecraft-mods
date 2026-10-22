@@ -1,8 +1,11 @@
 package io.palmisano.aibuilder.core.place;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.UUID;
 
 import io.palmisano.aibuilder.core.frame.Pos;
 import org.junit.jupiter.api.Test;
@@ -66,5 +69,14 @@ class UndoJournalTest {
 		assertEquals(journal.entries(), copy.entries());
 		assertEquals(List.of(p, new Pos(0, 0, 0)), copy.positions());
 		assertEquals("tag", copy.originalData(new Pos(0, 0, 0)));
+	}
+
+	/** A build that only hung item frames changed no block, but there's still something to undo (M5 review). */
+	@Test
+	void aJournalWithOnlyFramesIsNotEmpty() {
+		assertTrue(journal.isEmpty());
+		journal.addSpawned(new UndoJournal.Spawned(UUID.randomUUID(), p, "minecraft:diamond"));
+		assertFalse(journal.isEmpty());
+		assertFalse(wrote("minecraft:stone", 0).isEmpty());
 	}
 }

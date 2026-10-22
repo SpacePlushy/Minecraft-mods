@@ -598,8 +598,8 @@ public final class BuildManager {
 				handle.cancel();
 			}
 			BuildTickets.release(level, chunks);
-			// A build that changed nothing leaves the history, so undo never answers with nothing restored.
-			boolean undoable = journal.size() > 0;
+			// A build that changed nothing leaves the history, so undo never answers with nothing restored. Frames count.
+			boolean undoable = !journal.isEmpty();
 			if (undoable) {
 				store.setDirty();
 			} else {

@@ -34,8 +34,9 @@ final class ItemFrames {
 	}
 
 	/**
-	 * Takes down, without dropping anything, the build's frames that still hold what it put in them (or nothing: the
-	 * player took it). A frame holding something else holds the player's: it stays. Returns how many stayed.
+	 * Takes down, without dropping anything, the build's frames that still hold exactly what it put in them (or
+	 * nothing: the player took it). A frame holding anything else, the same item renamed or enchanted included, holds
+	 * the player's: it stays. Returns how many stayed.
 	 */
 	static int takeDown(ServerLevel level, List<UndoJournal.Spawned> spawned) {
 		int stayed = 0;
@@ -45,7 +46,9 @@ final class ItemFrames {
 				continue;
 			}
 			ItemStack held = frame.getItem();
-			if (held.isEmpty() || BuiltInRegistries.ITEM.getKey(held.getItem()).toString().equals(s.item())) {
+			boolean ours = held.isEmpty() || !s.item().isEmpty()
+					&& ItemStack.isSameItemSameComponents(held, new ItemStack(BuiltInRegistries.ITEM.getValue(Identifier.parse(s.item()))));
+			if (ours) {
 				frame.discard();
 			} else {
 				stayed++;

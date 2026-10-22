@@ -7,11 +7,15 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.blocks.BlockEntityKind;
+import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.test.ArenaBuilds.ArenaBuild;
 import io.palmisano.aibuilder.world.JobScheduler;
+import io.palmisano.aibuilder.world.McBlockCatalog;
+import io.palmisano.aibuilder.world.McItemCatalog;
 import io.palmisano.aibuilder.world.Occupancy;
 import io.palmisano.aibuilder.world.UndoRunner;
 import io.palmisano.aibuilder.world.UndoStore;
@@ -23,6 +27,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -166,6 +171,72 @@ public class BlockEntityGameTest {
 					helper.assertTrue(build.state(0, 1, 5).isAir(), "the wall is still there");
 				})
 				.thenSucceed();
+	}
+
+	/** A frame the player gave their own item (the same item, renamed) is theirs: undo leaves it (M5 review). */
+	@GameTest(structure = ARENA, maxTicks = 600)
+	public void undoKeepsAFrameHoldingThePlayersItem(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		ArenaBuild build = wallWithAFrame(helper);
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenExecute(() -> {
+					ItemStack mine = new ItemStack(Items.DIAMOND);
+					mine.set(DataComponents.CUSTOM_NAME, Component.literal("Mine"));
+					frames(level, build.world(new Pos(0, 1, 4))).getFirst().setItem(mine, false);
+					UndoRunner runner = new UndoRunner(level, build.journal(), Tunables.BLOCKS_PER_TICK);
+					JobScheduler.add(runner);
+					undo.set(runner);
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> {
+					List<ItemFrame> frames = frames(level, build.world(new Pos(0, 1, 4)));
+					helper.assertTrue(frames.size() == 1 && "Mine".equals(frames.getFirst().getItem().getHoverName().getString()),
+							"the player's diamond went with the frame: " + frames);
+				})
+				.thenSucceed();
+	}
+
+	/**
+	 * Container data goes only where it stays put: a chest or a barrel, not a furnace that would start smelting, a
+	 * hopper that moves it on, or a bookshelf or jukebox that updates its neighbours (M5 review).
+	 */
+	@GameTest
+	public void onlyPassiveContainersTakeItems(GameTestHelper helper) {
+		for (String id : List.of("chest", "trapped_chest", "barrel", "white_shulker_box", "dispenser", "dropper", "decorated_pot")) {
+			helper.assertTrue(McBlockCatalog.get().find("minecraft:" + id).orElseThrow().entity() == BlockEntityKind.CONTAINER, id + " takes no items");
+		}
+		for (String id : List.of("furnace", "blast_furnace", "smoker", "brewing_stand", "hopper", "chiseled_bookshelf", "jukebox", "crafter")) {
+			helper.assertTrue(McBlockCatalog.get().find("minecraft:" + id).orElseThrow().entity() != BlockEntityKind.CONTAINER, id + " takes items");
+		}
+		helper.succeed();
+	}
+
+	/** Nothing a build may not place, nor what only creative mode has, goes into a chest or a frame (M5 review). */
+	@GameTest
+	public void theGamesBannedItemsAreRefused(GameTestHelper helper) {
+		McItemCatalog items = new McItemCatalog(helper.getLevel().registryAccess(), Validator.DEFAULT_BANNED);
+		for (String id : List.of("bedrock", "barrier", "command_block", "spawner", "tnt", "pig_spawn_egg", "debug_stick", "knowledge_book")) {
+			helper.assertTrue(items.banned("minecraft:" + id), id + " can be given");
+		}
+		helper.assertFalse(items.banned("minecraft:diamond"), "diamonds are banned");
+		helper.assertTrue(items.maxStack("minecraft:diamond") == 64, "a stack of diamonds");
+		helper.succeed();
+	}
+
+	/** A title of emoji over the game's 32 units is cut to fit, so the book still saves (M5 review). */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void anEmojiTitleStillSaves(GameTestHelper helper) {
+		ArenaBuild build = start(helper, """
+				{"tool": "place_block_entity", "args": {"pos": [0, 1, 4], "block": "lectern", "lectern": {"title": "🏰🏰🏰 The Chronicles of the Keep 🏰🏰🏰",
+				  "pages": ["Page one"]}}}""");
+		helper.succeedWhen(() -> {
+			ArenaBuilds.assertDone(helper, build);
+			ItemStack book = ((LecternBlockEntity) build.level().getBlockEntity(build.world(new Pos(0, 1, 4)))).getBook();
+			var saved = ItemStack.CODEC.encodeStart(build.level().registryAccess().createSerializationContext(NbtOps.INSTANCE), book);
+			helper.assertTrue(!saved.isError(), "the book doesn't save: " + saved);
+		});
 	}
 
 	private static UndoJournal<BlockState, CompoundTag> saveAndLoad(ServerLevel level, UndoJournal<BlockState, CompoundTag> journal) {

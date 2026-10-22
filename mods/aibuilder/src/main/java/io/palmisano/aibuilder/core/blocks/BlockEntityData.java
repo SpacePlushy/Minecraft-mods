@@ -122,8 +122,8 @@ public sealed interface BlockEntityData {
 
 	/**
 	 * Plain text: formatting codes ({@code §} and the character after it) and control characters go, line breaks
-	 * too unless {@code breaks} (they become spaces), ends trimmed, at most {@code max} characters (an emoji counts
-	 * as one and is never cut in half).
+	 * too unless {@code breaks} (they become spaces), ends trimmed, at most {@code max} UTF-16 units, which is how the
+	 * game measures (an emoji is two; a book title over its 32 fails to save). A cut never splits an emoji.
 	 */
 	static String plain(String text, int max, boolean breaks) {
 		StringBuilder out = new StringBuilder(text.length());
@@ -143,7 +143,11 @@ public sealed interface BlockEntityData {
 			}
 		}
 		String trimmed = breaks ? out.toString().stripTrailing() : out.toString().strip();
-		return trimmed.codePointCount(0, trimmed.length()) <= max ? trimmed : trimmed.substring(0, trimmed.offsetByCodePoints(0, max));
+		if (trimmed.length() <= max) {
+			return trimmed;
+		}
+		int end = Character.isHighSurrogate(trimmed.charAt(max - 1)) ? max - 1 : max;
+		return trimmed.substring(0, end);
 	}
 
 	private static List<String> lines(JsonObject o, String side) {
@@ -226,6 +230,9 @@ public sealed interface BlockEntityData {
 		String item = id(string(o, "item"));
 		if (items.maxStack(item) == 0) {
 			throw new Refused(RejectReason.BAD_VALUE, "there's no item " + item);
+		}
+		if (items.banned(item)) {
+			throw new Refused(RejectReason.BANNED_BLOCK, item + " can't be given in builds (it's banned, unbreakable or creative-only)");
 		}
 		return item;
 	}

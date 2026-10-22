@@ -40,6 +40,31 @@ class BlockEntityDataTest {
 		assertTrue(sign.glowing());
 	}
 
+	/**
+	 * The game counts text in UTF-16 units, an emoji as two: a title over 32 makes the book fail to save and drops a
+	 * LAN visitor who opens the lectern (M5 review). Cuts never split an emoji.
+	 */
+	@Test
+	void limitsCountWhatTheGameCounts() {
+		Book chronicle = (Book) parse("{\"lectern\":{\"title\":\"📜 The Chronicles of Stonehold Keep\",\"pages\":[\"x\"]}}");
+		assertTrue(chronicle.title().length() <= BlockEntityData.TITLE_MAX, chronicle.title());
+		Book split = (Book) parse("{\"lectern\":{\"title\":\"" + "a".repeat(31) + "📜\",\"pages\":[]}}");
+		assertEquals("a".repeat(31), split.title(), "half an emoji at the cut");
+		Sign sign = (Sign) parse("{\"sign\":{\"front\":[\"" + "🏰".repeat(300) + "\"]}}");
+		assertEquals(BlockEntityData.SIGN_LINE_MAX, sign.front().getFirst().length());
+	}
+
+	/** Blocks a build may never place can't be handed over as items either (M5 review). */
+	@Test
+	void bannedItemsAreRefused() {
+		BlockEntityData.Refused inChest = assertThrows(BlockEntityData.Refused.class,
+				() -> parse("{\"container\":{\"items\":[{\"item\":\"bread\"},{\"item\":\"bedrock\"}]}}"));
+		assertEquals(RejectReason.BANNED_BLOCK, inChest.reason());
+		assertTrue(inChest.getMessage().contains("minecraft:bedrock"), inChest.getMessage());
+		assertEquals(RejectReason.BANNED_BLOCK, assertThrows(BlockEntityData.Refused.class,
+				() -> parse("{\"item_frame\":{\"facing\":\"up\",\"item\":\"bedrock\"}}")).reason());
+	}
+
 	@Test
 	void aSignHoldsFourLines() {
 		IllegalArgumentException e = assertThrows(IllegalArgumentException.class,

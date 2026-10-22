@@ -11,6 +11,7 @@ import java.util.stream.Collectors;
 
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.blocks.ItemCatalog;
+import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.Directions;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
@@ -62,7 +63,7 @@ public final class McWorldReader implements WorldReader {
 		this.allowed = allowed;
 		this.player = player;
 		this.journal = journal;
-		this.items = new McItemCatalog(level.registryAccess());
+		this.items = new McItemCatalog(level.registryAccess(), Validator.DEFAULT_BANNED);
 		int radius = tier.size() / 2 + 8;
 		this.siteMinX = Math.floorDiv(allowed.min().x() + allowed.max().x() + 1, 2) - radius;
 		this.siteMinZ = Math.floorDiv(allowed.min().z() + allowed.max().z() + 1, 2) - radius;
