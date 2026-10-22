@@ -28,6 +28,8 @@ public final class Tunables {
 	public static final long MAX_OUTPUT_TOKENS = 500_000;
 	/** Minutes one build may take (spec §12.2's max_build_minutes). */
 	public static final int MAX_BUILD_MINUTES = 45;
+	/** How long a tool call waits for the build's start check before it's refused (spec §12.2). */
+	public static final int READY_WAIT_SECONDS = 10;
 	/** Placements queued and not yet placed, at most: beyond it a write call is refused until placement catches up. */
 	public static final long PENDING_MAX = 2_000_000;
 	/**
