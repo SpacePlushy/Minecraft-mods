@@ -192,6 +192,23 @@ public class PlacementGameTest {
 		});
 	}
 
+	/** A block placed where the build already placed one counts once, so "Done: N placed" matches "Undone: N restored". */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void overwritingABlockCountsItOnce(GameTestHelper helper) {
+		ArenaBuild build = start(helper, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "overwrite", "style": "test"}},
+				  {"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "stone"}]}},
+				  {"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "oak_planks"}]}},
+				  {"tool": "finish", "args": {"summary": "one block"}}
+				]}""");
+		helper.succeedWhen(() -> {
+			ArenaBuilds.assertDone(helper, build);
+			helper.assertTrue(build.state(0, 1, 4).is(Blocks.OAK_PLANKS), "the second block didn't replace the first");
+			helper.assertValueEqual(build.job().placed(), 1, "blocks placed");
+		});
+	}
+
 	/** Leaves are placed the way a player places them, so a hedge never decays. */
 	@GameTest(structure = ARENA, maxTicks = 400)
 	public void leavesStayPersistent(GameTestHelper helper) {

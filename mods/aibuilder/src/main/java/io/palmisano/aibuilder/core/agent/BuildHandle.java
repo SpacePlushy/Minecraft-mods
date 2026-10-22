@@ -7,4 +7,7 @@ public interface BuildHandle {
 	void cancel();
 
 	CompletableFuture<BuildOutcome> outcome();
+
+	/** Why the build failed, for the player, once {@link #outcome()} is {@link BuildOutcome#FAILED}; "" otherwise. */
+	String failure();
 }

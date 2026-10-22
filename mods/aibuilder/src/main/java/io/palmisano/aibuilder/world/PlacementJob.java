@@ -80,7 +80,7 @@ public final class PlacementJob implements Tickable {
 		}
 	}
 
-	/** Blocks written so far, both halves of a door counting as two. */
+	/** Positions written so far, each counted once however often it's rewritten; a door's two halves count two. */
 	public int placed() {
 		return placed;
 	}
@@ -195,9 +195,7 @@ public final class PlacementJob implements Tickable {
 			Map.Entry<BlockPos, BlockState> entry = it.next();
 			if (!occupancy.occupied(entry.getKey())) {
 				it.remove();
-				if (write(entry.getKey(), entry.getValue())) {
-					placed++;
-				}
+				placeBlock(entry.getKey(), entry.getValue());
 				budget--;
 			}
 		}
@@ -232,11 +230,10 @@ public final class PlacementJob implements Tickable {
 			for (Map.Entry<BlockPos, BlockState> entry : StateFactory.states(placement.block(), rotation, pos)) {
 				if (occupancy.occupied(entry.getKey())) {
 					waiting.add(entry);
-				} else if (write(entry.getKey(), entry.getValue())) {
+				} else if (placeBlock(entry.getKey(), entry.getValue())) {
 					written++;
 				}
 			}
-			placed += written;
 			return Math.max(written, 1);
 		} catch (RuntimeException e) {
 			if (failures++ == 0) {
@@ -244,6 +241,16 @@ public final class PlacementJob implements Tickable {
 			}
 			return 1;
 		}
+	}
+
+	/** One block of a placement; a position the build hadn't changed before adds one to {@link #placed()}. */
+	private boolean placeBlock(BlockPos pos, BlockState state) {
+		int known = journal.size();
+		boolean wrote = write(pos, state);
+		if (journal.size() > known) {
+			placed++;
+		}
+		return wrote;
 	}
 
 	/** Journals what's there, then writes; false when that state is already there. */

@@ -45,6 +45,14 @@ final class GameTestSupport {
 		}
 	}
 
+	/** Waits until chat has shown a line starting with {@code prefix}; on timeout, fails listing what it did show. */
+	static void awaitChatStartingWith(ClientGameTestContext ctx, String prefix) {
+		for (int i = 0; CHAT.stream().noneMatch(line -> line.startsWith(prefix)); i++) {
+			check(i < 100, "chat never showed a line starting \"" + prefix + "\"; it showed " + CHAT);
+			ctx.waitTick();
+		}
+	}
+
 	static void check(boolean ok, String msg) {
 		if (!ok) {
 			throw new AssertionError(msg);

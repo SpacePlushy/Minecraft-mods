@@ -1,17 +1,109 @@
 package io.palmisano.aibuilder;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+
+import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.agent.AiBackend;
+import io.palmisano.aibuilder.core.agent.BuildHandle;
+import io.palmisano.aibuilder.core.agent.BuildOutcome;
+import io.palmisano.aibuilder.core.agent.BuildRequest;
+import io.palmisano.aibuilder.core.agent.ScriptedBackend;
+import io.palmisano.aibuilder.core.blocks.Validator;
+import io.palmisano.aibuilder.core.frame.LocalFrame;
+import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.request.BuildPrompt;
 import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
+import io.palmisano.aibuilder.core.shapes.Box;
+import io.palmisano.aibuilder.core.site.BuildBox;
+import io.palmisano.aibuilder.core.tools.Brief;
+import io.palmisano.aibuilder.core.tools.Budget;
+import io.palmisano.aibuilder.core.tools.ToolExecutor;
+import io.palmisano.aibuilder.world.BuildTickets;
+import io.palmisano.aibuilder.world.JobScheduler;
+import io.palmisano.aibuilder.world.McBlockCatalog;
+import io.palmisano.aibuilder.world.McBuildSink;
+import io.palmisano.aibuilder.world.Occupancy;
+import io.palmisano.aibuilder.world.PlacementJob;
+import io.palmisano.aibuilder.world.Positions;
+import io.palmisano.aibuilder.world.Sites;
+import io.palmisano.aibuilder.world.StateFactory;
+import io.palmisano.aibuilder.world.UndoRunner;
+import io.palmisano.aibuilder.world.UndoStore;
+import io.palmisano.aibuilder.world.UndoStore.StoredBuild;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.minecraft.ChatFormatting;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.state.BlockState;
 
-/** The one way a prompt enters the server, from the screen's packet or from /aibuild. Server thread only. */
+/**
+ * The server's builds, and the one way a prompt or a build command gets in. At most one job runs at a time, a
+ * build or an undo, and only for the world's owner (spec §15). One manager per server: made when it starts, and
+ * when it stops, a running build is stopped with what it placed saved for undo. Server thread only.
+ */
 public final class BuildManager {
-	private BuildManager() {
+	public enum Outcome {
+		STARTED,
+		REFUSED,
+		BUSY,
+		NOTHING,
+		DONE
 	}
 
-	public static void submit(ServerPlayer player, String rawPrompt, SizeTier size) {
+	private static BuildManager current;
+
+	private final MinecraftServer server;
+	private Build build;
+	private Undo undo;
+	private int ticksToStatus;
+
+	private BuildManager(MinecraftServer server) {
+		this.server = server;
+	}
+
+	public static void register() {
+		ServerLifecycleEvents.SERVER_STARTED.register(server -> current = new BuildManager(server));
+		ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+			if (current != null && current.server == server) {
+				current.stop();
+				current = null;
+			}
+		});
+		ServerTickEvents.END_SERVER_TICK.register(server -> {
+			if (current != null && current.server == server) {
+				current.tick();
+			}
+		});
+	}
+
+	public static BuildManager of(MinecraftServer server) {
+		if (current == null || current.server != server) {
+			current = new BuildManager(server);
+		}
+		return current;
+	}
+
+	/** A build or an undo is running. */
+	public boolean busy() {
+		return build != null || undo != null;
+	}
+
+	/** A prompt from {@code /aibuild <prompt>} or the screen. M1 echoes it; M4 starts Claude here. */
+	public void submit(ServerPlayer player, String rawPrompt, SizeTier size) {
 		if (!BuildPermission.canBuild(player)) {
 			reply(player, Messages.ownerOnly());
 			return;
@@ -22,11 +114,242 @@ public final class BuildManager {
 			reply(player, Messages.problem(problem, prompt));
 			return;
 		}
-		// M2 starts a build here instead of echoing.
 		reply(player, Messages.received(prompt, size));
+	}
+
+	/** {@code /aibuild test}: the demo house through the real tools, in front of the player, no Claude. */
+	public Outcome startTest(ServerPlayer player) {
+		if (!BuildPermission.canBuild(player)) {
+			reply(player, Messages.ownerOnly());
+			return Outcome.REFUSED;
+		}
+		if (busy()) {
+			reply(player, build != null ? Messages.busy() : Messages.undoing());
+			return Outcome.BUSY;
+		}
+		ScriptedBackend demo = new ScriptedBackend(demoScript(), task -> Thread.ofPlatform().daemon().name("aibuilder-build").start(task));
+		build = new Build(player, demo, new BuildRequest("the demo house", SizeTier.AUTO));
+		return Outcome.STARTED;
+	}
+
+	/** {@code /aibuild cancel}: stop at once; what's placed stays, finalized, and can be undone. */
+	public Outcome cancel(ServerPlayer player) {
+		if (!BuildPermission.canBuild(player)) {
+			reply(player, Messages.ownerOnly());
+			return Outcome.REFUSED;
+		}
+		if (build == null) {
+			reply(player, Messages.nothingToCancel());
+			return Outcome.NOTHING;
+		}
+		build.cancel();
+		return Outcome.DONE;
+	}
+
+	/** {@code /aibuild undo}: take back the player's newest build. */
+	public Outcome undo(ServerPlayer player) {
+		if (!BuildPermission.canBuild(player)) {
+			reply(player, Messages.ownerOnly());
+			return Outcome.REFUSED;
+		}
+		if (busy()) {
+			reply(player, build != null ? Messages.busy() : Messages.undoing());
+			return Outcome.BUSY;
+		}
+		UndoStore store = UndoStore.get(server);
+		Optional<StoredBuild> stored = store.pop(player.getUUID());
+		if (stored.isEmpty()) {
+			reply(player, Messages.nothingToUndo());
+			return Outcome.NOTHING;
+		}
+		ServerLevel level = server.getLevel(stored.get().dimension());
+		if (level == null) {
+			reply(player, Messages.failed("that build's dimension doesn't exist any more"));
+			return Outcome.NOTHING;
+		}
+		undo = new Undo(player.getUUID(), stored.get(), new UndoRunner(level, stored.get().journal(), Tunables.BLOCKS_PER_TICK));
+		return Outcome.STARTED;
+	}
+
+	/** {@code /aibuild status}. */
+	public void status(ServerPlayer player) {
+		if (build != null) {
+			reply(player, Messages.status(build.sink.phase(), build.job.placed(), build.budget.used(), build.budget.max()));
+		} else {
+			reply(player, undo != null ? Messages.undoing() : Messages.nothingBuilding());
+		}
+	}
+
+	private void tick() {
+		if (build == null || --ticksToStatus > 0) {
+			return;
+		}
+		ticksToStatus = Tunables.STATUS_INTERVAL_TICKS;
+		ServerPlayer player = server.getPlayerList().getPlayer(build.owner);
+		if (player != null) {
+			player.sendOverlayMessage(Component.literal(Messages.progress(build.sink.phase(), build.job.placed())));
+		}
+	}
+
+	/** The server is stopping and won't tick again: keep what a build placed, and an unfinished undo, for later. */
+	private void stop() {
+		if (build != null) {
+			build.handle.cancel();
+			build.job.cancel();
+			build.save();
+			build = null;
+		}
+		if (undo != null) {
+			UndoStore.get(server).push(undo.owner, undo.stored);
+			undo = null;
+		}
+	}
+
+	private static String demoScript() {
+		try (InputStream in = BuildManager.class.getResourceAsStream("/aibuilder/scripts/demo_house.json")) {
+			if (in == null) {
+				throw new IllegalStateException("the demo script is missing from the mod");
+			}
+			return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
 	}
 
 	private static void reply(ServerPlayer player, String text) {
 		player.sendSystemMessage(Component.literal(text));
+	}
+
+	/** To the player if they're still here. */
+	private void tell(UUID player, Component message) {
+		ServerPlayer online = server.getPlayerList().getPlayer(player);
+		if (online != null) {
+			online.sendSystemMessage(message);
+		}
+	}
+
+	/** A line with a clickable [Undo] after it. */
+	private static Component withUndo(String text) {
+		MutableComponent undo = Component.literal("[Undo]")
+				.withStyle(style -> style.withColor(ChatFormatting.AQUA).withClickEvent(new ClickEvent.RunCommand("/aibuild undo")));
+		return Component.literal(text + " ").append(undo);
+	}
+
+	private static String reason(Throwable error) {
+		Throwable cause = error.getCause() != null ? error.getCause() : error;
+		return cause.getMessage() == null ? cause.toString() : cause.getMessage();
+	}
+
+	/** One running build: its job, the tools the backend calls, and what to say when it ends. */
+	private final class Build {
+		final UUID owner;
+		final ServerLevel level;
+		final UndoJournal<BlockState, CompoundTag> journal = new UndoJournal<>();
+		final Budget budget = new Budget(Tunables.MAX_TOOL_CALLS);
+		final PlacementJob job;
+		final McBuildSink sink;
+		final Set<ChunkPos> chunks;
+		final BuildHandle handle;
+		String title = "";
+		boolean cancelled;
+		String failure;
+
+		Build(ServerPlayer player, AiBackend backend, BuildRequest request) {
+			owner = player.getUUID();
+			level = player.level();
+			LocalFrame frame = Sites.ahead(player);
+			Box allowed = BuildBox.allowed(request.size(), frame.origin().y(), level.getMinY(), level.getMaxY());
+			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level),
+					Tunables.BLOCKS_PER_TICK, Tunables.TICK_BUDGET_NANOS);
+			chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(allowed.min())), Positions.toBlockPos(frame.toWorld(allowed.max())));
+			BuildTickets.hold(level, chunks);
+			JobScheduler.add(job);
+			job.whenEnded().whenComplete(this::ended);
+			// The sink's callbacks come from the backend's thread.
+			sink = new McBuildSink(job, brief -> server.execute(() -> briefed(brief)), summary -> job.finish());
+			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, allowed,
+					request.size().maxChangedBlocks(), sink, budget);
+			handle = backend.start(request, tools);
+			handle.outcome().thenAccept(outcome -> server.execute(() -> backendEnded(outcome)));
+		}
+
+		void cancel() {
+			cancelled = true;
+			handle.cancel();
+			job.cancel();
+		}
+
+		/** Into the player's undo history, unless it changed nothing. */
+		boolean save() {
+			if (journal.size() == 0) {
+				return false;
+			}
+			UndoStore.get(server).push(owner, new StoredBuild(level.dimension(), title, journal));
+			return true;
+		}
+
+		private void briefed(Brief brief) {
+			title = brief.title();
+			tell(owner, Component.literal(Messages.designing(brief)));
+		}
+
+		/** Claude (here, the script) is done: whatever it left queued still goes in, then the job ends. */
+		private void backendEnded(BuildOutcome outcome) {
+			if (outcome == BuildOutcome.FAILED) {
+				failure = handle.failure();
+			}
+			job.finish();
+		}
+
+		/** Server thread, once the job has placed everything and finalized. */
+		private void ended(Integer skipped, Throwable error) {
+			BuildTickets.release(level, chunks);
+			boolean undoable = save();
+			String line;
+			if (error != null) {
+				line = Messages.failed(reason(error));
+			} else if (failure != null) {
+				line = Messages.failed(failure);
+			} else if (cancelled) {
+				line = Messages.stopped(job.placed());
+			} else {
+				line = Messages.done(job.placed(), skipped);
+			}
+			ServerPlayer online = server.getPlayerList().getPlayer(owner);
+			if (online != null) {
+				// The last "Building …" would otherwise linger for seconds after the build is over.
+				online.sendOverlayMessage(Component.empty());
+			}
+			tell(owner, undoable ? withUndo(line) : Component.literal(line));
+			if (build == this) {
+				build = null;
+			}
+		}
+	}
+
+	/** One running undo. */
+	private final class Undo {
+		final UUID owner;
+		final StoredBuild stored;
+		final UndoRunner runner;
+
+		Undo(UUID owner, StoredBuild stored, UndoRunner runner) {
+			this.owner = owner;
+			this.stored = stored;
+			this.runner = runner;
+			JobScheduler.add(runner);
+			runner.result().whenComplete((result, error) -> {
+				if (error != null) {
+					// Give the build back, so the player can try again.
+					UndoStore.get(server).push(owner, stored);
+					tell(owner, Component.literal(Messages.failed(reason(error))));
+				} else {
+					tell(owner, Component.literal(Messages.undone(result.restored(), result.kept())));
+				}
+				if (undo == this) {
+					undo = null;
+				}
+			});
+		}
 	}
 }

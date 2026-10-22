@@ -14,6 +14,7 @@ import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
+import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.tools.Budget;
@@ -52,6 +53,19 @@ class ScriptedBackendTest {
 		BuildHandle handle = new ScriptedBackend(script(BRIEF, FILL), Runnable::run).start(REQUEST, tools(sink));
 		assertEquals(BuildOutcome.FINISHED, handle.outcome().get(5, TimeUnit.SECONDS));
 		assertTrue(sink.finishedWith != null, "finish should have been called");
+	}
+
+	@Test
+	void aCallThatThrowsFailsTheBuildWithItsReason() throws Exception {
+		RecordingSink sink = new RecordingSink() {
+			@Override
+			public void queue(List<Placement> batch) {
+				throw new IllegalStateException("the world is read-only");
+			}
+		};
+		BuildHandle handle = new ScriptedBackend(script(BRIEF, FILL), Runnable::run).start(REQUEST, tools(sink));
+		assertEquals(BuildOutcome.FAILED, handle.outcome().get(5, TimeUnit.SECONDS));
+		assertEquals("the world is read-only", handle.failure());
 	}
 
 	@Test

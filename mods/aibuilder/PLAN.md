@@ -39,7 +39,7 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 | # | Status | What you'll be able to do | How to try it (`cd mods/aibuilder && ./gradlew runClient`) |
 |---|---|---|---|
 | M1 Skeleton | ✅ built, waiting for Frankie's test | Press B, type, Build, and chat echoes your prompt | Press B, type, Build; try `/aibuild hello`; rebind B in Options → Controls |
-| M2 Placement engine | ⬜ | `/aibuild test` builds a scripted house in front of you, with undo and cancel | Face each direction and run `/aibuild test`: door toward you, stairs the right way; `/aibuild undo`; `/aibuild cancel` half-way, then undo |
+| M2 Placement engine | ✅ built, waiting for Frankie's test | `/aibuild test` builds a scripted house in front of you, with undo and cancel | Face each direction and run `/aibuild test`: door toward you, stairs the right way; `/aibuild undo`; `/aibuild cancel` half-way, then undo |
 | M3 Survey | ⬜ | `/aibuild survey` shows what Claude will "see" | Plains, a mountain, a beach, a forest |
 | M4 Claude | ⬜ | Real builds from your prompts | "small cabin", then "castle"; cancel one; undo; log out of Claude Code and read the message |
 | M5 Quality | ⬜ | Better builds: phases, self-check, the HUD | Builds have depth, lit interiors, working doors |
@@ -85,3 +85,8 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 - **2026-10-21:** M1 built: B opens the screen (prompt box, size, Build/Cancel, recent prompts), and the prompt
   reaches the server from the screen or `/aibuild`. Client gametests now run even while the Mac is locked (vsync is
   off in tests). Waiting for Frankie's test before the M2 plan.
+- **2026-10-22:** M2 built from `docs/superpowers/plans/2026-10-21-aibuilder-m2-plan.md`: the write tools
+  (`tools.json`), block validation, shapes, roofs and stairs, tick-batched placement with the finalize pass, exact
+  undo saved with the world, and `/aibuild test|undo|cancel|status`. Server gametests check the demo house facing
+  all four ways, sand, water, fences, two-block blocks, waiting for a player, undo with contents and far away, and
+  saving. Rulings made along the way are in the M2 progress ledger. Waiting for Frankie's M1 + M2 test.

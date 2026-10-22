@@ -10,12 +10,15 @@ import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.tools.Brief;
 import io.palmisano.aibuilder.core.tools.BuildSink;
+import io.palmisano.aibuilder.core.tools.PhaseProgress;
 
 /** Hands the write tools' batches to a placement job; a checkpoint waits for the job to catch up. */
 public final class McBuildSink implements BuildSink {
 	private final PlacementJob job;
 	private final Consumer<Brief> onBrief;
 	private final Consumer<String> onFinish;
+	/** Written by the backend's thread, read by the status line. */
+	private volatile PhaseProgress phases = PhaseProgress.of(List.of());
 
 	public McBuildSink(PlacementJob job, Consumer<Brief> onBrief, Consumer<String> onFinish) {
 		this.job = job;
@@ -23,8 +26,14 @@ public final class McBuildSink implements BuildSink {
 		this.onFinish = onFinish;
 	}
 
+	/** The phase in progress, e.g. "walls (2/7)", for the status line. Any thread. */
+	public String phase() {
+		return phases.label();
+	}
+
 	@Override
 	public void brief(Brief brief) {
+		phases = PhaseProgress.of(brief.phases());
 		onBrief.accept(brief);
 	}
 
@@ -43,6 +52,7 @@ public final class McBuildSink implements BuildSink {
 		} catch (ExecutionException | TimeoutException e) {
 			// A player who won't move, or a job that died, doesn't stop Claude: report what's placed so far.
 		}
+		phases = phases.checkpointed(phase);
 		return job.placed();
 	}
 

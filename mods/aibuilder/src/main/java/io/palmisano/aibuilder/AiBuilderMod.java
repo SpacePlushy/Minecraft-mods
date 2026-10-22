@@ -23,11 +23,12 @@ public class AiBuilderMod implements ModInitializer {
 	public void onInitialize() {
 		PayloadTypeRegistry.serverboundPlay().register(BuildPromptPayload.TYPE, BuildPromptPayload.CODEC);
 		// Fabric runs play payload handlers on the server thread.
-		ServerPlayNetworking.registerGlobalReceiver(BuildPromptPayload.TYPE,
-				(payload, context) -> BuildManager.submit(context.player(), payload.prompt(), payload.size()));
+		ServerPlayNetworking.registerGlobalReceiver(BuildPromptPayload.TYPE, (payload, context) -> BuildManager
+				.of(context.player().level().getServer()).submit(context.player(), payload.prompt(), payload.size()));
 		CommandRegistrationCallback.EVENT.register((dispatcher, buildContext, selection) -> AiBuildCommand.register(dispatcher));
 		BuildTickets.register();
 		JobScheduler.register();
+		BuildManager.register();
 		LOG.info("AI Builder loaded");
 	}
 }

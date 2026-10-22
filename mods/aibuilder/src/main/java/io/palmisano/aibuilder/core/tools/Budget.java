@@ -3,7 +3,8 @@ package io.palmisano.aibuilder.core.tools;
 /** The build's tool-call budget, and the reminder Claude sees as it runs low. */
 public final class Budget {
 	private final int maxToolCalls;
-	private int used;
+	/** Counted on the backend's thread, read by the status line on the server thread. */
+	private volatile int used;
 
 	public Budget(int maxToolCalls) {
 		this.maxToolCalls = maxToolCalls;
@@ -11,6 +12,14 @@ public final class Budget {
 
 	public void count() {
 		used++;
+	}
+
+	public int used() {
+		return used;
+	}
+
+	public int max() {
+		return maxToolCalls;
 	}
 
 	public boolean exhausted() {

@@ -6,6 +6,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -42,6 +43,7 @@ public final class ScriptedBackend implements AiBackend {
 	@Override
 	public BuildHandle start(BuildRequest request, ToolExecutor tools) {
 		AtomicBoolean cancelled = new AtomicBoolean();
+		AtomicReference<String> failure = new AtomicReference<>("");
 		CompletableFuture<BuildOutcome> outcome = new CompletableFuture<>();
 		worker.execute(() -> {
 			try {
@@ -69,6 +71,7 @@ public final class ScriptedBackend implements AiBackend {
 				}
 				outcome.complete(BuildOutcome.FINISHED);
 			} catch (RuntimeException e) {
+				failure.set(e.getMessage() == null ? e.toString() : e.getMessage());
 				outcome.completeExceptionally(e);
 			}
 		});
@@ -81,6 +84,11 @@ public final class ScriptedBackend implements AiBackend {
 			@Override
 			public CompletableFuture<BuildOutcome> outcome() {
 				return outcome.exceptionally(e -> BuildOutcome.FAILED);
+			}
+
+			@Override
+			public String failure() {
+				return failure.get();
 			}
 		};
 	}

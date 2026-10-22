@@ -1,8 +1,12 @@
 package io.palmisano.aibuilder.core.request;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
-/** The chat lines the player sees about a prompt. */
+import io.palmisano.aibuilder.core.tools.Brief;
+
+/** The chat lines the player sees about a prompt and a build. */
 public final class Messages {
 	private Messages() {
 	}
@@ -22,5 +26,82 @@ public final class Messages {
 
 	public static String ownerOnly() {
 		return "Only this world's owner can use AI Builder.";
+	}
+
+	/** The brief's line (spec §5.3): title, then style, footprint and the first two palette blocks it gave. */
+	public static String designing(Brief brief) {
+		List<String> about = new ArrayList<>();
+		if (!brief.style().isBlank()) {
+			about.add(brief.style());
+		}
+		if (brief.width() > 0 && brief.depth() > 0) {
+			about.add(brief.width() + "×" + brief.depth());
+		}
+		List<String> blocks = brief.palette().values().stream().limit(2).map(Messages::readable).toList();
+		if (!blocks.isEmpty()) {
+			about.add(String.join(" + ", blocks));
+		}
+		return "Designing: " + brief.title() + (about.isEmpty() ? "" : " (" + String.join(", ", about) + ")") + "…";
+	}
+
+	public static String done(int placed, int skipped) {
+		String line = "Done: " + blocks(placed) + " placed.";
+		return skipped == 0 ? line : line + " Skipped " + blocks(skipped) + " where a player stood.";
+	}
+
+	public static String undone(int restored, int kept) {
+		String line = "Undone: " + blocks(restored) + " restored.";
+		return kept == 0 ? line : line + " Kept " + blocks(kept) + " you changed.";
+	}
+
+	public static String stopped(int placed) {
+		return "Stopped: " + blocks(placed) + " placed.";
+	}
+
+	public static String failed(String reason) {
+		return "Stopped: something went wrong (" + reason + ").";
+	}
+
+	/** The action bar while a build runs. */
+	public static String progress(String phase, int placed) {
+		return building(phase) + " · " + blocks(placed);
+	}
+
+	/** {@code /aibuild status} while a build runs. */
+	public static String status(String phase, int placed, int toolCalls, int maxToolCalls) {
+		return building(phase) + " · " + blocks(placed) + " placed · " + toolCalls + " of " + maxToolCalls + " tool calls.";
+	}
+
+	public static String busy() {
+		return "A build is already running: /aibuild cancel stops it.";
+	}
+
+	public static String undoing() {
+		return "An undo is still running.";
+	}
+
+	public static String nothingToCancel() {
+		return "Nothing to cancel.";
+	}
+
+	public static String nothingToUndo() {
+		return "Nothing to undo.";
+	}
+
+	public static String nothingBuilding() {
+		return "Nothing is building.";
+	}
+
+	private static String building(String phase) {
+		return phase.isEmpty() ? "Building" : "Building " + phase;
+	}
+
+	/** "minecraft:dark_oak_stairs" → "dark oak stairs". */
+	private static String readable(String blockId) {
+		return blockId.substring(blockId.indexOf(':') + 1).replace('_', ' ');
+	}
+
+	private static String blocks(int count) {
+		return String.format(Locale.ROOT, "%,d", count) + (count == 1 ? " block" : " blocks");
 	}
 }
