@@ -1,0 +1,356 @@
+[
+	{
+		"name": "get_context",
+		"description": "Where you are: the local frame and direction rules, the size tier and allowed box, the dimension, biome, time and weather, the ground block at the origin, where the player stands (local) and how many tool calls are left. Call it first.",
+		"input_schema": {"type": "object", "properties": {}}
+	},
+	{
+		"name": "survey_area",
+		"description": "The terrain around the site as compact text: floor heights (y relative to the ground at the origin), surface blocks, water and lava, trees, cave ceilings and protected (probably player-made) regions as local boxes. Default radius covers the allowed box with 8 blocks to spare; at most 96. Read it before designing.",
+		"input_schema": {
+			"type": "object",
+			"properties": {"radius": {"type": "integer", "minimum": 1, "maximum": 96}}
+		}
+	},
+	{
+		"name": "inspect_region",
+		"description": "The exact blocks in a local box [x1, y1, z1, x2, y2, z2] (at most 4,096 blocks), layer by layer with a palette, directions relative. Use it to check what is already there, or to check your own work.",
+		"input_schema": {
+			"type": "object",
+			"properties": {"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6}},
+			"required": ["box"]
+		}
+	},
+	{
+		"name": "search_blocks",
+		"description": "Find block ids by words (\"oak stairs\", \"copper lantern\"), other mods' blocks included, each with its properties and allowed values (directions as relative words).",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"query": {"type": "string"},
+				"limit": {"type": "integer", "minimum": 1, "maximum": 50}
+			},
+			"required": ["query"]
+		}
+	},
+	{
+		"name": "submit_brief",
+		"description": "Describe the build before placing any block: a title, a style, the size you're aiming for, a palette of 4-8 blocks with roles (primary, secondary, accent, trim, roof, glass, floor, light) and the phases you'll build in. The player sees a one-line summary. Required before every other write tool.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"title": {"type": "string", "description": "What you're building, a few words."},
+				"style": {"type": "string", "description": "The style, e.g. gothic, rustic, japanese."},
+				"size": {
+					"type": "object",
+					"properties": {"w": {"type": "integer"}, "h": {"type": "integer"}, "d": {"type": "integer"}},
+					"description": "Planned width (x), height (y) and depth (z) in blocks."
+				},
+				"palette": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {"role": {"type": "string"}, "block": {"type": "string"}},
+						"required": ["role", "block"]
+					}
+				},
+				"phases": {"type": "array", "items": {"type": "string"}, "description": "The phases in order, e.g. foundation, walls, roof."}
+			},
+			"required": ["title", "style"]
+		}
+	},
+	{
+		"name": "set_blocks",
+		"description": "Place individual blocks, up to 2,000 per call. Positions are local: +x is the player's right, +z forward (away from the player), +y up, y=0 the ground at the origin. Block states use forward, back, left, right, up, down for directions, never compass names. Prefer the shape tools for anything regular.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"blocks": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"pos": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+							"block": {"type": "string", "description": "Block id, e.g. oak_door or minecraft:stone_bricks; other mods' ids work too."},
+							"state": {"type": "object", "description": "Block state, e.g. {\"facing\": \"forward\", \"half\": \"lower\"}."}
+						},
+						"required": ["pos", "block"]
+					}
+				}
+			},
+			"required": ["blocks"]
+		}
+	},
+	{
+		"name": "fill",
+		"description": "Fill a box [x1, y1, z1, x2, y2, z2] (local, inclusive, corners in any order). mode: solid (default) fills it; hollow makes the shell and clears the inside to air; outline makes the shell and leaves the inside alone; replace places only where the current block matches filter (a block id or #tag).",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
+				"block": {"type": "string"},
+				"state": {"type": "object"},
+				"mode": {"type": "string", "enum": ["solid", "hollow", "outline", "replace"]},
+				"filter": {"type": "string", "description": "For mode replace: the block id or #tag to replace."}
+			},
+			"required": ["box", "block"]
+		}
+	},
+	{
+		"name": "line",
+		"description": "A straight line of blocks from one local position to another, both ends included.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"from": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+				"to": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+				"block": {"type": "string"},
+				"state": {"type": "object"}
+			},
+			"required": ["from", "to", "block"]
+		}
+	},
+	{
+		"name": "wall",
+		"description": "A vertical wall along a polyline of [x, z] points, height blocks tall starting at y. Close a loop by repeating the first point. Extra thickness grows to the right of the walking direction.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"points": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}},
+				"y": {"type": "integer"},
+				"height": {"type": "integer"},
+				"block": {"type": "string"},
+				"state": {"type": "object"},
+				"thickness": {"type": "integer", "minimum": 1}
+			},
+			"required": ["points", "y", "height", "block"]
+		}
+	},
+	{
+		"name": "cylinder",
+		"description": "A cylinder: discs of the given radius stacked height blocks along axis (y by default, or x or z for one lying on its side), starting at center. hollow keeps only the outer ring. Good for towers and pillars.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"center": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+				"radius": {"type": "integer", "minimum": 0},
+				"height": {"type": "integer", "minimum": 1},
+				"block": {"type": "string"},
+				"state": {"type": "object"},
+				"axis": {"type": "string", "enum": ["x", "y", "z"]},
+				"hollow": {"type": "boolean"}
+			},
+			"required": ["center", "radius", "height", "block"]
+		}
+	},
+	{
+		"name": "sphere",
+		"description": "A ball around center; hollow keeps only the shell; dome keeps the upper half (y at or above the centre).",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"center": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+				"radius": {"type": "integer", "minimum": 0},
+				"block": {"type": "string"},
+				"state": {"type": "object"},
+				"hollow": {"type": "boolean"},
+				"dome": {"type": "boolean"}
+			},
+			"required": ["center", "radius", "block"]
+		}
+	},
+	{
+		"name": "cone",
+		"description": "A cone from a disc at base_center narrowing to a point height blocks up; hollow keeps each layer's ring. Good for spires and tower caps.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"base_center": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+				"radius": {"type": "integer", "minimum": 0},
+				"height": {"type": "integer", "minimum": 1},
+				"block": {"type": "string"},
+				"state": {"type": "object"},
+				"hollow": {"type": "boolean"}
+			},
+			"required": ["base_center", "radius", "height", "block"]
+		}
+	},
+	{
+		"name": "arch",
+		"description": "An arch between two feet at the same y, in a straight line along x or z, rise blocks high at the middle. style: round (default) or pointed (gothic). Extra thickness grows to the right of the from-to direction.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"from": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+				"to": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+				"rise": {"type": "integer", "minimum": 0},
+				"block": {"type": "string"},
+				"state": {"type": "object"},
+				"thickness": {"type": "integer", "minimum": 1},
+				"style": {"type": "string", "enum": ["round", "pointed"]}
+			},
+			"required": ["from", "to", "rise", "block"]
+		}
+	},
+	{
+		"name": "roof",
+		"description": "A roof built correctly from stairs and slabs, starting at the box's lowest y over its footprint grown by overhang (0-2) on every side. style gable: two slopes up to a ridge along ridge (x or z; default the longer side), an odd width needs slab for the ridge row, gable_block fills the two triangular end faces. hip: slopes on all four sides. flat: one layer of slab.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
+				"style": {"type": "string", "enum": ["gable", "hip", "flat"]},
+				"stairs": {"type": "string", "description": "A stairs block id, e.g. spruce_stairs."},
+				"slab": {"type": "string", "description": "A slab block id, e.g. spruce_slab."},
+				"ridge": {"type": "string", "enum": ["x", "z"]},
+				"overhang": {"type": "integer", "minimum": 0, "maximum": 2},
+				"gable_block": {"type": "string"}
+			},
+			"required": ["box", "style", "stairs"]
+		}
+	},
+	{
+		"name": "staircase",
+		"description": "Stairs you can walk up. style straight: steps going direction (forward, back, left, right) from from, one up per step, width wide to the right of direction. style spiral: one step per level from from_y to to_y round the ring radius blocks from center's column (leave the column for a pillar), clockwise by default.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"style": {"type": "string", "enum": ["straight", "spiral"]},
+				"block": {"type": "string", "description": "A stairs block id."},
+				"from": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+				"direction": {"type": "string", "enum": ["forward", "back", "left", "right"]},
+				"steps": {"type": "integer", "minimum": 1},
+				"width": {"type": "integer", "minimum": 1},
+				"center": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+				"radius": {"type": "integer", "minimum": 1},
+				"from_y": {"type": "integer"},
+				"to_y": {"type": "integer"},
+				"clockwise": {"type": "boolean"}
+			},
+			"required": ["style", "block"]
+		}
+	},
+	{
+		"name": "clear",
+		"description": "Set a box [x1, y1, z1, x2, y2, z2] to air. Blocks that look player-made stay unless include_protected is true; blocks that can't be broken (bedrock) always stay.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
+				"include_protected": {"type": "boolean", "description": "Also remove blocks that look player-made. Only when the player asked for it."}
+			},
+			"required": ["box"]
+		}
+	},
+	{
+		"name": "terraform",
+		"description": "Level the box's footprint (its y range is ignored) to target_y, which must be inside the allowed box's height, from the ground as it is now (what you queued earlier is placed first): everything above target_y becomes air up to each column's highest block (trees too), the ground below is filled up with fill_block (default dirt, replacing any water or lava), and target_y gets surface_block. Protected blocks stay. Use it to make a flat site, a terrace or a raised plinth before building.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
+				"target_y": {"type": "integer"},
+				"surface_block": {"type": "string"},
+				"fill_block": {"type": "string"}
+			},
+			"required": ["box", "target_y", "surface_block"]
+		}
+	},
+	{
+		"name": "place_block_entity",
+		"description": "Dress the build: a sign with text, a chest, barrel, shulker box, dispenser, dropper or decorated pot with items, a lectern with a written book, a banner with patterns, or an item frame holding an item. Give pos and exactly one of sign, container, lectern, banner or item_frame. For the first four also give block (and state, as for set_blocks): a sign block (oak_sign, oak_wall_sign, oak_hanging_sign…), a container, lectern, or a banner (white_banner, red_wall_banner…; the block's color is the base). A sign takes up to 4 lines a side (about 15 characters show on a line), a dye color and glowing; a container up to 27 stacks, filled from the first slot (nothing that holds items itself); a book up to 50 pages of 800 characters (line breaks kept); a banner up to 6 patterns, each a pattern id and a dye color, bottom layer first. An item frame is an entity, not a block: give no block; pos is the empty spot in front of a solid block, facing the way the frame looks out (forward, back, left, right, up, down). Text is stored as plain text.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"pos": {"type": "array", "items": {"type": "integer"}, "description": "[x, y, z] in the local frame"},
+				"block": {"type": "string"},
+				"state": {"type": "object", "description": "Property names to values, directions relative"},
+				"sign": {
+					"type": "object",
+					"properties": {
+						"front": {"type": "array", "items": {"type": "string"}},
+						"back": {"type": "array", "items": {"type": "string"}},
+						"color": {"type": "string", "description": "A dye color: black (default), white, red, blue, …"},
+						"glowing": {"type": "boolean"}
+					}
+				},
+				"container": {
+					"type": "object",
+					"properties": {
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {"item": {"type": "string"}, "count": {"type": "integer"}},
+								"required": ["item"]
+							}
+						}
+					},
+					"required": ["items"]
+				},
+				"lectern": {
+					"type": "object",
+					"properties": {
+						"title": {"type": "string"},
+						"author": {"type": "string"},
+						"pages": {"type": "array", "items": {"type": "string"}}
+					},
+					"required": ["pages"]
+				},
+				"banner": {
+					"type": "object",
+					"properties": {
+						"patterns": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"pattern": {"type": "string", "description": "stripe_bottom, border, cross, creeper, flower, skull, globe, bricks, gradient, rhombus, circle, half_horizontal, …"},
+									"color": {"type": "string"}
+								},
+								"required": ["pattern", "color"]
+							}
+						}
+					},
+					"required": ["patterns"]
+				},
+				"item_frame": {
+					"type": "object",
+					"properties": {
+						"facing": {"type": "string", "description": "forward, back, left, right, up or down: out of the block it hangs on"},
+						"item": {"type": "string"},
+						"glowing": {"type": "boolean", "description": "A glow item frame"}
+					},
+					"required": ["facing"]
+				}
+			},
+			"required": ["pos"]
+		}
+	},
+	{
+		"name": "checkpoint",
+		"description": "Wait until everything queued so far is placed, then report progress; the player's status shows the phase. Call it at the end of each phase.",
+		"input_schema": {
+			"type": "object",
+			"properties": {"phase": {"type": "string"}},
+			"required": ["phase"]
+		}
+	},
+	{
+		"name": "check_build",
+		"description": "Wait until everything queued is placed, then look the build over in the world: unsupported blocks (a torch on air, sand over a drop), dark walkable spots under a roof (monsters spawn at block light 0), doors that can't be walked through, rooms lower than 2 blocks, and water or lava that would flow if disturbed (an open side, or air under a pool's edge). Positions are local, at most 60 listed, grouped by kind. Call it before finish, fix what matters, and call it again.",
+		"input_schema": {
+			"type": "object",
+			"properties": {}
+		}
+	},
+	{
+		"name": "finish",
+		"description": "End the build. The summary is shown to the player.",
+		"input_schema": {
+			"type": "object",
+			"properties": {"summary": {"type": "string"}},
+			"required": ["summary"]
+		}
+	}
+]

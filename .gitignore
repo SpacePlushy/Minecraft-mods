@@ -7,6 +7,8 @@ classes/
 # Dev game folders created by runClient / gametests
 run/
 runs/
+# Log output of unit tests (Minecraft's log4j setup writes it to the working folder)
+logs/
 
 # IDEs
 .idea/
@@ -24,6 +26,7 @@ bin/
 
 # Local-only tool state
 .claude/settings.local.json
+.claude/worktrees/
 .superpowers/
 
 # Python bytecode

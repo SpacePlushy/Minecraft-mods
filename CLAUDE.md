@@ -7,7 +7,7 @@ GitHub: `https://github.com/SpacePlushy/Minecraft-mods` (public). Frankie works 
 everything needed to continue lives in this repo. Claude's per-machine memory doesn't carry over,
 so keep durable facts **here**, not in memory.
 
-## ▶ Current status and how to resume (updated 2026-10-19)
+## ▶ Current status and how to resume (updated 2026-10-22)
 
 **Branch `main`** is GitHub's default and holds all finished work. Each mod is built on its own branch
 (`<modid>-v1`, ...) and merged into `main` when done.
@@ -16,6 +16,7 @@ so keep durable facts **here**, not in memory.
 |---|---|
 | `drone` | ✅ v1 done, reviewed, play-tested by Frankie, merged to `main`. Plan + ledger: `docs/superpowers/plans/2026-10-19-drone-mod-*`. Deferred minors are the `minor (deferred)` lines in the progress file. |
 | `rocket` | 🧠 next: brainstorming a rideable rocket ship with launch vapor (superpowers:brainstorming → spec → plan) |
+| `aibuilder` | ✅ v1 done: all six milestones, each reviewed by a fresh Opus 5.5 reviewer and fixed test-first, play-tested by Frankie, merged to `main` (pull request #1). Press B, type a prompt, and Claude Code (Frankie's Max login) builds it in the world. Spec `docs/superpowers/specs/2026-10-21-aibuilder-design.md`, living plan `mods/aibuilder/PLAN.md`, a plan and ledger per milestone in `docs/superpowers/plans/2026-10-2*-aibuilder-m<N>-*` (the deferred minors are their `minor (deferred)` lines). The showcase world Claude built live (`ShowcaseClientGameTest`) is `mods/aibuilder/run/saves/AI Builder Showcase` in the `aibuilder-v1` worktree on the machine it was built on (git-ignored: copy it out before removing that worktree). |
 
 **To resume a plan that's mid-execution (any mod):**
 1. Set up the machine (next section) and run `./gradlew build` in the mod's folder until it's green.
@@ -129,6 +130,9 @@ The reference for a correct, current build setup is the official example mod:
 - Use the **superpowers** skills: brainstorming → spec in `docs/superpowers/specs/` → writing-plans
   → plan in `docs/superpowers/plans/` → executing-plans (TDD per task, ledger of rulings) → final
   review → finishing-a-development-branch.
+- **Every subagent, task, session and workflow agent runs on Opus 5.5** (Frankie, 2026-10-21). Pass the
+  model explicitly (`model: "opus"`) on every dispatch, including superpowers implementer, reviewer and
+  spec-check subagents. Never rely on an agent type's default model.
 - Put game logic (physics, rules, math) in **plain Java classes with no Minecraft imports** and
   unit-test them test-first. Keep entities, renderers and registration thin.
 - Verify in-game behavior with **Fabric client gametests**, and look at their screenshots before

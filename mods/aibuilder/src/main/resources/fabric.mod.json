@@ -1,0 +1,32 @@
+{
+	"schemaVersion": 1,
+	"id": "aibuilder",
+	"version": "${version}",
+	"name": "AI Builder",
+	"description": "Type anything and Claude builds it in front of you.",
+	"authors": [
+		"Frankie Palmisano"
+	],
+	"environment": "*",
+	"mixins": [
+		"aibuilder.mixins.json",
+		{
+			"config": "aibuilder-client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"entrypoints": {
+		"main": [
+			"io.palmisano.aibuilder.AiBuilderMod"
+		],
+		"client": [
+			"io.palmisano.aibuilder.client.AiBuilderClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

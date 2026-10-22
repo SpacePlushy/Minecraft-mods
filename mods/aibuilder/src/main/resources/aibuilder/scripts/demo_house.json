@@ -1,0 +1,57 @@
+{
+	"calls": [
+		{"tool": "submit_brief", "args": {
+			"title": "Demo house",
+			"style": "rustic",
+			"size": {"w": 11, "h": 11, "d": 12},
+			"palette": [
+				{"role": "primary", "block": "oak_planks"},
+				{"role": "secondary", "block": "stone_bricks"},
+				{"role": "roof", "block": "spruce_stairs"},
+				{"role": "trim", "block": "oak_log"},
+				{"role": "glass", "block": "glass_pane"},
+				{"role": "light", "block": "lantern"}
+			],
+			"phases": ["foundation", "walls", "roof", "interior", "garden"]
+		}},
+
+		{"tool": "fill", "args": {"box": [-4, 0, 2, 4, 0, 10], "block": "stone_bricks"}},
+		{"tool": "fill", "args": {"box": [-1, 0, 0, 1, 0, 1], "block": "dirt_path"}},
+		{"tool": "checkpoint", "args": {"phase": "foundation"}},
+
+		{"tool": "wall", "args": {"points": [[-4, 2], [4, 2], [4, 10], [-4, 10], [-4, 2]], "y": 1, "height": 4, "block": "oak_planks"}},
+		{"tool": "set_blocks", "args": {"blocks": [
+			{"pos": [0, 1, 2], "block": "oak_door", "state": {"facing": "forward", "half": "lower"}}
+		]}},
+		{"tool": "fill", "args": {"box": [-1, 4, 2, 1, 4, 2], "block": "oak_log", "state": {"axis": "x"}}},
+		{"tool": "set_blocks", "args": {"blocks": [
+			{"pos": [-2, 2, 2], "block": "glass_pane"},
+			{"pos": [2, 2, 2], "block": "glass_pane"},
+			{"pos": [-4, 2, 6], "block": "glass_pane"},
+			{"pos": [4, 2, 6], "block": "glass_pane"}
+		]}},
+		{"tool": "checkpoint", "args": {"phase": "walls"}},
+
+		{"tool": "roof", "args": {"box": [-4, 5, 2, 4, 5, 10], "style": "gable", "stairs": "spruce_stairs", "slab": "spruce_slab",
+			"ridge": "z", "overhang": 1, "gable_block": "oak_planks"}},
+		{"tool": "checkpoint", "args": {"phase": "roof"}},
+
+		{"tool": "set_blocks", "args": {"blocks": [
+			{"pos": [3, 1, 6], "block": "red_bed", "state": {"facing": "forward"}},
+			{"pos": [0, 1, 6], "block": "lantern"},
+			{"pos": [-3, 1, 9], "block": "oak_fence"},
+			{"pos": [-2, 1, 9], "block": "oak_fence"}
+		]}},
+		{"tool": "checkpoint", "args": {"phase": "interior"}},
+
+		{"tool": "set_blocks", "args": {"blocks": [
+			{"pos": [-3, 0, 0], "block": "grass_block"},
+			{"pos": [3, 0, 0], "block": "grass_block"},
+			{"pos": [-3, 1, 0], "block": "poppy"},
+			{"pos": [3, 1, 0], "block": "poppy"}
+		]}},
+		{"tool": "checkpoint", "args": {"phase": "garden"}},
+
+		{"tool": "finish", "args": {"summary": "A small oak house on a stone-brick footing, with a spruce gable roof, a path to the door and a poppy either side."}}
+	]
+}

@@ -1,0 +1,37 @@
+{
+	"schemaVersion": 1,
+	"id": "aibuilder-test",
+	"version": "1.0.0",
+	"name": "AI Builder Tests",
+	"environment": "*",
+	"mixins": [
+		"aibuilder-test.mixins.json"
+	],
+	"entrypoints": {
+		"main": [
+			"io.palmisano.aibuilder.test.TestSetup"
+		],
+		"fabric-gametest": [
+			"io.palmisano.aibuilder.test.PlacementGameTest",
+			"io.palmisano.aibuilder.test.UndoGameTest",
+			"io.palmisano.aibuilder.test.PermissionGameTest",
+			"io.palmisano.aibuilder.test.SiteGameTest",
+			"io.palmisano.aibuilder.test.SurveyGameTest",
+			"io.palmisano.aibuilder.test.CheckBuildGameTest",
+			"io.palmisano.aibuilder.test.BlockEntityGameTest",
+			"io.palmisano.aibuilder.test.RefinementGameTest"
+		],
+		"fabric-client-gametest": [
+			"io.palmisano.aibuilder.test.SmokeClientGameTest",
+			"io.palmisano.aibuilder.test.PromptServerClientGameTest",
+			"io.palmisano.aibuilder.test.BuilderScreenClientGameTest",
+			"io.palmisano.aibuilder.test.DemoBuildClientGameTest",
+			"io.palmisano.aibuilder.test.ClaudeBuildClientGameTest",
+			"io.palmisano.aibuilder.test.LiveBuildClientGameTest",
+			"io.palmisano.aibuilder.test.ShowcaseClientGameTest"
+		]
+	},
+	"depends": {
+		"aibuilder": "*"
+	}
+}
