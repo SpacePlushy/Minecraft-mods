@@ -8,6 +8,7 @@
 	"gui.aibuilder.mode.new": "New build here",
 	"gui.aibuilder.mode.refine": "Refining: %s",
 	"gui.aibuilder.build": "Build",
+	"gui.aibuilder.stop": "Stop build",
 	"gui.aibuilder.recent": "Recent prompts",
 	"gui.aibuilder.recent.up": "▲",
 	"gui.aibuilder.recent.down": "▼",

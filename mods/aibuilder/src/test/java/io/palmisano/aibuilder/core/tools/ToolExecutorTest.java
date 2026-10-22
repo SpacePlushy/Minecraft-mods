@@ -23,6 +23,7 @@ import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.Placement;
+import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
@@ -152,13 +153,43 @@ class ToolExecutorTest {
 		assertEquals(0, sink.queuedCount());
 	}
 
+	/** A bed's head goes where it faces, a door's top half above it: both are checked as the block is (PR review). */
+	@Test
+	void aBedsHeadNeverReplacesAProtectedBlock() {
+		world.protection = new ProtectionMask(ALLOWED);
+		world.protection.protect(new Pos(0, 0, 2));
+		ToolResult result = briefed().call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,1],\"block\":\"red_bed\",\"state\":{\"facing\":\"forward\"}}]}"));
+		assertTrue(result.text().contains("protected"), result.text());
+		assertEquals(0, sink.queuedCount());
+	}
+
+	@Test
+	void aDoorsTopHalfStaysInTheBox() {
+		ToolResult result = briefed().call("set_blocks", json("{\"blocks\":[{\"pos\":[0,15,1],\"block\":\"oak_door\"}]}"));
+		assertTrue(result.text().contains("out_of_bounds"), result.text());
+		assertEquals(0, sink.queuedCount());
+		ToolResult lower = briefed().call("set_blocks", json("{\"blocks\":[{\"pos\":[0,14,1],\"block\":\"oak_door\"}]}"));
+		assertTrue(!lower.isError(), lower.text());
+		assertEquals(1, sink.queuedCount());
+	}
+
+	/** The lava rule (spec §9) holds for the head too: lava 3 past the head, 4 past the foot. */
+	@Test
+	void aBedsHeadKeepsClearOfLava() {
+		world.fire = new FireMask(Box.of(-12, -6, -4, 11, 19, 19));
+		world.fire.lava(new Pos(0, 0, 5));
+		ToolResult result = briefed().call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,1],\"block\":\"red_bed\",\"state\":{\"facing\":\"forward\"}}]}"));
+		assertTrue(result.text().contains("lava_near_flammable"), result.text());
+		assertEquals(0, sink.queuedCount());
+	}
+
 	@Test
 	void aLongTitleIsCut() {
 		ToolResult result = executor(150, 100_000).call("submit_brief", json("{\"title\":\"" + "Castle ".repeat(60) + "\",\"style\":\"plain\"}"));
 		assertTrue(!result.isError(), result.text());
 		String title = sink.brief.title();
 		int length = title.codePointCount(0, title.length());
-		assertTrue(length <= Brief.TITLE_MAX && length > Brief.TITLE_MAX - 8, title);
+		assertTrue(length <= Tunables.TITLE_MAX && length > Tunables.TITLE_MAX - 8, title);
 		assertTrue(title.endsWith("Castle…"), title);
 	}
 

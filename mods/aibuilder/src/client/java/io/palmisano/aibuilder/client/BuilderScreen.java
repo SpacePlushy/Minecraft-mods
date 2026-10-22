@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import io.palmisano.aibuilder.core.request.BuildPrompt;
+import io.palmisano.aibuilder.core.request.BuildStatus;
+import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.PromptHistory;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.net.BuildModePayload;
@@ -45,6 +47,10 @@ public class BuilderScreen extends Screen {
 	private static String refining = "";
 	/** The mode toggle: a new build here even next to the last one (spec §5.1). */
 	private boolean forceNew;
+	/** A build of the player's is running (its status panel is up): Build is "Stop build" (spec §5.1). */
+	private boolean running;
+	/** While it runs, the status line in place of the prompt's label. */
+	private StringWidget statusWidget;
 
 	public BuilderScreen(PromptHistoryStore store) {
 		super(Component.translatable("gui.aibuilder.title"));
@@ -72,7 +78,13 @@ public class BuilderScreen extends Screen {
 		int left = (width - column) / 2;
 
 		addRenderableOnly(new StringWidget((width - font.width(title)) / 2, 12, font.width(title), font.lineHeight, title, font));
-		addRenderableOnly(new StringWidget(left, 30, column, font.lineHeight, Component.translatable("gui.aibuilder.prompt"), font));
+		running = !StatusHud.current().isClear();
+		statusWidget = null;
+		if (running) {
+			statusWidget = addRenderableOnly(new StringWidget(left, 30, column, font.lineHeight, Component.literal(buttonLabel(statusLine(), column)), font));
+		} else {
+			addRenderableOnly(new StringWidget(left, 30, column, font.lineHeight, Component.translatable("gui.aibuilder.prompt"), font));
+		}
 
 		// The box draws its n/2,000 counter 4 below its right corner, a line high; the rows under it start past that.
 		int counterRoom = 4 + font.lineHeight + 2;
@@ -97,7 +109,14 @@ public class BuilderScreen extends Screen {
 
 		int buttonRow = sizeRow + 26;
 		int half = (column - 4) / 2;
-		buildButton = addRenderableWidget(Button.builder(Component.translatable("gui.aibuilder.build"), button -> build())
+		buildButton = addRenderableWidget(Button.builder(Component.translatable(running ? "gui.aibuilder.stop" : "gui.aibuilder.build"),
+				button -> {
+					if (running) {
+						stop();
+					} else {
+						build();
+					}
+				})
 				.bounds(left, buttonRow, half, 20)
 				.build());
 		addRenderableWidget(Button.builder(CommonComponents.GUI_CANCEL, button -> onClose())
@@ -108,9 +127,38 @@ public class BuilderScreen extends Screen {
 
 		promptBox.setValueListener(text -> {
 			draft = text;
-			buildButton.active = buildEnabled();
+			buildButton.active = running || buildEnabled();
 		});
-		buildButton.active = buildEnabled();
+		buildButton.active = running || buildEnabled();
+	}
+
+	/** A build starting or ending while the screen is open turns the button over; the status line keeps up. */
+	@Override
+	public void tick() {
+		super.tick();
+		if (StatusHud.current().isClear() == running) {
+			rebuildWidgets();
+		} else if (statusWidget != null) {
+			statusWidget.setMessage(Component.literal(buttonLabel(statusLine(), statusWidget.getWidth())));
+		}
+	}
+
+	/** What the running build is doing, as the status panel has it; "" when nothing runs. */
+	public String statusLine() {
+		BuildStatus status = StatusHud.current();
+		if (status.isClear()) {
+			return "";
+		}
+		String title = status.title().equals(Messages.hudUntitled()) ? "" : status.title();
+		String phase = !status.note().isEmpty() ? status.note()
+				: status.phase() >= 0 && status.phase() < status.phases().size() ? status.phases().get(status.phase()) : "";
+		return Messages.screenStatus(title, phase, status.placed());
+	}
+
+	/** As /aibuild cancel, typed: it goes through the same checks. */
+	private void stop() {
+		minecraft.player.connection.sendCommand("aibuild cancel");
+		onClose();
 	}
 
 	/**

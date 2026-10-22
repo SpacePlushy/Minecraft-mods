@@ -51,4 +51,11 @@ class PhaseProgressTest {
 		assertEquals("", progress.label());
 		assertEquals("walls", progress.checkpointed("walls").label());
 	}
+
+	/** "and" twice must not make the checkpoint a bad argument (PR review). */
+	@Test
+	void aCheckpointMaySayAWordTwice() {
+		PhaseProgress progress = PhaseProgress.of(List.of("walls", "roof", "towers"));
+		assertEquals(2, progress.checkpointed("walls and roof and towers").current());
+	}
 }

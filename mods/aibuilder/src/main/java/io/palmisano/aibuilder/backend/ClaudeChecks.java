@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 
+import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.agent.AuthStatus;
 import io.palmisano.aibuilder.core.agent.ClaudeLocator;
 import io.palmisano.aibuilder.core.request.Messages;
@@ -26,8 +27,7 @@ import io.palmisano.aibuilder.core.request.Messages;
  * the server thread.
  */
 public final class ClaudeChecks {
-	private static final long REMEMBER_NANOS = TimeUnit.MINUTES.toNanos(5);
-	private static final int TIMEOUT_SECONDS = 15;
+	private static final long REMEMBER_NANOS = TimeUnit.MINUTES.toNanos(Tunables.LOGIN_CHECK_REMEMBER_MINUTES);
 
 	private record Pass(List<String> command, Map<String, String> environment, long at) {
 	}
@@ -65,7 +65,7 @@ public final class ClaudeChecks {
 		try (InputStream in = process.getInputStream(); InputStream errors = process.getErrorStream()) {
 			CompletableFuture<byte[]> read = readAll(in);
 			CompletableFuture<byte[]> readErrors = readAll(errors);
-			if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+			if (!process.waitFor(Tunables.LOGIN_CHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
 				process.destroyForcibly();
 				return Optional.of(Messages.claudeNotAnswering());
 			}

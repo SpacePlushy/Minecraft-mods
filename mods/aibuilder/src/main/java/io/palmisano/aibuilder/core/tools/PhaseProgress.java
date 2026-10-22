@@ -38,7 +38,8 @@ public final class PhaseProgress {
 	/** The last phase the checkpoint names, or -1. */
 	private int lastNamed(String checkpoint) {
 		String said = checkpoint.toLowerCase(Locale.ROOT).strip();
-		Set<String> saidWords = Set.of(said.split("[^a-z0-9]+"));
+		// copyOf, not of: "walls and roof and towers" says "and" twice (PR review).
+		Set<String> saidWords = Set.copyOf(List.of(said.split("[^a-z0-9]+")));
 		int last = -1;
 		for (int i = 0; i < phases.size(); i++) {
 			String phase = phases.get(i).toLowerCase(Locale.ROOT).strip();

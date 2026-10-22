@@ -37,7 +37,7 @@ milestone by milestone, is in [`PLAN.md`](PLAN.md).
 
 | Do | What happens |
 |---|---|
-| Press **B** in a world | The AI Builder screen opens (rebind it in Options → Controls → Key Binds → AI Builder) |
+| Press **B** in a world | The AI Builder screen opens (rebind it in Options → Controls → Key Binds → AI Builder). While a build runs, it shows what's under way and **Build** becomes **Stop build** |
 | Type what you want, pick a **Size**, press **Build** | Claude looks at the land, plans, then builds in front of you while the panel in the top-left corner ticks off its phases and the action bar shows the block count. It takes a few minutes; chat says `Done: …` with a clickable **[Undo]** at the end |
 | Click a recent prompt (▲ ▼ scroll through the last 10) | It goes back in the box, ready to build again |
 | `/aibuild <prompt>` in chat | Same as Build, at Auto size |

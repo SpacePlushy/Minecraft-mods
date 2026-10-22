@@ -103,4 +103,11 @@ class MessagesTest {
 		assertEquals("1 block placed", Messages.hudPlaced(1));
 		assertEquals("Tool calls: 37 of 150", Messages.hudBudget(37, 150));
 	}
+
+	/** While a build runs the screen says what's under way (spec §5.1; PR review). */
+	@Test
+	void theScreenSaysWhatsUnderWay() {
+		assertEquals("Building Test hut: walls · 26 blocks placed", Messages.screenStatus("Test hut", "walls", 26));
+		assertEquals("Building · 1,234 blocks placed", Messages.screenStatus("", "", 1234));
+	}
 }

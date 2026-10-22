@@ -20,6 +20,7 @@ import io.palmisano.aibuilder.BuildManager;
 import io.palmisano.aibuilder.TestHooks;
 import io.palmisano.aibuilder.client.BuilderScreen;
 import io.palmisano.aibuilder.client.PromptHistoryStore;
+import io.palmisano.aibuilder.client.StatusHud;
 import io.palmisano.aibuilder.core.request.BuildSession;
 import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
@@ -58,16 +59,15 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 				GameTestSupport.awaitChatStartingWith(ctx, "Done: ", 600);
 				ctx.waitTicks(10);
 				ctx.takeScreenshot("aibuilder-fake-claude-hut");
-				GameTestSupport.runPlayerCommand(ctx, "aibuild undo");
-				GameTestSupport.awaitChatStartingWith(ctx, "Undone: ", 600);
 
 				// config/aibuilder.json (spec §14) applies to the next build without a restart: with one tool call, the
 				// fake's fill is refused (the budget's spent) and it finishes in its grace calls with nothing placed,
-				// where the default 150 build the 26-block hut.
+				// where the default 150 build the 26-block hut. With undo_history_size 1, that empty build mustn't cost
+				// the hut its undo (PR review).
 				Path config = FabricLoader.getInstance().getConfigDir().resolve("aibuilder.json");
 				check(Files.isRegularFile(config), "no config/aibuilder.json written on the first run");
 				String defaults = read(config);
-				write(config, "{\"max_tool_iterations\": 1}");
+				write(config, "{\"max_tool_iterations\": 1, \"undo_history_size\": 1}");
 				try {
 					TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "build");
 					GameTestSupport.runPlayerCommand(ctx, "aibuild a capped hut");
@@ -75,6 +75,9 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 				} finally {
 					write(config, defaults);
 				}
+				GameTestSupport.runPlayerCommand(ctx, "aibuild undo");
+				GameTestSupport.awaitChatStartingWith(ctx, "Undone: ", 600);
+				check(GameTestSupport.chat().contains(Messages.undone(26, 0)), "the hut's undo after an empty build: " + GameTestSupport.chat());
 
 				// The plan's usage limit: the build stops at once and says when it resets.
 				TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "usage_limit");
@@ -182,7 +185,14 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 		GameTestSupport.runPlayerCommand(ctx, "aibuild add a slow porch");
 		GameTestSupport.awaitChat(ctx, Messages.refining("Test hut", "add a slow porch"), 200);
 		GameTestSupport.awaitChatCount(ctx, "Designing: Test hut", designed + 1, 600);
-		GameTestSupport.runPlayerCommand(ctx, "aibuild cancel");
+		// While it runs, the screen's Build is "Stop build" and the status shows (spec §5.1; PR review): it stops it.
+		ctx.waitFor(mc -> !StatusHud.current().isClear(), 100);
+		ctx.runOnClient(mc -> mc.gui.setScreen(new BuilderScreen(PromptHistoryStore.standard())));
+		ctx.waitForScreen(BuilderScreen.class);
+		String status = ctx.computeOnClient(mc -> ((BuilderScreen) mc.gui.screen()).statusLine());
+		check(status.startsWith("Building Test hut"), "the screen's status while it builds: " + status);
+		ctx.clickScreenButton("gui.aibuilder.stop");
+		ctx.waitFor(mc -> mc.gui.screen() == null, 40);
 		GameTestSupport.awaitChatCount(ctx, "Stopped: ", stopped + 1, 200);
 		check(server.computeOnServer(s -> BuildManager.of(s).lastProcessRunning()), "the slow process ended before the next prompt");
 		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "refine");

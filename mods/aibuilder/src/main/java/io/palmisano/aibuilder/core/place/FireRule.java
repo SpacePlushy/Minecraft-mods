@@ -34,7 +34,7 @@ public final class FireRule {
 	 * only some blocks (fill's replace mode), so what's there now may stay, and both count from then on.
 	 */
 	public boolean admit(Pos pos, Kind kind, boolean conditional) {
-		if (kind == Kind.LAVA && flammableNear(pos) || kind == Kind.FLAMMABLE && lavaNear(pos)) {
+		if (!allows(pos, kind)) {
 			return false;
 		}
 		if (!conditional) {
@@ -47,6 +47,11 @@ public final class FireRule {
 			own.flammable(pos);
 		}
 		return true;
+	}
+
+	/** Whether a block of this kind could go at {@code pos}, remembering nothing: for a block of two, both halves first. */
+	public boolean allows(Pos pos, Kind kind) {
+		return !(kind == Kind.LAVA && flammableNear(pos) || kind == Kind.FLAMMABLE && lavaNear(pos));
 	}
 
 	/** Something that burns where lava at {@code lava} would reach it; its own spot doesn't count, it gets replaced. */

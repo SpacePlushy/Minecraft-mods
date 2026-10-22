@@ -9,7 +9,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Each player's undoable builds, newest first; past {@code max} the oldest is dropped. */
+/**
+ * Each player's undoable builds, newest first. A build goes in as it starts (saved with the world, so a crash can still
+ * be undone) and counts once it has something to undo: only then is the history trimmed to undo_history_size, so a
+ * build that changes nothing and leaves again never costs an older one its undo (PR review). {@code max} is the
+ * ceiling, with room for the running build.
+ */
 public final class UndoHistory<J> {
 	private final int max;
 	private final Map<UUID, Deque<J>> byPlayer = new HashMap<>();
@@ -18,14 +23,21 @@ public final class UndoHistory<J> {
 		this.max = max;
 	}
 
+	/** A build, newest first; nothing older is dropped below the ceiling (and one more, the running build). */
 	public void push(UUID player, J entry) {
-		push(player, entry, max);
-	}
-
-	/** Keeps the newest {@code keep} (undo_history_size), never more than {@code max}. */
-	public void push(UUID player, J entry, int keep) {
 		Deque<J> builds = byPlayer.computeIfAbsent(player, p -> new ArrayDeque<>());
 		builds.addFirst(entry);
+		while (builds.size() > max + 1) {
+			builds.removeLast();
+		}
+	}
+
+	/** Keeps the newest {@code keep} (undo_history_size), never more than {@code max}: when a build has counted. */
+	public void trim(UUID player, int keep) {
+		Deque<J> builds = byPlayer.get(player);
+		if (builds == null) {
+			return;
+		}
 		while (builds.size() > Math.max(1, Math.min(keep, max))) {
 			builds.removeLast();
 		}

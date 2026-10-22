@@ -15,6 +15,8 @@ class UndoHistoryTest {
 		UndoHistory<Integer> history = new UndoHistory<>(5);
 		for (int i = 1; i <= 6; i++) {
 			history.push(frankie, i);
+			// Each build counted, asking for more than the ceiling: the ceiling holds.
+			history.trim(frankie, 99);
 		}
 		assertEquals(5, history.size(frankie));
 		for (int expected = 6; expected >= 2; expected--) {
@@ -23,19 +25,21 @@ class UndoHistoryTest {
 		assertEquals(Optional.empty(), history.pop(frankie));
 	}
 
-	/** A running build sits in the history (saved with the world) without being taken off it. */
-	/** undo_history_size (spec §14): each push keeps as many as the config asks for, never more than the ceiling. */
+	/** undo_history_size (spec §14): once a build counts, the history keeps as many as the config asks, never more than the ceiling. */
 	@Test
-	void pushKeepsAsManyAsAsked() {
+	void trimKeepsAsManyAsAsked() {
 		UndoHistory<Integer> history = new UndoHistory<>(50);
 		for (int i = 1; i <= 12; i++) {
-			history.push(frankie, i, 10);
+			history.push(frankie, i);
+			history.trim(frankie, 10);
 		}
 		assertEquals(10, history.size(frankie));
-		history.push(frankie, 13, 3);
+		history.push(frankie, 13);
+		history.trim(frankie, 3);
 		assertEquals(3, history.size(frankie));
 		assertEquals(Optional.of(13), history.peek(frankie));
-		history.push(frankie, 14, 99);
+		history.push(frankie, 14);
+		history.trim(frankie, 99);
 		assertEquals(4, history.size(frankie));
 	}
 
@@ -79,5 +83,27 @@ class UndoHistoryTest {
 		assertEquals(Optional.of("castle"), history.pop(frankie));
 		assertEquals(Optional.empty(), history.pop(frankie));
 		assertEquals(Optional.of("hut"), history.pop(friend));
+	}
+
+	/** A running build counts once it has something to undo: if it ends with nothing, the oldest is still there (PR review). */
+	@Test
+	void aBuildThatChangesNothingDropsNothing() {
+		UndoHistory<String> history = new UndoHistory<>(50);
+		history.push(frankie, "hut");
+		history.trim(frankie, 1);
+		history.push(frankie, "failed");
+		assertEquals(2, history.size(frankie));
+		history.remove(frankie, "failed");
+		assertEquals(Optional.of("hut"), history.peek(frankie));
+	}
+
+	@Test
+	void aBuildThatCountsTrimsTheOldest() {
+		UndoHistory<String> history = new UndoHistory<>(50);
+		history.push(frankie, "hut");
+		history.push(frankie, "tower");
+		history.trim(frankie, 1);
+		assertEquals(1, history.size(frankie));
+		assertEquals(Optional.of("tower"), history.peek(frankie));
 	}
 }

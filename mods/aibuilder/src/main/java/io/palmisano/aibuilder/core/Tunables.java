@@ -45,6 +45,22 @@ public final class Tunables {
 	public static final int CANCEL_GRACE_SECONDS = 5;
 	/** How long a prompt waits for the last build's Claude Code process to end; it's destroyed after the cancel grace. */
 	public static final int PREVIOUS_PROCESS_WAIT_SECONDS = 2 * CANCEL_GRACE_SECONDS;
+	/** A passed login check (claude auth status) is trusted this long: each build would otherwise wait on a process. */
+	public static final int LOGIN_CHECK_REMEMBER_MINUTES = 5;
+	/** How long claude auth status may take before it counts as not answering. */
+	public static final int LOGIN_CHECK_TIMEOUT_SECONDS = 15;
+	/** The build log (spec §16): arrays in a call's arguments past this many are cut to "… N more". */
+	public static final int LOG_ARRAY_LIMIT = 20;
+	/** The build log: a tool's answer, its first line, cut to this many characters. */
+	public static final int LOG_RESULT_LIMIT = 300;
+	/** The build log's file name: the prompt's first words, at most this long. */
+	public static final int LOG_SLUG_LIMIT = 40;
+	/** Claude Code's error line in a "couldn't run" message, at most this long. */
+	public static final int CLAUDE_ERROR_MAX = 200;
+	/** The scrubber leaves secrets shorter than this alone: they'd take ordinary words with them. */
+	public static final int SCRUB_MIN_SECRET = 8;
+	/** A brief's title (chat, the panel, the screen's mode line) is cut to this many characters. */
+	public static final int TITLE_MAX = 64;
 	/** A build folder this old was left by a game that crashed (a build's lasts as long as its build). */
 	public static final int STALE_BUILD_FOLDER_HOURS = 24;
 	/** How long Claude Code may take to start (its system/init line) before the build fails. */

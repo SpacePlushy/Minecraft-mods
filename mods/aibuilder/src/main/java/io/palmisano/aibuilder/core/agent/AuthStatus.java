@@ -5,6 +5,7 @@ import java.util.Locale;
 import java.util.Set;
 
 import com.google.gson.JsonElement;
+import io.palmisano.aibuilder.core.Tunables;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
@@ -16,7 +17,6 @@ import com.google.gson.JsonPrimitive;
  */
 public record AuthStatus(boolean loggedIn, String method, boolean answered) {
 	private static final Set<String> SUBSCRIPTION = Set.of("claude.ai", "oauth_token");
-	private static final int WHY_LIMIT = 200;
 
 	/** Never throws: anything unreadable is no answer. A run that failed isn't logged in whatever it printed. */
 	public static AuthStatus parse(int exitCode, String stdout) {
@@ -48,7 +48,7 @@ public record AuthStatus(boolean loggedIn, String method, boolean answered) {
 		if (line.isEmpty()) {
 			return exitCode == 0 ? "no answer to claude auth status" : "exit code " + exitCode;
 		}
-		return line.length() <= WHY_LIMIT ? line : line.substring(0, WHY_LIMIT - 1) + "…";
+		return line.length() <= Tunables.CLAUDE_ERROR_MAX ? line : line.substring(0, Tunables.CLAUDE_ERROR_MAX - 1) + "…";
 	}
 
 	/** Logged in with a subscription. */

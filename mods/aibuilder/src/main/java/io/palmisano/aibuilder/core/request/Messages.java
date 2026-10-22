@@ -119,6 +119,12 @@ public final class Messages {
 		return building(phase) + " · " + blocks(placed);
 	}
 
+	/** The screen's line while a build runs (spec §5.1): what's building, the phase under way, the count. */
+	public static String screenStatus(String title, String phase, int placed) {
+		String what = title.isBlank() ? "Building" : "Building " + title;
+		return (phase.isBlank() ? what : what + ": " + phase) + " · " + blocks(placed) + " placed";
+	}
+
 	/** The HUD panel's title before the brief names the build. */
 	public static String hudUntitled() {
 		return "AI Builder";

@@ -143,13 +143,15 @@ public final class UndoStore extends SavedData {
 		return server.overworld().getDataStorage().computeIfAbsent(TYPE);
 	}
 
+	/** A build as it starts; it counts against undo_history_size once it has changed something ({@link #trim}). */
 	public void push(UUID player, StoredBuild build) {
-		push(player, build, Tunables.UNDO_HISTORY);
+		history.push(player, build);
+		setDirty();
 	}
 
 	/** Keeps the player's newest {@code keep} builds (the config's undo_history_size). */
-	public void push(UUID player, StoredBuild build, int keep) {
-		history.push(player, build, keep);
+	public void trim(UUID player, int keep) {
+		history.trim(player, keep);
 		setDirty();
 	}
 

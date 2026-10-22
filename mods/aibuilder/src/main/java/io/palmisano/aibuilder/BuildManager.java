@@ -695,6 +695,8 @@ public final class BuildManager {
 		final boolean claude;
 		/** The build log; null for a scripted build. */
 		final Logging logging;
+		/** undo_history_size as the build began: what its undo entry trims the history to, once it counts. */
+		int undoHistorySize;
 
 		Build(ServerPlayer player, ServerLevel level, LocalFrame frame, Box allowed, AiBackend backend, BuildRequest request, int blocksPerTick,
 				Budget budget, AiBuilderConfig cfg, BuildSession refines, String playerPrompt, Logging logging) {
@@ -717,7 +719,8 @@ public final class BuildManager {
 				return online == null ? null : online.blockPosition();
 			}, earlier, journal, cfg);
 			stored = new StoredBuild(level.dimension(), "", journal);
-			store.push(owner, stored, cfg.undoHistorySize());
+			store.push(owner, stored);
+			undoHistorySize = cfg.undoHistorySize();
 			long cap = cfg.sizeLimit(request.size());
 			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level), blocksPerTick,
 					Tunables.TICK_BUDGET_NANOS, cap);
@@ -875,7 +878,8 @@ public final class BuildManager {
 			// A build that changed nothing leaves the history, so undo never answers with nothing restored. Frames count.
 			boolean undoable = !journal.isEmpty();
 			if (undoable) {
-				store.setDirty();
+				// It counts now: the oldest past undo_history_size goes (PR review).
+				store.trim(owner, undoHistorySize);
 			} else {
 				store.remove(owner, stored);
 			}

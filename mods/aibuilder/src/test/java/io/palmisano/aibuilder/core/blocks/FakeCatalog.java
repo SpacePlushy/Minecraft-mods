@@ -37,6 +37,8 @@ public final class FakeCatalog implements BlockCatalog {
 				"hinge", List.of("left", "right"),
 				"open", BOOL,
 				"powered", BOOL), false, PlacementPass.ATTACHED, true);
+		c.add("minecraft:red_bed", ordered("facing", FOUR_WAYS, "part", List.of("head", "foot"), "occupied", BOOL), false,
+				PlacementPass.PARTIAL, true);
 		c.add("minecraft:rail", Map.of("shape", List.of("north_south", "east_west", "ascending_east", "ascending_west",
 				"ascending_north", "ascending_south", "south_east", "south_west", "north_west", "north_east")), false, PlacementPass.ATTACHED, false);
 		c.add("minecraft:vine", ordered("north", BOOL, "east", BOOL, "south", BOOL, "west", BOOL, "up", BOOL), false, PlacementPass.ATTACHED, true);

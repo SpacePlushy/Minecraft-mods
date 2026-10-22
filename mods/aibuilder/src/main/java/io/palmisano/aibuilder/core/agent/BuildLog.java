@@ -15,18 +15,16 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.tools.ToolResult;
 
 /**
  * A build's log (spec §16), one JSON object a line: the request, Claude Code's start, every tool call (its arguments
- * with arrays over {@link #ARRAY_LIMIT} shortened, the first line of its answer, its rejections, how long it took),
+ * with arrays over {@link Tunables#LOG_ARRAY_LIMIT} shortened, the first line of its answer, its rejections, how long it took),
  * each model turn's tokens, the outcome and the totals. Every line is scrubbed before it goes to {@code out} (the file
  * writer, which writes off the server thread). Thread-safe: Claude Code may send a turn's calls at once.
  */
 public final class BuildLog {
-	public static final int ARRAY_LIMIT = 20;
-	public static final int RESULT_LIMIT = 300;
-	private static final int SLUG_LIMIT = 40;
 	private static final DateTimeFormatter FILE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss", Locale.ROOT);
 	private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
@@ -127,16 +125,16 @@ public final class BuildLog {
 		write(totals);
 	}
 
-	/** A copy with every array over {@link #ARRAY_LIMIT} cut to its first ones and a "… N more" at the end. */
+	/** A copy with every array over {@link Tunables#LOG_ARRAY_LIMIT} cut to its first ones and a "… N more" at the end. */
 	public static JsonElement shortened(JsonElement json) {
 		if (json.isJsonArray()) {
 			JsonArray array = json.getAsJsonArray();
 			JsonArray copy = new JsonArray();
-			for (int i = 0; i < Math.min(array.size(), ARRAY_LIMIT); i++) {
+			for (int i = 0; i < Math.min(array.size(), Tunables.LOG_ARRAY_LIMIT); i++) {
 				copy.add(shortened(array.get(i)));
 			}
-			if (array.size() > ARRAY_LIMIT) {
-				copy.add("… " + (array.size() - ARRAY_LIMIT) + " more");
+			if (array.size() > Tunables.LOG_ARRAY_LIMIT) {
+				copy.add("… " + (array.size() - Tunables.LOG_ARRAY_LIMIT) + " more");
 			}
 			return copy;
 		}
@@ -159,8 +157,8 @@ public final class BuildLog {
 	public static String slug(String prompt) {
 		String plain = Normalizer.normalize(prompt, Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT);
 		String slug = plain.replaceAll("[^a-z0-9]+", "-").replaceAll("^-+|-+$", "");
-		if (slug.length() > SLUG_LIMIT) {
-			slug = slug.substring(0, SLUG_LIMIT).replaceAll("-+$", "");
+		if (slug.length() > Tunables.LOG_SLUG_LIMIT) {
+			slug = slug.substring(0, Tunables.LOG_SLUG_LIMIT).replaceAll("-+$", "");
 		}
 		return slug.isEmpty() ? "build" : slug;
 	}
@@ -194,13 +192,13 @@ public final class BuildLog {
 		return json;
 	}
 
-	/** A result's first line, cut to {@link #RESULT_LIMIT} code points with "…". */
+	/** A result's first line, cut to {@link Tunables#LOG_RESULT_LIMIT} code points with "…". */
 	private static String firstLine(String text) {
 		int end = text.indexOf('\n');
 		String first = (end < 0 ? text : text.substring(0, end)).strip();
-		if (first.codePointCount(0, first.length()) <= RESULT_LIMIT) {
+		if (first.codePointCount(0, first.length()) <= Tunables.LOG_RESULT_LIMIT) {
 			return first;
 		}
-		return first.substring(0, first.offsetByCodePoints(0, RESULT_LIMIT - 1)) + "…";
+		return first.substring(0, first.offsetByCodePoints(0, Tunables.LOG_RESULT_LIMIT - 1)) + "…";
 	}
 }

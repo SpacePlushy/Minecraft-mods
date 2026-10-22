@@ -15,6 +15,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.tools.ToolResult;
 import org.junit.jupiter.api.Test;
 
@@ -134,7 +135,7 @@ class BuildLogTest {
 	void aLongResultIsCut() {
 		log.call("survey_area", new JsonObject(), new ToolResult("x".repeat(5000), false), 40);
 		String result = parse(lines.getFirst()).get("result").getAsString();
-		assertEquals(BuildLog.RESULT_LIMIT, result.codePointCount(0, result.length()));
+		assertEquals(Tunables.LOG_RESULT_LIMIT, result.codePointCount(0, result.length()));
 		assertTrue(result.endsWith("…"));
 	}
 

@@ -12,6 +12,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.blocks.BlockEntityData;
+import io.palmisano.aibuilder.core.blocks.Footprint;
 import io.palmisano.aibuilder.core.blocks.BlockInfo;
 import io.palmisano.aibuilder.core.blocks.BlockSearch;
 import io.palmisano.aibuilder.core.blocks.BlockSpec;
@@ -319,9 +320,9 @@ public final class ToolExecutor {
 		List<String> phases = a.has("phases") ? a.strings("phases") : List.of();
 		Args size = new Args(a.has("size") ? a.object("size") : null);
 		String title = a.string("title");
-		if (title.codePointCount(0, title.length()) > Brief.TITLE_MAX) {
+		if (title.codePointCount(0, title.length()) > Tunables.TITLE_MAX) {
 			// It names the build in chat, on the panel and on the screen's mode line (a packet of at most 256 characters).
-			title = title.substring(0, title.offsetByCodePoints(0, Brief.TITLE_MAX - 1)).strip() + "…";
+			title = title.substring(0, title.offsetByCodePoints(0, Tunables.TITLE_MAX - 1)).strip() + "…";
 		}
 		Brief brief = new Brief(title, a.optString("style", ""), size.optInt("w", 0), size.optInt("h", 0), size.optInt("d", 0), palette, phases);
 		sink.brief(brief);
@@ -551,6 +552,8 @@ public final class ToolExecutor {
 			} else if (!includeProtected && mask.isProtected(block.pos())) {
 				problem = RejectReason.PROTECTED.wireName()
 						+ ": it looks player-made, so it stays: build around it (include_protected is only for when the player asked to remove it)";
+			} else if (v instanceof Validation.Valid valid) {
+				problem = otherHalf(Footprint.others(valid.block(), block.pos()), mask, perEntry, includeProtected);
 			}
 			if (problem != null) {
 				reject(lines, grouped, perEntry, i, problem);
@@ -572,11 +575,17 @@ public final class ToolExecutor {
 			LocalBlock block = blocks.get(fit[n]);
 			ResolvedBlock resolved = ((Validation.Valid) checked.get(block.block())).block();
 			FireRule.Kind kind = FireRule.Kind.of(resolved.info());
-			if (!fire.admit(block.pos(), kind, block.onlyReplacing() != null)) {
+			List<Pos> others = Footprint.others(resolved, block.pos());
+			// A block of two goes in whole or not at all: both halves pass before either is remembered.
+			if (!fire.allows(block.pos(), kind) || !others.stream().allMatch(other -> fire.allows(other, kind))) {
 				reject(lines, grouped, perEntry, fit[n], kind == FireRule.Kind.LAVA ? LAVA_BY_FLAMMABLE : FLAMMABLE_BY_LAVA);
 				continue;
 			}
+			fire.admit(block.pos(), kind, block.onlyReplacing() != null);
+			// The other half is written whatever is there, even in replace mode.
+			others.forEach(other -> fire.admit(other, kind, false));
 			claimed.add(block.pos());
+			claimed.addAll(others);
 			batch.add(new Placement(frame.toWorld(block.pos()), resolved, block.onlyReplacing(), block.data()));
 		}
 		int rejected = blocks.size() - batch.size();
@@ -595,6 +604,23 @@ public final class ToolExecutor {
 			}
 		}
 		return new ToolResult(text.toString(), batch.isEmpty() && rejected > 0, List.copyOf(lines));
+	}
+
+	/** Why a block's other half (a door's top, a bed's head) can't go where it would, or null if it can. */
+	private String otherHalf(List<Pos> others, ProtectionMask mask, boolean perEntry, boolean includeProtected) {
+		for (Pos other : others) {
+			if (!allowed.contains(other)) {
+				return RejectReason.OUT_OF_BOUNDS.wireName() + ": its other half" + (perEntry ? " at " + describe(other) : "")
+						+ " would be outside the allowed box " + describe(allowed);
+			}
+			if (mask.isUnbreakable(other)) {
+				return RejectReason.PROTECTED.wireName() + ": its other half would go where something can't be broken (bedrock, a barrier…)";
+			}
+			if (!includeProtected && mask.isProtected(other)) {
+				return RejectReason.PROTECTED.wireName() + ": its other half would replace something that looks player-made: turn it or move it";
+			}
+		}
+		return null;
 	}
 
 	private static void reject(List<String> lines, Map<String, Integer> grouped, boolean perEntry, int index, String problem) {
