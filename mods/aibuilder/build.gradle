@@ -17,7 +17,7 @@ fabricApi {
 	configureTests {
 		createSourceSet = true
 		modId = "aibuilder-test"
-		enableGameTests = false        // server gametests start in M2 with the first placement test
+		enableGameTests = true         // server gametests: ./gradlew runGameTest (headless)
 		enableClientGameTests = true
 		eula = true                    // dev test client only
 	}

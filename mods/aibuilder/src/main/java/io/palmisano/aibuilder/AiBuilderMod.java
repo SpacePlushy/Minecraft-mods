@@ -1,6 +1,8 @@
 package io.palmisano.aibuilder;
 
 import io.palmisano.aibuilder.net.BuildPromptPayload;
+import io.palmisano.aibuilder.world.BuildTickets;
+import io.palmisano.aibuilder.world.JobScheduler;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -24,6 +26,8 @@ public class AiBuilderMod implements ModInitializer {
 		ServerPlayNetworking.registerGlobalReceiver(BuildPromptPayload.TYPE,
 				(payload, context) -> BuildManager.submit(context.player(), payload.prompt(), payload.size()));
 		CommandRegistrationCallback.EVENT.register((dispatcher, buildContext, selection) -> AiBuildCommand.register(dispatcher));
+		BuildTickets.register();
+		JobScheduler.register();
 		LOG.info("AI Builder loaded");
 	}
 }

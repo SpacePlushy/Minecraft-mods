@@ -8,6 +8,9 @@
 		"aibuilder-test.mixins.json"
 	],
 	"entrypoints": {
+		"fabric-gametest": [
+			"io.palmisano.aibuilder.test.PlacementGameTest"
+		],
 		"fabric-client-gametest": [
 			"io.palmisano.aibuilder.test.SmokeClientGameTest",
 			"io.palmisano.aibuilder.test.PromptServerClientGameTest",
