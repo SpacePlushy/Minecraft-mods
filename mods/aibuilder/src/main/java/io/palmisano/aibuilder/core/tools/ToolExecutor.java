@@ -33,6 +33,7 @@ import io.palmisano.aibuilder.core.shapes.RoofStyle;
 import io.palmisano.aibuilder.core.shapes.Roofs;
 import io.palmisano.aibuilder.core.shapes.Shapes;
 import io.palmisano.aibuilder.core.shapes.Staircases;
+import io.palmisano.aibuilder.core.survey.BuildProblems;
 import io.palmisano.aibuilder.core.survey.Column;
 import io.palmisano.aibuilder.core.survey.RegionEncoder;
 import io.palmisano.aibuilder.core.survey.SurveyEncoder;
@@ -45,7 +46,7 @@ import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 public final class ToolExecutor {
 	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
 			"set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof", "staircase", "clear", "terraform", "checkpoint",
-			"finish");
+			"check_build", "finish");
 	private static final int REJECTION_LINES = 10;
 	private static final BlockSpec AIR = BlockSpec.of("minecraft:air");
 	private static final String BRIEF_FIRST = "Call submit_brief first: title, style, size, palette and phases, before placing any block.";
@@ -115,6 +116,7 @@ public final class ToolExecutor {
 				case "inspect_region" -> inspect(a);
 				case "search_blocks" -> search(a);
 				case "checkpoint" -> checkpoint(a);
+				case "check_build" -> checkBuild();
 				case "terraform" -> terraform(a);
 				default -> locked(name, a);
 			};
@@ -301,6 +303,26 @@ public final class ToolExecutor {
 		// The checkpoint answers within the MCP timeout even when placement is behind.
 		return ToolResult.ok("Checkpoint " + phase + ": " + blocks(placed) + " placed so far."
 				+ (waiting > 0 ? " " + String.format(Locale.ROOT, "%,d", waiting) + " blocks are still going in; call checkpoint again to wait for them." : ""));
+	}
+
+	/**
+	 * Waits for what's queued (as terraform does), then has the build looked over in the world (spec §8). The waits
+	 * are outside the lock, within the MCP timeout together.
+	 */
+	private ToolResult checkBuild() {
+		synchronized (this) {
+			if (!briefed) {
+				return ToolResult.error(BRIEF_FIRST);
+			}
+		}
+		sink.awaitPlaced();
+		long waiting = sink.pending();
+		if (waiting > 0) {
+			// Half a build would show half its problems.
+			return ToolResult.ok(String.format(Locale.ROOT, "%,d", waiting)
+					+ " blocks are still going in; call checkpoint to wait for them, then check_build again.");
+		}
+		return ToolResult.ok(BuildProblems.encode(world.check(), Tunables.CHECK_BUILD_LISTED));
 	}
 
 	private ToolResult finish(Args a) {

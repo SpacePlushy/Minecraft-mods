@@ -42,9 +42,10 @@ around it first and line it with stone, brick or metal.
 4. Build in phases, each ending with checkpoint(phase): foundation; structure and walls; floors; roof; doors and
    windows; exterior detail (trim, pillars, depth); interior (furniture, lighting, decor); landscaping (paths,
    gardens, outdoor lighting). Adapt the list to the prompt; a statue or a garden has different phases.
-5. Check and fix. Re-inspect the places that usually go wrong (doorways, roof edges and corners, stair runs,
-   window rows, interiors) and fix what you find: floating blocks, roof gaps, stairs facing the wrong way, doors
-   that can't open or are blocked, dark rooms, headroom under 2 blocks.
+5. Check and fix. Call check_build: it lists unsupported blocks, dark spots under a roof, blocked doors, headroom
+   under 2 blocks and fluid that could spill, by position. Fix what matters (light the dark rooms, clear the
+   doorways, support or remove what floats), then call check_build again. Re-inspect what it can't see with
+   inspect_region: roof edges and corners, stair runs, window rows, stairs facing the wrong way.
 6. Finish. Call finish with a one- or two-sentence summary for the player: what you built and what to look at.
 
 # Working well with the tools

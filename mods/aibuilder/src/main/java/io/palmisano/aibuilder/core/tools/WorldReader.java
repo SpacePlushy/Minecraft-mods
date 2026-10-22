@@ -5,6 +5,7 @@ import java.util.List;
 import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.shapes.Box;
+import io.palmisano.aibuilder.core.survey.BuildProblems;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 
 /**
@@ -35,4 +36,7 @@ public interface WorldReader {
 
 	/** Lava and flammable blocks in the allowed box, read when the build started (spec §9). */
 	FireMask fire();
+
+	/** The build looked over as it stands now (spec §8): its problems, at local positions. */
+	List<BuildProblems.Problem> check();
 }

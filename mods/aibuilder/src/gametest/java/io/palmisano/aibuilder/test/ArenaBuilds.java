@@ -80,7 +80,7 @@ final class ArenaBuilds {
 
 		McBuildSink sink = new McBuildSink(job, brief -> {
 		}, summary -> job.finish());
-		McWorldReader world = new McWorldReader(level, frame, ALLOWED, SizeTier.SMALL, () -> null, List.of());
+		McWorldReader world = new McWorldReader(level, frame, ALLOWED, SizeTier.SMALL, () -> null, List.of(), journal);
 		ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, ALLOWED, SizeTier.SMALL,
 				SizeTier.SMALL.maxChangedBlocks(), sink, new Budget(Tunables.MAX_TOOL_CALLS), world);
 		Executor worker = task -> Thread.ofPlatform().daemon().name("aibuilder-arena-build").start(task);
@@ -131,6 +131,11 @@ final class ArenaBuilds {
 
 		List<String> errors() {
 			return backend.errors().stream().map(ToolResult::text).toList();
+		}
+
+		/** The last answer to a call of {@code tool}, or "" if there was none. */
+		String reply(String tool) {
+			return backend.replies().stream().filter(r -> r.tool().equals(tool)).reduce((a, b) -> b).map(r -> r.result().text()).orElse("");
 		}
 	}
 }

@@ -266,6 +266,14 @@
 		}
 	},
 	{
+		"name": "check_build",
+		"description": "Wait until everything queued is placed, then look the build over in the world: unsupported blocks (a torch on air, sand over a drop), dark walkable spots under a roof (monsters spawn at block light 0), doors that can't be walked through, rooms lower than 2 blocks, and water or lava that would flow if disturbed (an open side, or air under a pool's edge). Positions are local, at most 60 listed, grouped by kind. Call it before finish, fix what matters, and call it again.",
+		"input_schema": {
+			"type": "object",
+			"properties": {}
+		}
+	},
+	{
 		"name": "finish",
 		"description": "End the build. The summary is shown to the player.",
 		"input_schema": {

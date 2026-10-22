@@ -24,9 +24,14 @@ public final class ScriptedBackend implements AiBackend {
 	private record Call(String tool, JsonObject args) {
 	}
 
+	/** One call's answer. */
+	public record Reply(String tool, ToolResult result) {
+	}
+
 	private final List<Call> calls = new ArrayList<>();
 	private final Executor worker;
 	private final List<ToolResult> errors = new CopyOnWriteArrayList<>();
+	private final List<Reply> replies = new CopyOnWriteArrayList<>();
 
 	public ScriptedBackend(String scriptJson, Executor worker) {
 		this.worker = worker;
@@ -39,6 +44,11 @@ public final class ScriptedBackend implements AiBackend {
 	/** The calls that came back as errors, for tests and logs. */
 	public List<ToolResult> errors() {
 		return List.copyOf(errors);
+	}
+
+	/** Every call's answer so far, in order, for tests. */
+	public List<Reply> replies() {
+		return List.copyOf(replies);
 	}
 
 	@Override
@@ -54,6 +64,7 @@ public final class ScriptedBackend implements AiBackend {
 						return;
 					}
 					ToolResult result = tools.call(call.tool(), call.args());
+					replies.add(new Reply(call.tool(), result));
 					if (result.isError()) {
 						errors.add(result);
 					}

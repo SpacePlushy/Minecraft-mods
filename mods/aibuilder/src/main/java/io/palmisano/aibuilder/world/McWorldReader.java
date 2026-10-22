@@ -18,6 +18,7 @@ import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
+import io.palmisano.aibuilder.core.survey.BuildProblems;
 import io.palmisano.aibuilder.core.survey.Column;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 import io.palmisano.aibuilder.core.tools.ServerHop;
@@ -46,14 +47,19 @@ public final class McWorldReader implements WorldReader {
 	private final int siteMinZ;
 	private final int siteSize;
 	private final CompletableFuture<WorldSurvey.Survey> site;
+	private final UndoJournal<BlockState, CompoundTag> journal;
 
-	/** Server thread. {@code player} gives the player's position, or null when there's no one. */
+	/**
+	 * Server thread. {@code player} gives the player's position, or null when there's no one; {@code journal} is this
+	 * build's own, for check_build.
+	 */
 	public McWorldReader(ServerLevel level, LocalFrame frame, Box allowed, SizeTier tier, Supplier<BlockPos> player,
-			List<UndoJournal<BlockState, CompoundTag>> earlier) {
+			List<UndoJournal<BlockState, CompoundTag>> earlier, UndoJournal<BlockState, CompoundTag> journal) {
 		this.level = level;
 		this.frame = frame;
 		this.allowed = allowed;
 		this.player = player;
+		this.journal = journal;
 		int radius = tier.size() / 2 + 8;
 		this.siteMinX = Math.floorDiv(allowed.min().x() + allowed.max().x() + 1, 2) - radius;
 		this.siteMinZ = Math.floorDiv(allowed.min().z() + allowed.max().z() + 1, 2) - radius;
@@ -155,6 +161,18 @@ public final class McWorldReader implements WorldReader {
 	@Override
 	public FireMask fire() {
 		return await(site, Tunables.SURVEY_TIMEOUT_SECONDS).fire();
+	}
+
+	/** Read over ticks on the server (BuildCheck), waited for here. */
+	@Override
+	public List<BuildProblems.Problem> check() {
+		MinecraftServer server = level.getServer();
+		CompletableFuture<List<BuildProblems.Problem>> check = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
+			BuildCheck reading = new BuildCheck(level, frame, allowed, journal, Tunables.TICK_BUDGET_NANOS);
+			JobScheduler.add(reading);
+			return reading;
+		}).thenCompose(BuildCheck::result);
+		return await(check, Tunables.CHECK_BUILD_TIMEOUT_SECONDS);
 	}
 
 	/** {@code id[prop=value,…]}, compass names and values as relative words; the state already turned back to the template. */

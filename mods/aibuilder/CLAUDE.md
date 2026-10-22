@@ -41,7 +41,8 @@ B key ──► AiBuilderClient ──► BuilderScreen ──Build──► Bui
 | `core/shapes/` | **Pure**: `Shapes` (fill, wall, line, cylinder, sphere, cone, arch), `Roofs`, `Staircases` → local blocks. |
 | `core/place/` | **Pure**: `PlacementOrder` (passes, bottom-up), `UndoJournal` (first original wins; restore only if unchanged), `UndoHistory`. |
 | `core/tools/` | **Pure**: `ToolExecutor` (all 19 tools; `tools.json` is the catalog), `WorldReader` (what the read tools and protection read through), `ServerHop` (a world read runs on the server thread or fails, never inline on a stopping server), `Budget`, `PhaseProgress`, `BuildSink`. |
-| `core/survey/` | **Pure**: `TerrainSnapshot`/`Column` and `SurveyEncoder` (survey_area's compact text, coarsened to stay under 30,000 characters), `RegionEncoder` (inspect_region). |
+| `core/survey/` | **Pure**: `TerrainSnapshot`/`Column` and `SurveyEncoder` (survey_area's compact text, coarsened to stay under 30,000 characters), `RegionEncoder` (inspect_region), `BuildProblems` (check_build's answer: grouped by kind, at most 60 positions shared out). |
+| `world/BuildCheck` | check_build's look over the build, over ticks within the budget (at least one position a tick): each changed position and the spots on and beside it. Unsupported (`!canSurvive`, a falling block over a drop), dark (2 high over a full top face, roofed by the no-leaves heightmap, block light 0, after the light engine catches up), doors (solid at feet or head on either side), low (1 high under a solid build block, stairs and leaves aside), spill (a source with an open side or air below). Reads only loaded chunks; reports only inside the allowed box. |
 | `core/place/ProtectionMask` | **Pure**: protected (probably player-made) and unbreakable spots in the allowed box; a write there is rejected `protected`. |
 | `core/place/FireMask`, `FireRule` | **Pure**: lava and what burns (vanilla's `ignitedByLava`) in and around the allowed box. Lava within 3 blocks sideways, from 1 below to 4 above, of anything that burns is rejected `lava_near_flammable`, and so is anything that burns that close to lava, counting the world and the build so far (spec §9). A replace-mode fill may leave the old block, so both count there. |
 | `core/agent/` | **Pure**: `AiBackend`/`BuildHandle`/`BuildEvents`, `ScriptedBackend`; Claude Code's side: `StreamEvents` (stream-json, never throws), `InitCheck` (build tools, our server, no API key, built-in plugins only), `UsageLimits` (stop at the plan limit or at paid extra usage), `ClaudeLaunch` (flags, environment, mcp.json), `ClaudeLocator`, `AuthStatus`, `McpHandler`/`McpSessions` (JSON-RPC, tokens, origins). |
@@ -144,6 +145,10 @@ from its arguments, is more than the whole allowed box is refused as `too_many` 
   `ConventionalBlockTags.ORES` (vanilla has only some per-ore tags). `level.getHeight(WORLD_SURFACE, x, z) - 1` is
   a column's highest non-air block, without a scan.
 - With `enableGameTests = true`, `./gradlew build` runs the server gametests too.
+- **Server gametest structures get a barrier ceiling** unless the test says `@GameTest(skyAccess = true)`: every
+  spot in the arena is "under a roof" (heightmaps, sky light). `CheckBuildGameTest` needs the sky.
+- The light engine runs on its own thread: right after placement, block light may be stale.
+  `getLightEngine().waitForPendingTasks(chunkX, chunkZ)` completes once what was queued for that chunk is done.
 - **A game started from inside Claude Code** (`./gradlew runClient` from the desktop app's shell) inherits ~35
   `CLAUDE_*` variables and `ANTHROPIC_BASE_URL`; a child `claude` would join that session or its proxy. `ClaudeLaunch`
   drops every `ANTHROPIC_*` and `CLAUDE*` variable but `CLAUDE_CONFIG_DIR` (the M4 spike).

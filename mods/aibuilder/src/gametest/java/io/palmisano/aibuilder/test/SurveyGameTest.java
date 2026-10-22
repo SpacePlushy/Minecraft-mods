@@ -45,7 +45,7 @@ public class SurveyGameTest {
 
 	private static McWorldReader reader(GameTestHelper helper, Facing facing, List<UndoJournal<BlockState, CompoundTag>> earlier) {
 		LocalFrame frame = ArenaBuilds.frame(helper, facing);
-		return new McWorldReader(helper.getLevel(), frame, ArenaBuilds.ALLOWED, SizeTier.SMALL, () -> null, earlier);
+		return new McWorldReader(helper.getLevel(), frame, ArenaBuilds.ALLOWED, SizeTier.SMALL, () -> null, earlier, new UndoJournal<>());
 	}
 
 	@GameTest(structure = ARENA, maxTicks = 400)

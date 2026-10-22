@@ -18,6 +18,7 @@ import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
+import io.palmisano.aibuilder.core.survey.BuildProblems;
 import io.palmisano.aibuilder.core.survey.Column;
 import org.junit.jupiter.api.Test;
 
@@ -38,7 +39,7 @@ class ReadToolsTest {
 
 	@Test
 	void everyCatalogToolHasAHandlerAndBack() {
-		assertEquals(19, ToolExecutor.handledTools().size());
+		assertEquals(20, ToolExecutor.handledTools().size());
 		assertEquals(ToolExecutor.handledTools(), ToolCatalog.load().names());
 	}
 
@@ -196,5 +197,35 @@ class ReadToolsTest {
 		assertEquals(Map.of(1, "minecraft:stone", 2, "minecraft:oak_planks"), column);
 		// What's queued goes in first, then the ground is read again.
 		assertEquals(List.of("awaitPlaced", "currentTerrain 0 1 1 1"), world.requests);
+	}
+
+	/** check_build waits for what's queued, then lists what the world check found (spec §8). */
+	@Test
+	void checkBuildWaitsThenLists() {
+		sink.onAwait = () -> world.requests.add("awaitPlaced");
+		world.problems = List.of(new BuildProblems.Problem(BuildProblems.Kind.DARK, new Pos(0, 1, 2), ""));
+		ToolExecutor tools = tools();
+		tools.call("submit_brief", json("{\"title\":\"site\",\"style\":\"flat\"}"));
+		ToolResult result = tools.call("check_build", json("{}"));
+		assertFalse(result.isError(), result.text());
+		assertTrue(result.text().contains("dark (1)") && result.text().contains("(0, 1, 2)"), result.text());
+		assertEquals(List.of("awaitPlaced", "check"), world.requests);
+	}
+
+	@Test
+	void checkBuildNeedsTheBrief() {
+		ToolResult result = tools().call("check_build", json("{}"));
+		assertTrue(result.isError() && result.text().contains("submit_brief"), result.text());
+	}
+
+	/** Placement still behind after the wait: check again later, rather than check half a build. */
+	@Test
+	void checkBuildWhilePlacementIsBehind() {
+		sink.pending = 500;
+		ToolExecutor tools = tools();
+		tools.call("submit_brief", json("{\"title\":\"site\",\"style\":\"flat\"}"));
+		ToolResult result = tools.call("check_build", json("{}"));
+		assertTrue(result.text().contains("500 blocks are still going in"), result.text());
+		assertFalse(world.requests.contains("check"), world.requests.toString());
 	}
 }

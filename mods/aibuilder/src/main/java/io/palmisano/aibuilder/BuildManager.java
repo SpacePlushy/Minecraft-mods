@@ -353,7 +353,7 @@ public final class BuildManager {
 		UUID owner = player.getUUID();
 		List<UndoJournal<BlockState, CompoundTag>> earlier = UndoStore.get(server).builds(owner).stream()
 				.filter(build -> build.dimension().equals(level.dimension())).map(StoredBuild::journal).toList();
-		McWorldReader reader = new McWorldReader(level, frame, allowed.get(), SizeTier.AUTO, player::blockPosition, earlier);
+		McWorldReader reader = new McWorldReader(level, frame, allowed.get(), SizeTier.AUTO, player::blockPosition, earlier, new UndoJournal<>());
 		reply(player, Messages.surveying());
 		reader.whenRead().whenComplete((survey, error) -> {
 			if (error != null) {
@@ -501,7 +501,7 @@ public final class BuildManager {
 			world = new McWorldReader(level, frame, allowed, request.size(), () -> {
 				ServerPlayer online = server.getPlayerList().getPlayer(owner);
 				return online == null ? null : online.blockPosition();
-			}, earlier);
+			}, earlier, journal);
 			stored = new StoredBuild(level.dimension(), "", journal);
 			store.push(owner, stored);
 			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level), blocksPerTick,

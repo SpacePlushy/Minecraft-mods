@@ -8,6 +8,7 @@ import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.shapes.Box;
+import io.palmisano.aibuilder.core.survey.BuildProblems;
 import io.palmisano.aibuilder.core.survey.Column;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 
@@ -76,5 +77,14 @@ public final class FakeWorld implements WorldReader {
 	@Override
 	public ProtectionMask protection() {
 		return protection;
+	}
+
+	/** What check_build finds. */
+	public List<BuildProblems.Problem> problems = List.of();
+
+	@Override
+	public List<BuildProblems.Problem> check() {
+		requests.add("check");
+		return problems;
 	}
 }
