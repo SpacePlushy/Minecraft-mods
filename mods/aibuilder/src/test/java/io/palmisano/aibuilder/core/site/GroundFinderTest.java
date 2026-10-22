@@ -27,7 +27,7 @@ class GroundFinderTest {
 
 	@Test
 	void waterIsTheSurface() {
-		assertEquals(62, GroundFinder.find(y -> y <= 59 ? Cell.GROUND : y <= 62 ? Cell.WATER : Cell.OPEN, 64));
+		assertEquals(62, GroundFinder.find(y -> y <= 59 ? Cell.GROUND : y <= 62 ? Cell.FLUID : Cell.OPEN, 64));
 	}
 
 	@Test

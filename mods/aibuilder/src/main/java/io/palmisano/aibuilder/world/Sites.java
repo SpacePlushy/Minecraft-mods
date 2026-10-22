@@ -11,7 +11,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
-import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -30,13 +29,17 @@ public final class Sites {
 		return new LocalFrame(new Pos(x, y, z), facing);
 	}
 
-	/** The world's side of {@link GroundFinder}: water; open for air, plants, leaves, logs and snow layers; else ground. */
-	static ColumnProbe column(ServerLevel level, int x, int z) {
+	/**
+	 * The world's side of {@link GroundFinder}: any fluid (water, lava, a waterlogged block); open for air, plants,
+	 * leaves, logs and snow layers; else ground. Fluids come first: lava has no collision shape, so it would
+	 * otherwise read as open and a build would sink to the bottom of a lava lake.
+	 */
+	public static ColumnProbe column(ServerLevel level, int x, int z) {
 		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 		return y -> {
 			BlockState state = level.getBlockState(pos.set(x, y, z));
-			if (state.getFluidState().is(FluidTags.WATER)) {
-				return Cell.WATER;
+			if (!state.getFluidState().isEmpty()) {
+				return Cell.FLUID;
 			}
 			if (state.isAir() || state.is(BlockTags.LEAVES) || state.is(BlockTags.LOGS) || state.is(Blocks.SNOW)
 					|| state.getCollisionShape(level, pos).isEmpty()) {

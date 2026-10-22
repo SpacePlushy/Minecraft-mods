@@ -47,8 +47,18 @@ final class GameTestSupport {
 
 	/** Waits until chat has shown a line starting with {@code prefix}; on timeout, fails listing what it did show. */
 	static void awaitChatStartingWith(ClientGameTestContext ctx, String prefix) {
-		for (int i = 0; CHAT.stream().noneMatch(line -> line.startsWith(prefix)); i++) {
-			check(i < 100, "chat never showed a line starting \"" + prefix + "\"; it showed " + CHAT);
+		awaitChatCount(ctx, prefix, 1, 100);
+	}
+
+	/** {@link #awaitChatStartingWith}, waiting up to {@code maxTicks}. */
+	static void awaitChatStartingWith(ClientGameTestContext ctx, String prefix, int maxTicks) {
+		awaitChatCount(ctx, prefix, 1, maxTicks);
+	}
+
+	/** Waits until chat has shown {@code count} lines starting with {@code prefix}. */
+	static void awaitChatCount(ClientGameTestContext ctx, String prefix, int count, int maxTicks) {
+		for (int i = 0; CHAT.stream().filter(line -> line.startsWith(prefix)).count() < count; i++) {
+			check(i < maxTicks, "chat never showed " + count + " lines starting \"" + prefix + "\"; it showed " + CHAT);
 			ctx.waitTick();
 		}
 	}

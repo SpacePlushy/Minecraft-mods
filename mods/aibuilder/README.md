@@ -18,8 +18,8 @@ starts building them in M4. The plan, milestone by milestone, is in [`PLAN.md`](
 | Type what you want, pick a **Size**, press **Build** | Chat says `AI Builder got: …` (real builds come in M4) |
 | Click a recent prompt (▲ ▼ scroll through the last 10) | It goes back in the box, ready to build again |
 | `/aibuild <prompt>` in chat | Same as Build, at Auto size |
-| `/aibuild test` | Builds the demo house 3 blocks in front of you, facing the way you face. The action bar shows the phase and the block count; chat says `Done: …` with a clickable **[Undo]** |
-| `/aibuild undo` | Takes back your newest build (repeat for older ones, up to 5). Anything you changed since, like a chest you filled, stays |
+| `/aibuild test` | Builds the demo house 3 blocks in front of you, facing the way you face, slowly enough to watch (about 10 seconds). The action bar shows the phase and the block count; chat says `Done: …` with a clickable **[Undo]** |
+| `/aibuild undo` | Takes back your newest build (repeat for older ones, up to 5), even after the game crashed or restarted. Anything you changed since, like a chest you filled, stays |
 | `/aibuild cancel` | Stops the build at once; what's placed stays and can be undone |
 | `/aibuild status` | The phase, blocks placed and tool calls used so far |
 

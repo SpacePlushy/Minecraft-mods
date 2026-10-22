@@ -135,7 +135,9 @@ public final class BuildManager {
 			return Outcome.NOTHING;
 		}
 		ScriptedBackend demo = new ScriptedBackend(demoScript(), task -> Thread.ofPlatform().daemon().name("aibuilder-build").start(task));
-		build = new Build(player, frame, allowed.get(), demo, new BuildRequest("the demo house", SizeTier.AUTO), Tunables.BLOCKS_PER_TICK);
+		// Slow on purpose: something to watch, check on with /aibuild status and cancel half-way.
+		build = new Build(player, frame, allowed.get(), demo, new BuildRequest("the demo house", SizeTier.AUTO),
+				Tunables.DEMO_BLOCKS_PER_TICK);
 		return Outcome.STARTED;
 	}
 
@@ -163,14 +165,16 @@ public final class BuildManager {
 			reply(player, build != null ? Messages.busy() : Messages.undoing());
 			return Outcome.BUSY;
 		}
+		// Left in the history until the undo has finished, so a crash half-way loses nothing.
 		UndoStore store = UndoStore.get(server);
-		Optional<StoredBuild> stored = store.pop(player.getUUID());
+		Optional<StoredBuild> stored = store.peek(player.getUUID());
 		if (stored.isEmpty()) {
 			reply(player, Messages.nothingToUndo());
 			return Outcome.NOTHING;
 		}
 		ServerLevel level = server.getLevel(stored.get().dimension());
 		if (level == null) {
+			store.remove(player.getUUID(), stored.get());
 			reply(player, Messages.failed("that build's dimension doesn't exist any more"));
 			return Outcome.NOTHING;
 		}
@@ -188,7 +192,12 @@ public final class BuildManager {
 	}
 
 	private void tick() {
-		if (build == null || --ticksToStatus > 0) {
+		if (build == null) {
+			return;
+		}
+		// The running build's journal is in the undo history: an autosave mid-build writes it with the blocks.
+		build.store.setDirty();
+		if (--ticksToStatus > 0) {
 			return;
 		}
 		ticksToStatus = Tunables.STATUS_INTERVAL_TICKS;
@@ -198,18 +207,18 @@ public final class BuildManager {
 		}
 	}
 
-	/** The server is stopping and won't tick again: keep what a build placed, and an unfinished undo, for later. */
+	/**
+	 * The server is stopping and won't tick again. A running build is already in the undo history, so what it placed
+	 * can be undone after a restart; an unfinished undo's build is still there too.
+	 */
 	private void stop() {
 		if (build != null) {
 			build.handle.cancel();
 			build.job.cancel();
-			build.save();
+			build.store.setDirty();
 			build = null;
 		}
-		if (undo != null) {
-			UndoStore.get(server).push(undo.owner, undo.stored);
-			undo = null;
-		}
+		undo = null;
 	}
 
 	private static String demoScript() {
@@ -247,23 +256,31 @@ public final class BuildManager {
 		return cause.getMessage() == null ? cause.toString() : cause.getMessage();
 	}
 
-	/** One running build: its job, the tools the backend calls, and what to say when it ends. */
+	/**
+	 * One running build: its job, the tools the backend calls, and what to say when it ends. Its journal goes into the
+	 * player's undo history as it starts (spec §2: undo survives quitting and crashes), so every save of the world
+	 * writes the journal together with the blocks it describes.
+	 */
 	private final class Build {
 		final UUID owner;
 		final ServerLevel level;
 		final UndoJournal<BlockState, CompoundTag> journal = new UndoJournal<>();
+		final UndoStore store;
 		final Budget budget = new Budget(Tunables.MAX_TOOL_CALLS);
 		final PlacementJob job;
 		final McBuildSink sink;
 		final Set<ChunkPos> chunks;
 		final BuildHandle handle;
-		String title = "";
+		StoredBuild stored;
 		boolean cancelled;
 		String failure;
 
 		Build(ServerPlayer player, LocalFrame frame, Box allowed, AiBackend backend, BuildRequest request, int blocksPerTick) {
 			owner = player.getUUID();
 			level = player.level();
+			store = UndoStore.get(server);
+			stored = new StoredBuild(level.dimension(), "", journal);
+			store.push(owner, stored);
 			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level), blocksPerTick,
 					Tunables.TICK_BUDGET_NANOS);
 			chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(allowed.min())), Positions.toBlockPos(frame.toWorld(allowed.max())));
@@ -284,17 +301,10 @@ public final class BuildManager {
 			job.cancel();
 		}
 
-		/** Into the player's undo history, unless it changed nothing. */
-		boolean save() {
-			if (journal.size() == 0) {
-				return false;
-			}
-			UndoStore.get(server).push(owner, new StoredBuild(level.dimension(), title, journal));
-			return true;
-		}
-
 		private void briefed(Brief brief) {
-			title = brief.title();
+			StoredBuild titled = new StoredBuild(stored.dimension(), brief.title(), journal);
+			store.replace(owner, stored, titled);
+			stored = titled;
 			tell(owner, Component.literal(Messages.designing(brief)));
 		}
 
@@ -309,7 +319,13 @@ public final class BuildManager {
 		/** Server thread, once the job has placed everything and finalized. */
 		private void ended(Integer skipped, Throwable error) {
 			BuildTickets.release(level, chunks);
-			boolean undoable = save();
+			// A build that changed nothing leaves the history, so undo never answers with nothing restored.
+			boolean undoable = journal.size() > 0;
+			if (undoable) {
+				store.setDirty();
+			} else {
+				store.remove(owner, stored);
+			}
 			String line;
 			if (error != null) {
 				line = Messages.failed(reason(error));
@@ -345,10 +361,10 @@ public final class BuildManager {
 			JobScheduler.add(runner);
 			runner.result().whenComplete((result, error) -> {
 				if (error != null) {
-					// Give the build back, so the player can try again.
-					UndoStore.get(server).push(owner, stored);
+					// The build stays in the history, so the player can try again.
 					tell(owner, Component.literal(Messages.failed(reason(error))));
 				} else {
+					UndoStore.get(server).remove(owner, stored);
 					tell(owner, Component.literal(Messages.undone(result.restored(), result.kept())));
 				}
 				if (undo == this) {

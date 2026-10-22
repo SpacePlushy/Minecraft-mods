@@ -103,14 +103,21 @@ public final class UndoRunner implements Tickable {
 		try {
 			BlockState current = level.getBlockState(pos);
 			BlockEntity entity = level.getBlockEntity(pos);
-			int hash = entity == null ? 0 : entity.saveWithFullMetadata(level.registryAccess()).hashCode();
+			BlockState original = journal.original(at);
+			CompoundTag data = journal.originalData(at);
+			if (current == original && (entity == null ? data == null
+					: data != null && BlockEntityHash.of(entity, level.registryAccess()) == BlockEntityHash.of(data))) {
+				// Already as it was before the build: an earlier undo, cut short by a crash, got this far.
+				restored++;
+				restoredPositions.add(pos);
+				return;
+			}
+			int hash = BlockEntityHash.of(entity, level.registryAccess());
 			if (journal.decide(at, BuiltInRegistries.BLOCK.getKey(current.getBlock()).toString(), hash) == RestoreDecision.KEEP) {
 				kept++;
 				return;
 			}
-			BlockState original = journal.original(at);
 			level.setBlock(pos, original, PlacementJob.FLAGS);
-			CompoundTag data = journal.originalData(at);
 			if (data != null && level.getBlockEntity(pos) instanceof BlockEntity restoredEntity) {
 				restoredEntity.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), data));
 				restoredEntity.setChanged();

@@ -4,8 +4,8 @@ import io.palmisano.aibuilder.core.Tunables;
 
 /**
  * Where a build's y=0 goes (spec §5.4): the floor nearest the player's feet height, so the Nether, caves and indoor
- * builds work. From the feet, up out of solid ground or down through open air to the first floor; over water, the
- * water's surface; with no floor in range, the block under the feet.
+ * builds work. From the feet, up out of solid ground or down through open air to the first floor; over water or lava,
+ * its surface; with no floor in range, the block under the feet.
  */
 public final class GroundFinder {
 	private GroundFinder() {

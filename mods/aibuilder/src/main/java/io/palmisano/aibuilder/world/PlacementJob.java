@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import io.palmisano.aibuilder.AiBuilderMod;
+import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.place.PlacementOrder;
@@ -38,6 +39,9 @@ public final class PlacementJob implements Tickable {
 	/** {@code Block.UPDATE_CLIENTS | Block.UPDATE_SKIP_ALL_SIDEEFFECTS} (818), exactly what {@code /fill … strict} uses. */
 	static final int FLAGS = Block.UPDATE_CLIENTS | Block.UPDATE_SKIP_ALL_SIDEEFFECTS;
 
+	private record Settling(BlockPos pos, long readyAt) {
+	}
+
 	private final ServerLevel level;
 	private final Rotation rotation;
 	private final UndoJournal<BlockState, CompoundTag> journal;
@@ -56,6 +60,8 @@ public final class PlacementJob implements Tickable {
 	private final List<Map.Entry<BlockPos, BlockState>> waiting = new ArrayList<>();
 	private final CompletableFuture<Integer> ended = new CompletableFuture<>();
 	private ShapePass shapePass;
+	/** Block entities written recently, oldest first, waiting to have their data taken again. */
+	private final ArrayDeque<Settling> settling = new ArrayDeque<>();
 	private int skipped;
 	private int failures;
 	private volatile int placed;
@@ -140,6 +146,7 @@ public final class PlacementJob implements Tickable {
 			return true;
 		}
 		long deadline = System.nanoTime() + nanosPerTick;
+		settle();
 		if (shapePass == null) {
 			boolean drop;
 			synchronized (lock) {
@@ -167,7 +174,8 @@ public final class PlacementJob implements Tickable {
 			releaseIdleWaiters();
 			shapePass = new ShapePass(level, journal.positions().stream().map(Positions::toBlockPos).toList(), this::write);
 		}
-		if (!shapePass.run(deadline)) {
+		if (!shapePass.run(deadline) || !settling.isEmpty()) {
+			// The last block entities settle before the build counts as done.
 			return false;
 		}
 		if (failures > 0) {
@@ -265,9 +273,29 @@ public final class PlacementJob implements Tickable {
 		level.setBlock(pos, state, FLAGS);
 		BlockState now = level.getBlockState(pos);
 		BlockEntity after = level.getBlockEntity(pos);
-		journal.afterWrite(at, BuiltInRegistries.BLOCK.getKey(now.getBlock()).toString(),
-				after == null ? 0 : after.saveWithFullMetadata(level.registryAccess()).hashCode());
+		journal.afterWrite(at, BuiltInRegistries.BLOCK.getKey(now.getBlock()).toString(), BlockEntityHash.of(after, level.registryAccess()));
+		if (after != null) {
+			settling.add(new Settling(pos, level.getGameTime() + Tunables.BLOCK_ENTITY_SETTLE_TICKS));
+		}
 		return true;
+	}
+
+	/**
+	 * Takes each new block entity's data again once it has settled: some change on their first tick (a hopper's
+	 * transfer cooldown), and undo must still see them as the build's own. Soon enough that the player can't have
+	 * touched it yet.
+	 */
+	private void settle() {
+		long now = level.getGameTime();
+		while (!settling.isEmpty() && settling.peekFirst().readyAt() <= now) {
+			BlockPos pos = settling.pollFirst().pos();
+			Pos at = Positions.toPos(pos);
+			String written = journal.writtenBlock(at);
+			BlockEntity entity = level.getBlockEntity(pos);
+			if (entity != null && written != null && written.equals(BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString())) {
+				journal.afterWrite(at, written, BlockEntityHash.of(entity, level.registryAccess()));
+			}
+		}
 	}
 
 	/** Whether {@code current} is the block id, or carries the {@code #tag}, that a replace-fill asked for. */

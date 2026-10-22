@@ -2,16 +2,25 @@ package io.palmisano.aibuilder.test;
 
 import static io.palmisano.aibuilder.test.ArenaBuilds.ARENA;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.blocks.BlockSpec;
+import io.palmisano.aibuilder.core.blocks.Validation;
+import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.test.ArenaBuilds.ArenaBuild;
 import io.palmisano.aibuilder.world.JobScheduler;
+import io.palmisano.aibuilder.world.McBlockCatalog;
 import io.palmisano.aibuilder.world.Occupancy;
 import io.palmisano.aibuilder.world.Positions;
 import io.palmisano.aibuilder.world.UndoRunner;
@@ -19,6 +28,7 @@ import io.palmisano.aibuilder.world.UndoStore;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
@@ -31,8 +41,11 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.StairBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.block.entity.SignTextSlot;
@@ -171,6 +184,92 @@ public class UndoGameTest {
 					}
 				})
 				.thenSucceed();
+	}
+
+	/** A spot already back to how it was (a crash cut an earlier undo short) counts as restored, not as the player's. */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void aSpotAlreadyBackToItsOriginalCountsAsRestored(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		ArenaBuild build = start(helper, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "two stones", "style": "test"}},
+				  {"tool": "fill", "args": {"box": [0, 1, 4, 1, 1, 4], "block": "stone"}},
+				  {"tool": "finish", "args": {"summary": "two stones"}}
+				]}""");
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenExecute(() -> {
+					level.setBlock(build.world(new Pos(0, 1, 4)), Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+					undo.set(undo(level, build.journal()));
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> {
+					helper.assertValueEqual(undo.get().result().join(), new UndoRunner.UndoResult(2, 0), "undo result");
+					helper.assertTrue(build.state(1, 1, 4).isAir(), "not undone at (1, 1, 4): " + build.state(1, 1, 4));
+				})
+				.thenSucceed();
+	}
+
+	/**
+	 * One block of every block-entity type the tools accept, left to tick for a few seconds, then undone: every one
+	 * must still count as the build's own. (A hopper's data changes on its first tick.)
+	 */
+	@GameTest(structure = ARENA, maxTicks = 600)
+	public void everyKindOfBlockEntityUndoesAfterItHasSat(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		List<String> ids = oneBlockPerBlockEntityType();
+		JsonArray blocks = new JsonArray();
+		// Two apart in a grid inside the arena, so nothing connects, and a bed's head (one forward) stays inside.
+		for (int i = 0; i < ids.size() && i < 56; i++) {
+			JsonObject entry = new JsonObject();
+			JsonArray pos = new JsonArray();
+			pos.add(-7 + 2 * (i % 8));
+			pos.add(1);
+			pos.add(1 + 2 * (i / 8));
+			entry.add("pos", pos);
+			entry.addProperty("block", ids.get(i));
+			blocks.add(entry);
+		}
+		helper.assertTrue(ids.size() <= 56, ids.size() + " kinds of block entity don't fit the grid");
+		ArenaBuild build = start(helper, "{\"calls\": [{\"tool\": \"submit_brief\", \"args\": {\"title\": \"block entities\", \"style\": \"test\"}},"
+				+ "{\"tool\": \"set_blocks\", \"args\": {\"blocks\": " + blocks + "}},"
+				+ "{\"tool\": \"finish\", \"args\": {\"summary\": \"one of each\"}}]}");
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenIdle(60)
+				.thenExecute(() -> undo.set(undo(level, build.journal())))
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> {
+					List<String> left = new ArrayList<>();
+					for (Pos pos : build.journal().positions()) {
+						BlockState now = level.getBlockState(Positions.toBlockPos(pos));
+						if (now != build.journal().original(pos)) {
+							left.add(BuiltInRegistries.BLOCK.getKey(now.getBlock()) + " at " + pos);
+						}
+					}
+					helper.assertTrue(left.isEmpty(), "undo left " + left);
+					helper.assertValueEqual(undo.get().result().join().kept(), 0, "kept");
+				})
+				.thenSucceed();
+	}
+
+	/** The first block the tools accept for each kind of block entity. */
+	private static List<String> oneBlockPerBlockEntityType() {
+		Validator validator = new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED);
+		Map<BlockEntityType<?>, String> oneEach = new LinkedHashMap<>();
+		for (Block block : BuiltInRegistries.BLOCK) {
+			String id = BuiltInRegistries.BLOCK.getKey(block).toString();
+			if (!(block instanceof EntityBlock entityBlock) || !(validator.validate(BlockSpec.of(id)) instanceof Validation.Valid)) {
+				continue;
+			}
+			BlockEntity entity = entityBlock.newBlockEntity(BlockPos.ZERO, block.defaultBlockState());
+			if (entity != null) {
+				oneEach.putIfAbsent(entity.getType(), id);
+			}
+		}
+		return List.copyOf(oneEach.values());
 	}
 
 	/**

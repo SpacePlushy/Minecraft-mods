@@ -23,6 +23,39 @@ class UndoHistoryTest {
 		assertEquals(Optional.empty(), history.pop(frankie));
 	}
 
+	/** A running build sits in the history (saved with the world) without being taken off it. */
+	@Test
+	void peekLeavesTheNewestInPlace() {
+		UndoHistory<String> history = new UndoHistory<>(5);
+		history.push(frankie, "hut");
+		history.push(frankie, "tower");
+		assertEquals(Optional.of("tower"), history.peek(frankie));
+		assertEquals(Optional.of("tower"), history.pop(frankie));
+		assertEquals(Optional.empty(), history.peek(friend));
+	}
+
+	@Test
+	void removeTakesOutThatBuildOnly() {
+		UndoHistory<String> history = new UndoHistory<>(5);
+		history.push(frankie, "hut");
+		history.push(frankie, "tower");
+		history.push(frankie, "wall");
+		history.remove(frankie, "tower");
+		assertEquals(Optional.of("wall"), history.pop(frankie));
+		assertEquals(Optional.of("hut"), history.pop(frankie));
+		assertEquals(Optional.empty(), history.pop(frankie));
+	}
+
+	@Test
+	void replaceKeepsItsPlace() {
+		UndoHistory<String> history = new UndoHistory<>(5);
+		history.push(frankie, "hut");
+		history.push(frankie, "tower");
+		history.replace(frankie, "hut", "cabin");
+		assertEquals(Optional.of("tower"), history.pop(frankie));
+		assertEquals(Optional.of("cabin"), history.pop(frankie));
+	}
+
 	@Test
 	void playersHaveSeparateHistories() {
 		UndoHistory<String> history = new UndoHistory<>(5);

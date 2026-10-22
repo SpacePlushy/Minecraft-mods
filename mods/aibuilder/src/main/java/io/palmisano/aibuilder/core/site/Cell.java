@@ -5,5 +5,6 @@ public enum Cell {
 	/** Air, or something a build may stand in: plants, leaves, logs, snow layers. */
 	OPEN,
 	GROUND,
-	WATER
+	/** Water or lava: its surface is the floor, never what's under it. */
+	FLUID
 }

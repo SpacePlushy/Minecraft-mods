@@ -59,10 +59,21 @@ server thread through `PlacementJob.enqueue` (locked); a checkpoint blocks the b
 Everything that touches the world, the journal, `UndoStore` or chat runs on the server thread: callbacks from the
 backend hop over with `server.execute`.
 
-**Placement.** Writes use `/fill … strict`'s flags (818), so nothing reacts while a build goes up; then
-`ShapePass` runs `Block.updateFromNeighbourShapes` over every changed block and its neighbours, skipping anything
+**Placement.** Writes use `/fill … strict`'s flags (818), so nothing reacts while a build goes up. Placement runs at
+250 blocks or 3 ms a tick (`/aibuild test` at 2 a tick, to be watchable and cancellable); then `ShapePass` runs
+`Block.updateFromNeighbourShapes` over every changed block and its neighbours on the 3 ms budget, skipping anything
 holding a fluid (a waterlogged block would start flowing) and anything next to an unloaded chunk (reading it would
-load it on the spot). Both are spread over ticks at 250 blocks or 3 ms a tick.
+load it on the spot).
+
+**Undo.** A build's journal joins the player's undo history (`UndoStore`, saved with the world) when the build
+starts and is marked dirty every tick, so a crash mid-build can still be undone; an undo leaves it there until it
+has finished, and a spot already back to its original counts as restored. A block entity's data is hashed again
+`BLOCK_ENTITY_SETTLE_TICKS` after it's placed (a hopper rewrites its cooldown on its first tick), and
+`BlockEntityHash` leaves out data that changes by itself (a vault's timer). `UndoGameTest`'s sweep over every kind
+of block entity catches a new kind that does.
+
+**Tool limits.** Numbers must be whole and within ±1,000,000 (`ARGUMENT_LIMIT`), and a shape whose size, worked out
+from its arguments, is more than the whole allowed box is refused as `too_many` before anything is built.
 
 ## Commands (run here, in `mods/aibuilder/`)
 
@@ -108,3 +119,6 @@ load it on the spot). Both are spread over ticks at 250 blocks or 3 ms a tick.
 - Signs: `sign.getText(SignTextSlot.FRONT).asMutable().setLine(0, text).asImmutable()`, then `setText(…, slot)`.
 - DFU 10 has no `Codec.unit`; use `MapCodec.unit(supplier).codec()`. `SavedDataType(id, constructor, codec, null)`.
 - Brigadier tries only the literal when a word matches one, so `/aibuild test …` never reaches the prompt argument.
+- **Lava has no collision shape** for an empty collision context, so `getCollisionShape(level, pos).isEmpty()` is
+  true for it: check the fluid state first when telling ground from air.
+- A vault's saved data holds a timer (`server_data.state_updating_resumes_at`) it rewrites about once a second.

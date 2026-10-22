@@ -90,3 +90,8 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   undo saved with the world, and `/aibuild test|undo|cancel|status`. Server gametests check the demo house facing
   all four ways, sand, water, fences, two-block blocks, waiting for a player, undo with contents and far away, and
   saving. Rulings made along the way are in the M2 progress ledger. Waiting for Frankie's M1 + M2 test.
+- **2026-10-22:** M2's final review (a fresh Opus 5.5 reviewer) found no critical problems and five important ones,
+  all fixed test-first: tool numbers and shape sizes are bounded; a running build's undo record is saved with the
+  world, so a crash mid-build can still be undone; hoppers and vaults undo; lava counts as a surface to build on;
+  `/aibuild test` goes slowly enough to cancel half-way. Also: no build where the spot is outside the world's height.
+  Twelve smaller findings are deferred and listed in the M2 ledger, several to settle before M4.

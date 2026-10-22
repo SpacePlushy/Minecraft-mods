@@ -141,6 +141,21 @@ public final class UndoStore extends SavedData {
 		return build;
 	}
 
+	/** The player's newest build, left in place. */
+	public Optional<StoredBuild> peek(UUID player) {
+		return history.peek(player);
+	}
+
+	public void remove(UUID player, StoredBuild build) {
+		history.remove(player, build);
+		setDirty();
+	}
+
+	public void replace(UUID player, StoredBuild build, StoredBuild replacement) {
+		history.replace(player, build, replacement);
+		setDirty();
+	}
+
 	private static UndoStore fromPlayers(List<PlayerBuilds> players) {
 		UndoStore store = new UndoStore();
 		for (PlayerBuilds p : players) {
