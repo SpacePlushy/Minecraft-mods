@@ -4,16 +4,22 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import io.palmisano.aibuilder.core.frame.Pos;
 
 /**
  * What a build changed: for each position, what was there first (a block state {@code S} and block-entity data
- * {@code D}), and the block the build left with a hash of its block-entity data. Undo restores a position only
- * while it still holds that block with that data, so it never wipes what someone changed after the build.
+ * {@code D}), and the block the build left with a hash of its block-entity data; and the entities it spawned (item
+ * frames, spec §10). Undo restores a position only while it still holds that block with that data, so it never
+ * wipes what someone changed after the build.
  */
 public final class UndoJournal<S, D> {
 	public record Entry<S, D>(Pos pos, S original, D originalData, String writtenBlock, int writtenDataHash) {
+	}
+
+	/** An entity the build spawned: its id, where it is, and the item it was given ("" for none). */
+	public record Spawned(UUID id, Pos pos, String item) {
 	}
 
 	private static final class Record<S, D> {
@@ -29,14 +35,29 @@ public final class UndoJournal<S, D> {
 	}
 
 	private final Map<Pos, Record<S, D>> records = new LinkedHashMap<>();
+	private final List<Spawned> spawned = new ArrayList<>();
 
 	public static <S, D> UndoJournal<S, D> of(List<Entry<S, D>> entries) {
+		return of(entries, List.of());
+	}
+
+	public static <S, D> UndoJournal<S, D> of(List<Entry<S, D>> entries, List<Spawned> spawned) {
 		UndoJournal<S, D> journal = new UndoJournal<>();
 		for (Entry<S, D> e : entries) {
 			journal.beforeWrite(e.pos(), e.original(), e.originalData());
 			journal.afterWrite(e.pos(), e.writtenBlock(), e.writtenDataHash());
 		}
+		spawned.forEach(journal::addSpawned);
 		return journal;
+	}
+
+	public void addSpawned(Spawned entity) {
+		spawned.add(entity);
+	}
+
+	/** In the order they were spawned. */
+	public List<Spawned> spawned() {
+		return List.copyOf(spawned);
 	}
 
 	/** Records what's at {@code pos} unless this build already changed it (the first original wins). */

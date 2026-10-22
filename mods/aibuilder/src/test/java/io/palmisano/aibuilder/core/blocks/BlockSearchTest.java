@@ -18,7 +18,8 @@ class BlockSearchTest {
 
 	@Test
 	void shorterIdsComeFirst() {
-		assertEquals(List.of("minecraft:oak_log", "minecraft:oak_door", "minecraft:oak_slab", "minecraft:oak_planks", "minecraft:oak_stairs"),
+		assertEquals(List.of("minecraft:oak_log", "minecraft:oak_door", "minecraft:oak_sign", "minecraft:oak_slab", "minecraft:oak_planks",
+				"minecraft:oak_stairs"),
 				BlockSearch.search(catalog, "minecraft:oak", 10).stream().map(BlockInfo::id).toList());
 	}
 

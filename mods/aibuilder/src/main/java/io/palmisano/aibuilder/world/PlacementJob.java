@@ -10,17 +10,20 @@ import java.util.concurrent.CompletableFuture;
 
 import io.palmisano.aibuilder.AiBuilderMod;
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.blocks.BlockEntityData;
 import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.place.PlacementOrder;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -41,6 +44,10 @@ public final class PlacementJob implements Tickable {
 	static final int FLAGS = Block.UPDATE_CLIENTS | Block.UPDATE_SKIP_ALL_SIDEEFFECTS;
 
 	private record Settling(BlockPos pos, long readyAt) {
+	}
+
+	/** A block held back because a player stood there, with its block entity's data (place_block_entity) if any. */
+	private record Held(BlockPos pos, BlockState state, BlockEntityData data) {
 	}
 
 	private final ServerLevel level;
@@ -64,7 +71,7 @@ public final class PlacementJob implements Tickable {
 	private boolean cancelled; // guarded by lock
 
 	/** Blocks held back because a player stood there. */
-	private final List<Map.Entry<BlockPos, BlockState>> waiting = new ArrayList<>();
+	private final List<Held> waiting = new ArrayList<>();
 	private final CompletableFuture<Integer> ended = new CompletableFuture<>();
 	private ShapePass shapePass;
 	/** Block entities written recently, oldest first, waiting to have their data taken again. */
@@ -222,11 +229,14 @@ public final class PlacementJob implements Tickable {
 	/** Places what waited for a player, where they've moved away; returns the tick's budget left. */
 	private int placeWaiting() {
 		int budget = blocksPerTick;
-		for (Iterator<Map.Entry<BlockPos, BlockState>> it = waiting.iterator(); it.hasNext() && budget > 0;) {
-			Map.Entry<BlockPos, BlockState> entry = it.next();
-			if (!occupancy.occupied(entry.getKey())) {
+		for (Iterator<Held> it = waiting.iterator(); it.hasNext() && budget > 0;) {
+			Held held = it.next();
+			if (!occupancy.occupied(held.pos())) {
 				it.remove();
-				placeBlock(entry.getKey(), entry.getValue());
+				placeBlock(held.pos(), held.state());
+				if (held.data() != null) {
+					dress(held.pos(), held.data());
+				}
 				budget--;
 			}
 		}
@@ -250,28 +260,82 @@ public final class PlacementJob implements Tickable {
 		}
 	}
 
-	/** Writes one placement, both halves of a two-block block; returns how much of the tick's budget it used. */
+	/**
+	 * Writes one placement, both halves of a two-block block, then its block entity's data; or hangs an item frame.
+	 * Returns how much of the tick's budget it used.
+	 */
 	private int place(Placement placement) {
 		try {
 			BlockPos pos = Positions.toBlockPos(placement.pos());
+			if (placement.block() == null) {
+				if (placement.data() instanceof BlockEntityData.ItemFrame frame) {
+					hang(pos, frame);
+				}
+				return 1;
+			}
 			if (placement.onlyReplacing() != null && !matches(level.getBlockState(pos), placement.onlyReplacing())) {
 				return 0;
 			}
 			int written = 0;
 			for (Map.Entry<BlockPos, BlockState> entry : StateFactory.states(placement.block(), rotation, pos)) {
+				BlockEntityData data = entry.getKey().equals(pos) ? placement.data() : null;
 				if (occupancy.occupied(entry.getKey())) {
-					waiting.add(entry);
-				} else if (placeBlock(entry.getKey(), entry.getValue())) {
+					waiting.add(new Held(entry.getKey(), entry.getValue(), data));
+					continue;
+				}
+				if (placeBlock(entry.getKey(), entry.getValue())) {
 					written++;
+				}
+				if (data != null) {
+					dress(entry.getKey(), data);
 				}
 			}
 			return Math.max(written, 1);
 		} catch (RuntimeException e) {
 			if (failures++ == 0) {
-				AiBuilderMod.LOG.warn("Couldn't place {} at {}", placement.block().info().id(), placement.pos(), e);
+				AiBuilderMod.LOG.warn("Couldn't place {} at {}", placement.block() == null ? "an item frame" : placement.block().info().id(),
+						placement.pos(), e);
 			}
 			return 1;
 		}
+	}
+
+	/**
+	 * Gives the block entity just placed its data. A spot the build hadn't changed (the same block was already there)
+	 * is journaled first: what it held is the world's, and undo gives it back.
+	 */
+	private void dress(BlockPos pos, BlockEntityData data) {
+		BlockEntity entity = level.getBlockEntity(pos);
+		if (entity == null) {
+			// The block didn't go in: the build is at its cap.
+			return;
+		}
+		Pos at = Positions.toPos(pos);
+		if (!journal.has(at)) {
+			if (journal.size() >= maxChanged) {
+				capReached = true;
+				overCap++;
+				return;
+			}
+			journal.beforeWrite(at, level.getBlockState(pos), entity.saveWithFullMetadata(level.registryAccess()));
+			placed++;
+		}
+		BlockEntityWriter.write(level, pos, data);
+		journal.afterWrite(at, id(level.getBlockState(pos).getBlock()), BlockEntityHash.of(level.getBlockEntity(pos), level.registryAccess()));
+		settling.add(new Settling(pos, level.getGameTime() + Tunables.BLOCK_ENTITY_SETTLE_TICKS));
+	}
+
+	/** An item frame (spec §10): journaled by its id, so undo takes it down before the blocks it hangs on. */
+	private void hang(BlockPos pos, BlockEntityData.ItemFrame data) {
+		Direction facing = rotation.rotate(Direction.byName(data.facing()));
+		ItemFrame frame = ItemFrames.hang(level, pos, facing, data.item(), data.glowing());
+		if (frame == null) {
+			if (failures++ == 0) {
+				AiBuilderMod.LOG.warn("Couldn't hang an item frame at {}: nothing solid behind it, or another frame there", pos);
+			}
+			return;
+		}
+		journal.addSpawned(new UndoJournal.Spawned(frame.getUUID(), Positions.toPos(pos), data.item()));
 	}
 
 	/** One block of a placement; a position the build hadn't changed before adds one to {@link #placed()}. */

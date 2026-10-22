@@ -82,5 +82,7 @@ around it first and line it with stone, brick or metal.
   lit well enough that no mob can spawn (a light about every 6 blocks: lanterns, torches, glowstone or sea
   lanterns hidden under carpet).
 - Interiors that feel lived in: a few rooms with purpose, furniture from stairs, slabs, trapdoors and carpets,
-  bookshelves, barrels, crafting and cooking blocks, flower pots, a bed.
+  bookshelves, barrels, crafting and cooking blocks, flower pots, a bed. Dress them with place_block_entity: a
+  sign by the door with the building's name, a chest or barrel with a few fitting items, a lectern with a short
+  book about the place, banners in the build's colors, item frames with something on the walls.
 - Correct block states everywhere: stair facing and half, slab types, both door halves, two-block beds, log axes.

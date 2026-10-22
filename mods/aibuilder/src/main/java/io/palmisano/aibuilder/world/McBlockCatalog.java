@@ -8,19 +8,26 @@ import java.util.Map;
 import java.util.Optional;
 
 import io.palmisano.aibuilder.core.blocks.BlockCatalog;
+import io.palmisano.aibuilder.core.blocks.BlockEntityKind;
 import io.palmisano.aibuilder.core.blocks.BlockInfo;
 import io.palmisano.aibuilder.core.blocks.PlacementPass;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.Container;
 import net.minecraft.world.level.EmptyBlockGetter;
+import net.minecraft.world.level.block.AbstractBannerBlock;
 import net.minecraft.world.level.block.AbstractBedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.CarpetBlock;
 import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.LadderBlock;
 import net.minecraft.world.level.block.LanternBlock;
+import net.minecraft.world.level.block.LecternBlock;
 import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.level.block.SignBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 
@@ -82,6 +89,29 @@ public final class McBlockCatalog implements BlockCatalog {
 		}
 	}
 
+	/** The data place_block_entity can give the block's block entity (spec §8). */
+	static BlockEntityKind entityKind(Block block) {
+		if (block instanceof SignBlock) {
+			return BlockEntityKind.SIGN;
+		}
+		if (block instanceof AbstractBannerBlock) {
+			return BlockEntityKind.BANNER;
+		}
+		if (block instanceof LecternBlock) {
+			return BlockEntityKind.LECTERN;
+		}
+		if (!(block instanceof EntityBlock entityBlock)) {
+			return BlockEntityKind.NONE;
+		}
+		try {
+			BlockEntity entity = entityBlock.newBlockEntity(BlockPos.ZERO, block.defaultBlockState());
+			return entity instanceof Container container && container.getContainerSize() > 0 ? BlockEntityKind.CONTAINER : BlockEntityKind.OTHER;
+		} catch (RuntimeException e) {
+			// One that needs a world around it to be made: nothing place_block_entity knows how to fill.
+			return BlockEntityKind.OTHER;
+		}
+	}
+
 	private static Map<String, BlockInfo> read() {
 		Map<String, BlockInfo> blocks = new LinkedHashMap<>();
 		for (Block block : BuiltInRegistries.BLOCK) {
@@ -91,7 +121,7 @@ public final class McBlockCatalog implements BlockCatalog {
 				properties.put(property.getName(), valueNames(property));
 			}
 			boolean unbreakable = block.defaultBlockState().getDestroySpeed(EmptyBlockGetter.INSTANCE, BlockPos.ZERO) < 0;
-			blocks.put(id, new BlockInfo(id, properties, unbreakable, pass(block), block.defaultBlockState().ignitedByLava()));
+			blocks.put(id, new BlockInfo(id, properties, unbreakable, pass(block), block.defaultBlockState().ignitedByLava(), entityKind(block)));
 		}
 		return Collections.unmodifiableMap(blocks);
 	}

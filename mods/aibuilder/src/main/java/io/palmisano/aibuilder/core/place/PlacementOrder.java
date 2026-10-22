@@ -10,7 +10,7 @@ public final class PlacementOrder {
 
 	public static List<Placement> sort(List<Placement> batch) {
 		return batch.stream()
-				.sorted(Comparator.comparing((Placement p) -> p.block().info().pass()).thenComparingInt(p -> p.pos().y()))
+				.sorted(Comparator.comparing(Placement::pass).thenComparingInt(p -> p.pos().y()))
 				.toList();
 	}
 }

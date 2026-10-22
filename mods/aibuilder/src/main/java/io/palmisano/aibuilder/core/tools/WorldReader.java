@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.core.tools;
 
 import java.util.List;
 
+import io.palmisano.aibuilder.core.blocks.ItemCatalog;
 import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.shapes.Box;
@@ -39,4 +40,7 @@ public interface WorldReader {
 
 	/** The build looked over as it stands now (spec §8): its problems, at local positions. */
 	List<BuildProblems.Problem> check();
+
+	/** The game's items and banner patterns (the world's own, data packs included), for place_block_entity. */
+	ItemCatalog items();
 }

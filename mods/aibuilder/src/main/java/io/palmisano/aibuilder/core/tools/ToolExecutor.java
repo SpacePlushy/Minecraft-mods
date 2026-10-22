@@ -11,6 +11,7 @@ import java.util.Set;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.blocks.BlockEntityData;
 import io.palmisano.aibuilder.core.blocks.BlockInfo;
 import io.palmisano.aibuilder.core.blocks.BlockSearch;
 import io.palmisano.aibuilder.core.blocks.BlockSpec;
@@ -45,8 +46,8 @@ import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
  */
 public final class ToolExecutor {
 	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
-			"set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof", "staircase", "clear", "terraform", "checkpoint",
-			"check_build", "finish");
+			"set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof", "staircase", "clear", "terraform",
+			"place_block_entity", "checkpoint", "check_build", "finish");
 	private static final int REJECTION_LINES = 10;
 	private static final BlockSpec AIR = BlockSpec.of("minecraft:air");
 	private static final String BRIEF_FIRST = "Call submit_brief first: title, style, size, palette and phases, before placing any block.";
@@ -122,6 +123,8 @@ public final class ToolExecutor {
 			};
 		} catch (IllegalArgumentException e) {
 			result = ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + e.getMessage());
+		} catch (BlockEntityData.Refused e) {
+			result = ToolResult.error(e.reason().wireName() + ": " + e.getMessage());
 		} catch (WorldReader.Unreadable e) {
 			// The world couldn't be read in time (or at all): Claude can try again or go on without it.
 			result = ToolResult.error("Couldn't read the world: " + e.getMessage());
@@ -335,6 +338,9 @@ public final class ToolExecutor {
 		if (name.equals("set_blocks")) {
 			return setBlocks(a);
 		}
+		if (name.equals("place_block_entity")) {
+			return placeBlockEntity(a);
+		}
 		// A shape bigger than the whole allowed box is a mistake; refuse it before building it in memory.
 		long size = upperBound(name, a);
 		if (size > allowed.volume()) {
@@ -445,6 +451,47 @@ public final class ToolExecutor {
 	}
 
 	/**
+	 * A sign, container, lectern or banner with its data, checked like any write, the data going in right after its
+	 * block; or an item frame, an entity on the face of the block behind it (spec §8, §10).
+	 */
+	private ToolResult placeBlockEntity(Args a) {
+		Pos pos = a.pos("pos");
+		BlockEntityData data = BlockEntityData.parse(a.json(), world.items());
+		if (data instanceof BlockEntityData.ItemFrame itemFrame) {
+			return queueFrame(pos, itemFrame);
+		}
+		BlockSpec spec = a.block("block");
+		if (validator.validate(spec) instanceof Validation.Valid valid && valid.block().info().entity() != data.kind()) {
+			return ToolResult.error(RejectReason.NOT_A_BLOCK_ENTITY.wireName() + ": " + valid.block().info().id() + " can't hold "
+					+ data.kind().name().toLowerCase(Locale.ROOT) + " data; use " + switch (data.kind()) {
+						case SIGN -> "a sign (oak_sign, oak_wall_sign, oak_hanging_sign…)";
+						case CONTAINER -> "a container (chest, barrel, shulker box, hopper…)";
+						case LECTERN -> "a lectern";
+						default -> "a banner (white_banner, red_wall_banner…)";
+					});
+		}
+		return queue(List.of(new LocalBlock(pos, spec, null, data)), true, false);
+	}
+
+	/** An entity, so no block changes: only the box, what's protected and the queue's limit apply. */
+	private ToolResult queueFrame(Pos pos, BlockEntityData.ItemFrame itemFrame) {
+		if (!allowed.contains(pos)) {
+			return ToolResult.error(RejectReason.OUT_OF_BOUNDS.wireName() + ": " + describe(pos) + " is outside the allowed box " + describe(allowed));
+		}
+		if (protection().isProtected(pos) || protection().isUnbreakable(pos)) {
+			return ToolResult.error(RejectReason.PROTECTED.wireName() + ": something player-made is there; hang the frame somewhere else");
+		}
+		long waiting = sink.pending();
+		if (waiting + 1 > Tunables.PENDING_MAX) {
+			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": " + String.format(Locale.ROOT, "%,d", waiting)
+					+ " blocks are still waiting to be placed; call checkpoint, then go on; nothing was queued");
+		}
+		sink.queue(List.of(new Placement(frame.toWorld(pos), null, null, itemFrame)));
+		return ToolResult.ok("Queued an item frame" + (itemFrame.item().isEmpty() ? "" : " holding " + itemFrame.item())
+				+ ". It hangs on the block behind it, which must be solid by the time the frame goes in.");
+	}
+
+	/**
 	 * Validates, bounds-checks, protection-checks, keeps lava apart from what burns, and queues; {@code perEntry}
 	 * reports each rejected entry by its index; {@code includeProtected} (a clear that asked for it) may remove
 	 * player-made blocks, never unbreakable ones.
@@ -500,7 +547,7 @@ public final class ToolExecutor {
 				continue;
 			}
 			claimed.add(block.pos());
-			batch.add(new Placement(frame.toWorld(block.pos()), resolved, block.onlyReplacing()));
+			batch.add(new Placement(frame.toWorld(block.pos()), resolved, block.onlyReplacing(), block.data()));
 		}
 		int rejected = blocks.size() - batch.size();
 		// Those spots are the build's own from now on, even where it may clear a protected block.

@@ -77,6 +77,8 @@ public final class Tunables {
 	public static final int CHECK_BUILD_TIMEOUT_SECONDS = 60;
 	/** How long check_build waits for the light engine to catch up with what was placed before it reads light. */
 	public static final int CHECK_BUILD_LIGHT_WAIT_SECONDS = 5;
+	/** How long undo waits for a far build's item frames to load (entities load after their chunk) before going on. */
+	public static final int UNDO_ENTITY_WAIT_SECONDS = 10;
 
 	private Tunables() {
 	}

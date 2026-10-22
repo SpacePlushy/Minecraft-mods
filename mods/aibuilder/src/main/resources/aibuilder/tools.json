@@ -257,6 +257,77 @@
 		}
 	},
 	{
+		"name": "place_block_entity",
+		"description": "Dress the build: a sign with text, a chest, barrel or other container with items, a lectern with a written book, a banner with patterns, or an item frame holding an item. Give pos and exactly one of sign, container, lectern, banner or item_frame. For the first four also give block (and state, as for set_blocks): a sign block (oak_sign, oak_wall_sign, oak_hanging_sign…), a container, lectern, or a banner (white_banner, red_wall_banner…; the block's color is the base). A sign takes up to 4 lines a side (about 15 characters show on a line), a dye color and glowing; a container up to 27 stacks, filled from the first slot (nothing that holds items itself); a book up to 50 pages of 800 characters (line breaks kept); a banner up to 6 patterns, each a pattern id and a dye color, bottom layer first. An item frame is an entity, not a block: give no block; pos is the empty spot in front of a solid block, facing the way the frame looks out (forward, back, left, right, up, down). Text is stored as plain text.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"pos": {"type": "array", "items": {"type": "integer"}, "description": "[x, y, z] in the local frame"},
+				"block": {"type": "string"},
+				"state": {"type": "object", "description": "Property names to values, directions relative"},
+				"sign": {
+					"type": "object",
+					"properties": {
+						"front": {"type": "array", "items": {"type": "string"}},
+						"back": {"type": "array", "items": {"type": "string"}},
+						"color": {"type": "string", "description": "A dye color: black (default), white, red, blue, …"},
+						"glowing": {"type": "boolean"}
+					}
+				},
+				"container": {
+					"type": "object",
+					"properties": {
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {"item": {"type": "string"}, "count": {"type": "integer"}},
+								"required": ["item"]
+							}
+						}
+					},
+					"required": ["items"]
+				},
+				"lectern": {
+					"type": "object",
+					"properties": {
+						"title": {"type": "string"},
+						"author": {"type": "string"},
+						"pages": {"type": "array", "items": {"type": "string"}}
+					},
+					"required": ["pages"]
+				},
+				"banner": {
+					"type": "object",
+					"properties": {
+						"patterns": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"pattern": {"type": "string", "description": "stripe_bottom, border, cross, creeper, flower, skull, globe, bricks, gradient, rhombus, circle, half_horizontal, …"},
+									"color": {"type": "string"}
+								},
+								"required": ["pattern", "color"]
+							}
+						}
+					},
+					"required": ["patterns"]
+				},
+				"item_frame": {
+					"type": "object",
+					"properties": {
+						"facing": {"type": "string", "description": "forward, back, left, right, up or down: out of the block it hangs on"},
+						"item": {"type": "string"},
+						"glowing": {"type": "boolean", "description": "A glow item frame"}
+					},
+					"required": ["facing"]
+				}
+			},
+			"required": ["pos"]
+		}
+	},
+	{
 		"name": "checkpoint",
 		"description": "Wait until everything queued so far is placed, then report progress; the player's status shows the phase. Call it at the end of each phase.",
 		"input_schema": {

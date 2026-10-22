@@ -10,6 +10,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.blocks.ItemCatalog;
 import io.palmisano.aibuilder.core.frame.Directions;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
@@ -48,6 +49,7 @@ public final class McWorldReader implements WorldReader {
 	private final int siteSize;
 	private final CompletableFuture<WorldSurvey.Survey> site;
 	private final UndoJournal<BlockState, CompoundTag> journal;
+	private final ItemCatalog items;
 
 	/**
 	 * Server thread. {@code player} gives the player's position, or null when there's no one; {@code journal} is this
@@ -60,6 +62,7 @@ public final class McWorldReader implements WorldReader {
 		this.allowed = allowed;
 		this.player = player;
 		this.journal = journal;
+		this.items = new McItemCatalog(level.registryAccess());
 		int radius = tier.size() / 2 + 8;
 		this.siteMinX = Math.floorDiv(allowed.min().x() + allowed.max().x() + 1, 2) - radius;
 		this.siteMinZ = Math.floorDiv(allowed.min().z() + allowed.max().z() + 1, 2) - radius;
@@ -161,6 +164,11 @@ public final class McWorldReader implements WorldReader {
 	@Override
 	public FireMask fire() {
 		return await(site, Tunables.SURVEY_TIMEOUT_SECONDS).fire();
+	}
+
+	@Override
+	public ItemCatalog items() {
+		return items;
 	}
 
 	/** Read over ticks on the server (BuildCheck), waited for here. */

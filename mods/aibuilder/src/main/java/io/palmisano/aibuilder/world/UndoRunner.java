@@ -28,10 +28,11 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.TagValueInput;
 
 /**
- * Takes a build back (spec §10): every position that still holds the block the build left there, with the same
- * block-entity data, gets its original back, contents included; anything the player has changed since stays and is
- * counted. Supports first, bottom-up, with the build's own flags, then the finalize pass. Keeps every chunk the
- * journal touches loaded and waits for them, so it works however far away the build is.
+ * Takes a build back (spec §10): first the item frames it hung (so none drops when its wall goes), then every position
+ * that still holds the block the build left there, with the same block-entity data, gets its original back, contents
+ * included; anything the player has changed since stays and is counted. Supports first, bottom-up, with the build's
+ * own flags, then the finalize pass. Keeps every chunk the journal touches loaded and waits for them (and for their
+ * entities, which load on their own), so it works however far away the build is.
  */
 public final class UndoRunner implements Tickable {
 	public record UndoResult(int restored, int kept) {
@@ -45,7 +46,10 @@ public final class UndoRunner implements Tickable {
 	private final CompletableFuture<Void> loaded;
 	private final List<BlockPos> restoredPositions = new ArrayList<>();
 	private final CompletableFuture<UndoResult> result = new CompletableFuture<>();
+	private final Set<ChunkPos> frameChunks = new LinkedHashSet<>();
 	private ShapePass shapePass;
+	private long framesDeadline;
+	private boolean framesDown;
 	private int next;
 	private int restored;
 	private int kept;
@@ -62,6 +66,8 @@ public final class UndoRunner implements Tickable {
 		this.order = journal.positions().stream().sorted(Comparator.comparing((Pos p) -> passes.get(p)).thenComparingInt(Pos::y)).toList();
 		Set<ChunkPos> touched = new LinkedHashSet<>();
 		order.forEach(p -> touched.add(ChunkPos.containing(Positions.toBlockPos(p))));
+		journal.spawned().forEach(s -> frameChunks.add(ChunkPos.containing(Positions.toBlockPos(s.pos()))));
+		touched.addAll(frameChunks);
 		this.chunks = touched;
 		this.loaded = BuildTickets.load(level, chunks);
 	}
@@ -78,6 +84,17 @@ public final class UndoRunner implements Tickable {
 		}
 		if (!loaded.isDone()) {
 			return false;
+		}
+		if (!framesDown) {
+			// A chunk's entities load after its blocks; give them a while, then carry on without the ones still away.
+			if (framesDeadline == 0) {
+				framesDeadline = System.nanoTime() + Tunables.UNDO_ENTITY_WAIT_SECONDS * 1_000_000_000L;
+			}
+			if (!frameChunks.stream().allMatch(c -> level.areEntitiesLoaded(c.pack())) && System.nanoTime() < framesDeadline) {
+				return false;
+			}
+			kept += ItemFrames.takeDown(level, journal.spawned());
+			framesDown = true;
 		}
 		long deadline = System.nanoTime() + Tunables.TICK_BUDGET_NANOS;
 		if (shapePass == null) {

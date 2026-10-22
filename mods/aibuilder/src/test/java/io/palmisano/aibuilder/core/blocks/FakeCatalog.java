@@ -40,11 +40,21 @@ public final class FakeCatalog implements BlockCatalog {
 		c.add("minecraft:rail", Map.of("shape", List.of("north_south", "east_west", "ascending_east", "ascending_west",
 				"ascending_north", "ascending_south", "south_east", "south_west", "north_west", "north_east")), false, PlacementPass.ATTACHED, false);
 		c.add("minecraft:vine", ordered("north", BOOL, "east", BOOL, "south", BOOL, "west", BOOL, "up", BOOL), false, PlacementPass.ATTACHED, true);
+		c.addEntity("minecraft:oak_sign", ordered("rotation", LEVELS, "waterlogged", BOOL), PlacementPass.ATTACHED, BlockEntityKind.SIGN);
+		c.addEntity("minecraft:chest", ordered("facing", FOUR_WAYS, "type", List.of("single", "left", "right"), "waterlogged", BOOL),
+				PlacementPass.PARTIAL, BlockEntityKind.CONTAINER);
+		c.addEntity("minecraft:lectern", ordered("facing", FOUR_WAYS, "has_book", BOOL, "powered", BOOL), PlacementPass.PARTIAL, BlockEntityKind.LECTERN);
+		c.addEntity("minecraft:white_banner", ordered("rotation", LEVELS), PlacementPass.ATTACHED, BlockEntityKind.BANNER);
 		return c;
 	}
 
 	private void add(String id, Map<String, List<String>> properties, boolean unbreakable, PlacementPass pass, boolean flammable) {
 		blocks.put(id, new BlockInfo(id, properties, unbreakable, pass, flammable));
+	}
+
+	/** A block with a block entity: all of these burn. */
+	private void addEntity(String id, Map<String, List<String>> properties, PlacementPass pass, BlockEntityKind entity) {
+		blocks.put(id, new BlockInfo(id, properties, false, pass, true, entity));
 	}
 
 	private static Map<String, List<String>> ordered(Object... namesAndValues) {

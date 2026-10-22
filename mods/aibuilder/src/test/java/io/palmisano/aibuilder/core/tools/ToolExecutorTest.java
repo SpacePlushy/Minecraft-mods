@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.core.tools;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.stream.IntStream;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.blocks.BlockEntityData;
 import io.palmisano.aibuilder.core.blocks.FakeCatalog;
 import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.Facing;
@@ -258,6 +260,52 @@ class ToolExecutorTest {
 		world.fire.lava(new Pos(-10, 0, 2));
 		ToolResult result = briefed().call("set_blocks", json("{\"blocks\":[{\"pos\":[-8,0,2],\"block\":\"oak_planks\"}]}"));
 		assertTrue(result.text().contains("lava_near_flammable"), result.text());
+	}
+
+	/** place_block_entity's data rides with its block (spec §8). */
+	@Test
+	void aSignGoesInWithItsText() {
+		ToolResult result = briefed().call("place_block_entity", json("{\"pos\":[0,0,2],\"block\":\"oak_sign\",\"sign\":{\"front\":[\"Hi\"]}}"));
+		assertFalse(result.isError(), result.text());
+		Placement p = sink.batches.getFirst().getFirst();
+		assertEquals("minecraft:oak_sign", p.block().info().id());
+		assertEquals("Hi", ((BlockEntityData.Sign) p.data()).front().getFirst());
+	}
+
+	@Test
+	void signTextOnStoneIsRefused() {
+		ToolResult result = briefed().call("place_block_entity", json("{\"pos\":[0,0,2],\"block\":\"stone\",\"sign\":{\"front\":[\"Hi\"]}}"));
+		assertTrue(result.isError() && result.text().contains("not_a_block_entity"), result.text());
+		assertEquals(0, sink.queuedCount());
+	}
+
+	@Test
+	void anUnknownItemIsABadValue() {
+		ToolResult result = briefed().call("place_block_entity", json("{\"pos\":[0,0,2],\"block\":\"chest\",\"container\":{\"items\":[{\"item\":\"gold_bar\"}]}}"));
+		assertTrue(result.isError() && result.text().contains("bad_value") && result.text().contains("minecraft:gold_bar"), result.text());
+	}
+
+	/** An item frame is an entity, not a block: no block goes in, and its facing turns with the build (spec §10). */
+	@Test
+	void anItemFrameIsAnEntityOnAFace() {
+		ToolResult result = briefed().call("place_block_entity", json("{\"pos\":[0,1,2],\"item_frame\":{\"facing\":\"back\",\"item\":\"diamond\"}}"));
+		assertFalse(result.isError(), result.text());
+		Placement p = sink.batches.getFirst().getFirst();
+		assertNull(p.block());
+		assertEquals(new BlockEntityData.ItemFrame("north", "minecraft:diamond", false), p.data());
+		assertEquals(new Pos(0, 65, 2), p.pos());
+	}
+
+	@Test
+	void itemFramesStayInTheBoxAndOffWhatsProtected() {
+		world.protection = new ProtectionMask(ALLOWED);
+		world.protection.protect(new Pos(0, 1, 2));
+		ToolExecutor tools = briefed();
+		ToolResult outside = tools.call("place_block_entity", json("{\"pos\":[0,1,40],\"item_frame\":{\"facing\":\"back\"}}"));
+		assertTrue(outside.isError() && outside.text().contains("out_of_bounds"), outside.text());
+		ToolResult onProtected = tools.call("place_block_entity", json("{\"pos\":[0,1,2],\"item_frame\":{\"facing\":\"back\"}}"));
+		assertTrue(onProtected.isError() && onProtected.text().contains("protected"), onProtected.text());
+		assertEquals(0, sink.queuedCount());
 	}
 
 	/** A call refused by the pending guard placed nothing, so its lava isn't remembered. */

@@ -13,6 +13,7 @@ public enum RejectReason {
 	OUT_OF_BOUNDS,
 	PROTECTED,
 	TOO_MANY,
+	NOT_A_BLOCK_ENTITY,
 	BAD_ARGUMENT;
 
 	public String wireName() {

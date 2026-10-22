@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiFunction;
 
+import io.palmisano.aibuilder.core.blocks.FakeItems;
+import io.palmisano.aibuilder.core.blocks.ItemCatalog;
 import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
@@ -77,6 +79,13 @@ public final class FakeWorld implements WorldReader {
 	@Override
 	public ProtectionMask protection() {
 		return protection;
+	}
+
+	public ItemCatalog items = FakeItems.standard();
+
+	@Override
+	public ItemCatalog items() {
+		return items;
 	}
 
 	/** What check_build finds. */

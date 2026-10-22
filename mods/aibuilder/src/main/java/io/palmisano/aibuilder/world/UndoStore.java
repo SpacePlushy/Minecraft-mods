@@ -42,9 +42,21 @@ public final class UndoStore extends SavedData {
 				CompoundTag.CODEC.fieldOf("tag").forGetter(DataEntry::tag)).apply(i, DataEntry::new));
 	}
 
-	/** A journal as palettes and arrays, one slot per position in the order they were first changed. */
+	/** An entity the build spawned (an item frame), its position packed. */
+	private static final Codec<UndoJournal.Spawned> SPAWNED_CODEC = RecordCodecBuilder.create(i -> i.group(
+			UUIDUtil.CODEC.fieldOf("id").forGetter(UndoJournal.Spawned::id),
+			Codec.LONG.fieldOf("pos").forGetter(s -> BlockPos.asLong(s.pos().x(), s.pos().y(), s.pos().z())),
+			Codec.STRING.fieldOf("item").forGetter(UndoJournal.Spawned::item)).apply(i, (id, pos, item) -> {
+				BlockPos at = BlockPos.of(pos);
+				return new UndoJournal.Spawned(id, new Pos(at.getX(), at.getY(), at.getZ()), item);
+			}));
+
+	/**
+	 * A journal as palettes and arrays, one slot per position in the order they were first changed, and the entities
+	 * it spawned (none in a journal saved before M5).
+	 */
 	private record PackedJournal(long[] positions, List<BlockState> states, int[] stateIndex, List<String> written,
-			int[] writtenIndex, int[] hashes, List<DataEntry> data) {
+			int[] writtenIndex, int[] hashes, List<DataEntry> data, List<UndoJournal.Spawned> entities) {
 		static final Codec<long[]> LONGS = Codec.LONG_STREAM.xmap(LongStream::toArray, LongStream::of);
 		static final Codec<int[]> INTS = Codec.INT_STREAM.xmap(IntStream::toArray, IntStream::of);
 		static final Codec<PackedJournal> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -54,7 +66,8 @@ public final class UndoStore extends SavedData {
 				Codec.STRING.listOf().fieldOf("written").forGetter(PackedJournal::written),
 				INTS.fieldOf("written_index").forGetter(PackedJournal::writtenIndex),
 				INTS.fieldOf("hashes").forGetter(PackedJournal::hashes),
-				DataEntry.CODEC.listOf().fieldOf("data").forGetter(PackedJournal::data)).apply(i, PackedJournal::new));
+				DataEntry.CODEC.listOf().fieldOf("data").forGetter(PackedJournal::data),
+				SPAWNED_CODEC.listOf().optionalFieldOf("entities", List.of()).forGetter(PackedJournal::entities)).apply(i, PackedJournal::new));
 
 		static PackedJournal pack(UndoJournal<BlockState, CompoundTag> journal) {
 			List<UndoJournal.Entry<BlockState, CompoundTag>> entries = journal.entries();
@@ -78,7 +91,7 @@ public final class UndoStore extends SavedData {
 				}
 			}
 			return new PackedJournal(positions, List.copyOf(states.keySet()), stateIndex, List.copyOf(written.keySet()), writtenIndex,
-					hashes, data);
+					hashes, data, journal.spawned());
 		}
 
 		UndoJournal<BlockState, CompoundTag> unpack() {
@@ -95,7 +108,7 @@ public final class UndoStore extends SavedData {
 				entries.add(new UndoJournal.Entry<>(new Pos(pos.getX(), pos.getY(), pos.getZ()), states.get(stateIndex[k]),
 						dataByIndex.get(k), block.isEmpty() ? null : block, hashes[k]));
 			}
-			return UndoJournal.of(entries);
+			return UndoJournal.of(entries, entities);
 		}
 	}
 

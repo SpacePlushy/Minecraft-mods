@@ -28,6 +28,11 @@ final class Args {
 		this.json = json == null ? new JsonObject() : json;
 	}
 
+	/** The arguments as they came, for a parser of its own (place_block_entity's data). */
+	JsonObject json() {
+		return json;
+	}
+
 	boolean has(String name) {
 		JsonElement e = json.get(name);
 		return e != null && !e.isJsonNull();
