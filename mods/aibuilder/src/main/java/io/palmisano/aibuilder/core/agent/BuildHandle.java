@@ -8,6 +8,6 @@ public interface BuildHandle {
 
 	CompletableFuture<BuildOutcome> outcome();
 
-	/** Why the build failed, for the player, once {@link #outcome()} is {@link BuildOutcome#FAILED}; "" otherwise. */
-	String failure();
+	/** Why the build ended, for the player, once {@link #outcome()} is FAILED, CAPPED or LIMITED; "" otherwise. */
+	String reason();
 }

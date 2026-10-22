@@ -27,6 +27,8 @@ import io.palmisano.aibuilder.core.agent.McpResponse;
 public final class McpHttpServer {
 	/** Far above any real call (2,000 set_blocks entries are about 200 KB). */
 	static final int MAX_BODY_BYTES = 8 * 1024 * 1024;
+	/** How much of an oversized body is read and dropped before the 413; beyond it the connection just closes. */
+	private static final long DISCARD_LIMIT_BYTES = 64L * 1024 * 1024;
 	private static final int THREADS = 8;
 
 	private final HttpServer server;
@@ -69,6 +71,14 @@ public final class McpHttpServer {
 			byte[] body;
 			try (InputStream in = exchange.getRequestBody()) {
 				body = in.readNBytes(MAX_BODY_BYTES + 1);
+				if (body.length > MAX_BODY_BYTES) {
+					// Read the rest and throw it away (up to a bound), so the sender gets the 413 instead of a reset.
+					long skipped = 0;
+					byte[] sink = new byte[64 * 1024];
+					for (int n; skipped < DISCARD_LIMIT_BYTES && (n = in.read(sink)) > 0;) {
+						skipped += n;
+					}
+				}
 			}
 			if (body.length > MAX_BODY_BYTES) {
 				exchange.sendResponseHeaders(413, -1);

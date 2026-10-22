@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.concurrent.Executor;
 
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.agent.BuildEvents;
 import io.palmisano.aibuilder.core.agent.BuildHandle;
 import io.palmisano.aibuilder.core.agent.BuildRequest;
 import io.palmisano.aibuilder.core.agent.ScriptedBackend;
@@ -84,7 +85,7 @@ final class ArenaBuilds {
 				SizeTier.SMALL.maxChangedBlocks(), sink, new Budget(Tunables.MAX_TOOL_CALLS), world);
 		Executor worker = task -> Thread.ofPlatform().daemon().name("aibuilder-arena-build").start(task);
 		ScriptedBackend backend = new ScriptedBackend(scriptJson, worker);
-		BuildHandle handle = backend.start(new BuildRequest("arena test", SizeTier.SMALL), tools);
+		BuildHandle handle = backend.start(new BuildRequest("arena test", SizeTier.SMALL), tools, BuildEvents.NONE);
 		// A script that throws never reaches finish: end the job anyway, as BuildManager will.
 		handle.outcome().thenRun(() -> job.finish());
 		return new ArenaBuild(level, frame, job, journal, backend, handle);

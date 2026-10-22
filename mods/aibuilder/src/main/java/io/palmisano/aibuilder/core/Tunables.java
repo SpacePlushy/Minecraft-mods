@@ -28,6 +28,14 @@ public final class Tunables {
 	public static final long MAX_OUTPUT_TOKENS = 500_000;
 	/** Minutes one build may take (spec §12.2's max_build_minutes). */
 	public static final int MAX_BUILD_MINUTES = 45;
+	/** Past a cap, the tool calls that still get through (finish, say) before the process is ended (spec §12.2). */
+	public static final int CAP_GRACE_CALLS = 3;
+	/** Past a cap, how long Claude may go on before the process is ended (spec §12.2). */
+	public static final int CAP_GRACE_SECONDS = 60;
+	/** After SIGINT, how long Claude Code has to end its turn before it's destroyed (spec §12.2). */
+	public static final int CANCEL_GRACE_SECONDS = 5;
+	/** How long Claude Code may take to start (its system/init line) before the build fails. */
+	public static final int STARTUP_TIMEOUT_SECONDS = 60;
 	/** How long a tool call waits for the build's start check before it's refused (spec §12.2). */
 	public static final int READY_WAIT_SECONDS = 10;
 	/** Placements queued and not yet placed, at most: beyond it a write call is refused until placement catches up. */

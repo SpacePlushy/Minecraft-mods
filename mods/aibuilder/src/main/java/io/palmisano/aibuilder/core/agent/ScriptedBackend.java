@@ -41,7 +41,7 @@ public final class ScriptedBackend implements AiBackend {
 	}
 
 	@Override
-	public BuildHandle start(BuildRequest request, ToolExecutor tools) {
+	public BuildHandle start(BuildRequest request, ToolExecutor tools, BuildEvents events) {
 		AtomicBoolean cancelled = new AtomicBoolean();
 		AtomicReference<String> failure = new AtomicReference<>("");
 		CompletableFuture<BuildOutcome> outcome = new CompletableFuture<>();
@@ -88,7 +88,7 @@ public final class ScriptedBackend implements AiBackend {
 			}
 
 			@Override
-			public String failure() {
+			public String reason() {
 				return failure.get();
 			}
 		};

@@ -42,7 +42,7 @@ class ScriptedBackendTest {
 	void runsEveryCallInOrderAndFinishes() throws Exception {
 		RecordingSink sink = new RecordingSink();
 		BuildHandle handle = new ScriptedBackend(script(BRIEF, FILL, "{\"tool\":\"finish\",\"args\":{\"summary\":\"done\"}}"), Runnable::run)
-				.start(REQUEST, tools(sink));
+				.start(REQUEST, tools(sink), BuildEvents.NONE);
 		assertEquals(BuildOutcome.FINISHED, handle.outcome().get(5, TimeUnit.SECONDS));
 		assertEquals("t", sink.brief.title());
 		assertEquals(2, sink.queuedCount());
@@ -52,7 +52,7 @@ class ScriptedBackendTest {
 	@Test
 	void aScriptWithoutFinishIsFinishedForIt() throws Exception {
 		RecordingSink sink = new RecordingSink();
-		BuildHandle handle = new ScriptedBackend(script(BRIEF, FILL), Runnable::run).start(REQUEST, tools(sink));
+		BuildHandle handle = new ScriptedBackend(script(BRIEF, FILL), Runnable::run).start(REQUEST, tools(sink), BuildEvents.NONE);
 		assertEquals(BuildOutcome.FINISHED, handle.outcome().get(5, TimeUnit.SECONDS));
 		assertTrue(sink.finishedWith != null, "finish should have been called");
 	}
@@ -65,9 +65,9 @@ class ScriptedBackendTest {
 				throw new IllegalStateException("the world is read-only");
 			}
 		};
-		BuildHandle handle = new ScriptedBackend(script(BRIEF, FILL), Runnable::run).start(REQUEST, tools(sink));
+		BuildHandle handle = new ScriptedBackend(script(BRIEF, FILL), Runnable::run).start(REQUEST, tools(sink), BuildEvents.NONE);
 		assertEquals(BuildOutcome.FAILED, handle.outcome().get(5, TimeUnit.SECONDS));
-		assertEquals("the world is read-only", handle.failure());
+		assertEquals("the world is read-only", handle.reason());
 	}
 
 	/** An Error (out of memory, a stack overflow) must still end the build, or the server would stay busy forever. */
@@ -79,9 +79,9 @@ class ScriptedBackendTest {
 				throw new StackOverflowError("too deep");
 			}
 		};
-		BuildHandle handle = new ScriptedBackend(script(BRIEF, FILL), Runnable::run).start(REQUEST, tools(sink));
+		BuildHandle handle = new ScriptedBackend(script(BRIEF, FILL), Runnable::run).start(REQUEST, tools(sink), BuildEvents.NONE);
 		assertEquals(BuildOutcome.FAILED, handle.outcome().get(5, TimeUnit.SECONDS));
-		assertTrue(handle.failure().contains("too deep"), handle.failure());
+		assertTrue(handle.reason().contains("too deep"), handle.reason());
 	}
 
 	@Test
@@ -103,7 +103,7 @@ class ScriptedBackendTest {
 		ExecutorService worker = Executors.newSingleThreadExecutor();
 		try {
 			BuildHandle handle = new ScriptedBackend(script(BRIEF, "{\"tool\":\"checkpoint\",\"args\":{\"phase\":\"wait\"}}", FILL), worker)
-					.start(REQUEST, tools(sink));
+					.start(REQUEST, tools(sink), BuildEvents.NONE);
 			assertTrue(inCheckpoint.await(5, TimeUnit.SECONDS));
 			handle.cancel();
 			release.countDown();

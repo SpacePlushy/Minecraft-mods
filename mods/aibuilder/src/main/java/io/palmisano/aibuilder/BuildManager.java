@@ -16,6 +16,7 @@ import java.util.UUID;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.survey.SurveyEncoder;
 import io.palmisano.aibuilder.core.agent.AiBackend;
+import io.palmisano.aibuilder.core.agent.BuildEvents;
 import io.palmisano.aibuilder.core.agent.BuildHandle;
 import io.palmisano.aibuilder.core.agent.BuildOutcome;
 import io.palmisano.aibuilder.core.agent.BuildRequest;
@@ -357,7 +358,7 @@ public final class BuildManager {
 			});
 			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, allowed, request.size(),
 					request.size().maxChangedBlocks(), sink, budget, world);
-			handle = backend.start(request, tools);
+			handle = backend.start(request, tools, BuildEvents.NONE);
 			handle.outcome().thenAccept(outcome -> server.execute(() -> backendEnded(outcome)));
 		}
 
@@ -377,7 +378,7 @@ public final class BuildManager {
 		/** Claude (here, the script) is done: whatever it left queued still goes in, then the job ends. */
 		private void backendEnded(BuildOutcome outcome) {
 			if (outcome == BuildOutcome.FAILED) {
-				failure = handle.failure();
+				failure = handle.reason();
 			}
 			job.finish();
 		}

@@ -7,6 +7,8 @@ classes/
 # Dev game folders created by runClient / gametests
 run/
 runs/
+# Log output of unit tests (Minecraft's log4j setup writes it to the working folder)
+logs/
 
 # IDEs
 .idea/

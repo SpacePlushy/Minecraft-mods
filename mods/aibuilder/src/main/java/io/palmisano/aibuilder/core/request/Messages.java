@@ -113,6 +113,38 @@ public final class Messages {
 		return "AI Builder only takes commands its owner types in chat.";
 	}
 
+	public static String startingClaude() {
+		return "Starting Claude…";
+	}
+
+	public static String surveyingTerrain() {
+		return "Surveying terrain…";
+	}
+
+	public static String claudeRetrying(int attempt) {
+		return "Claude is busy, retrying (attempt " + attempt + ")…";
+	}
+
+	public static String initRejected(String problem) {
+		return "Claude Code started with more than the build tools (" + problem + "), so the build was stopped.";
+	}
+
+	public static String claudeDidNotStart(long seconds) {
+		return "Claude Code didn't start within " + seconds + " seconds.";
+	}
+
+	public static String couldNotStartClaude(String why) {
+		return "Couldn't start Claude Code: " + why;
+	}
+
+	public static String claudeStopped(String why) {
+		return "Claude Code stopped: " + why;
+	}
+
+	public static String claudeExited(int code, String lastLine) {
+		return "Claude Code exited (code " + code + ")" + (lastLine.isBlank() ? "." : ": " + lastLine);
+	}
+
 	public static String notInstalled() {
 		return "AI Builder needs Claude Code: install it, or set claude_path in config/aibuilder.json.";
 	}

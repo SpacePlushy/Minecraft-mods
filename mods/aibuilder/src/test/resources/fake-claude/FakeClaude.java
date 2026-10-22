@@ -1,0 +1,213 @@
+// A fake `claude` for AI Builder's tests, run as `java FakeClaude.java <args>` (JDK only). It answers
+// `auth status --json` and plays a `claude -p` run against the mod's MCP server, printing stream-json shaped like
+// Claude Code 2.1.306's (the M4 spike's recordings are in ../stream/). The scenario comes from FAKE_CLAUDE_SCENARIO.
+
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class FakeClaude {
+	static final PrintStream OUT = new PrintStream(new FileOutputStream(FileDescriptor.out), true, StandardCharsets.UTF_8);
+	static final HttpClient HTTP = HttpClient.newHttpClient();
+	static String url;
+	static String token;
+	static String session = UUID.randomUUID().toString();
+	static int nextId;
+	static int turns;
+	static volatile boolean done;
+
+	public static void main(String[] args) throws Exception {
+		List<String> a = List.of(args);
+		if (a.size() >= 2 && a.get(0).equals("auth") && a.get(1).equals("status")) {
+			auth();
+			return;
+		}
+		String given = after(a, "--session-id");
+		if (given != null) {
+			session = given;
+		}
+		String prompt = new String(System.in.readAllBytes(), StandardCharsets.UTF_8);
+		String scenario = System.getenv().getOrDefault("FAKE_CLAUDE_SCENARIO", "build");
+		// Ended by a signal (a cancel, a cap): finish the turn the way Claude Code does on SIGINT.
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+			if (!done) {
+				done = true;
+				OUT.println("{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"num_turns\":" + turns
+						+ ",\"terminal_reason\":\"aborted_tools\",\"session_id\":\"" + session + "\"}");
+				OUT.flush();
+				Runtime.getRuntime().halt(0);
+			}
+		}));
+		if (scenario.equals("no_init")) {
+			Thread.sleep(60_000);
+			return;
+		}
+		String config = Files.readString(Path.of(after(a, "--mcp-config")));
+		url = group(config, "\"url\"\\s*:\\s*\"([^\"]+)\"");
+		token = group(config, "Bearer ([0-9a-f]+)");
+		List<String> tools = connect();
+		String apiKeySource = scenario.equals("api_key") ? "ANTHROPIC_API_KEY" : "none";
+		if (scenario.equals("extra_tool")) {
+			tools.add("Bash");
+		}
+		String plugins = "{\"name\":\"cc-plugin-telemetry\",\"path\":\"builtin\",\"source\":\"cc-plugin-telemetry@builtin\"}"
+				+ (scenario.equals("plugin") ? ",{\"name\":\"helper\",\"path\":\"/home/someone/.claude/plugins/helper\",\"source\":\"helper@market\"}" : "");
+		OUT.println("{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"/tmp/aibuilder/work\",\"session_id\":\"" + session + "\",\"tools\":["
+				+ String.join(",", tools.stream().map(t -> quote(t)).toList()) + "],\"mcp_servers\":[{\"name\":\"aibuilder\",\"status\":\"connected\","
+				+ "\"source\":\"dynamic\"}],\"model\":\"claude-opus-5-5\",\"permissionMode\":\"dontAsk\",\"slash_commands\":[],\"apiKeySource\":\""
+				+ apiKeySource + "\",\"claude_code_version\":\"0.0.0-fake\",\"skills\":[],\"plugins\":[" + plugins + "],\"some_future_field\":{\"x\":1}}");
+		switch (scenario) {
+			case "build" -> {
+				rateLimit("allowed", false);
+				call("get_context", "{}");
+				call("submit_brief", "{\"title\":\"Test hut\",\"style\":\"plain\",\"size\":{\"w\":3,\"h\":3,\"d\":3},"
+						+ "\"palette\":[{\"role\":\"primary\",\"block\":\"oak_planks\"}],\"phases\":[\"walls\"]}");
+				call("fill", "{\"box\":[-1,0,1,1,2,3],\"block\":\"oak_planks\",\"mode\":\"hollow\"}");
+				call("checkpoint", "{\"phase\":\"walls\"}");
+				call("finish", "{\"summary\":\"A tiny oak hut.\"}");
+				result(false, "success", "Built a tiny oak hut.", "completed", 0);
+			}
+			case "echo" -> result(false, "success", prompt, "completed", 0);
+			case "extra_tool", "api_key", "plugin" -> {
+				call("get_context", "{}");
+				Thread.sleep(30_000);
+				result(false, "success", "done", "completed", 0);
+			}
+			case "usage_limit", "overage" -> {
+				rateLimit(scenario.equals("usage_limit") ? "rejected" : "allowed", scenario.equals("overage"));
+				Thread.sleep(30_000);
+				result(false, "success", "done", "completed", 0);
+			}
+			case "hang" -> Thread.sleep(60_000);
+			case "spam" -> {
+				for (int i = 0; i < 400; i++) {
+					call("get_context", "{}");
+				}
+				result(false, "success", "done", "completed", 0);
+			}
+			case "crash" -> {
+				done = true;
+				System.err.println("boom: the fake crashed");
+				System.exit(3);
+			}
+			case "logged_out" -> {
+				OUT.println("{\"type\":\"assistant\",\"message\":{\"id\":\"" + UUID.randomUUID() + "\",\"model\":\"<synthetic>\",\"role\":\"assistant\","
+						+ "\"content\":[{\"type\":\"text\",\"text\":\"Not logged in · Please run /login\"}]},\"error\":\"authentication_failed\","
+						+ "\"session_id\":\"" + session + "\"}");
+				result(true, "success", "Not logged in · Please run /login", "api_error", 1);
+			}
+			default -> {
+				System.err.println("unknown scenario " + scenario);
+				done = true;
+				System.exit(2);
+			}
+		}
+	}
+
+	static void auth() {
+		done = true;
+		if ("1".equals(System.getenv("FAKE_CLAUDE_LOGGED_OUT"))) {
+			OUT.println("{\n  \"loggedIn\": false,\n  \"authMethod\": \"none\",\n  \"apiProvider\": \"firstParty\"\n}");
+			System.exit(1);
+		}
+		OUT.println("{\n  \"loggedIn\": true,\n  \"authMethod\": \"claude.ai\",\n  \"apiProvider\": \"firstParty\",\n  \"subscriptionType\": \"max\"\n}");
+	}
+
+	/** What Claude Code does before printing init: probe, initialize, list the tools. */
+	static List<String> connect() throws Exception {
+		post("{\"jsonrpc\":\"2.0\",\"id\":\"server-discover-probe-1\",\"method\":\"server/discover\",\"params\":{}}");
+		post("{\"jsonrpc\":\"2.0\",\"id\":" + nextId++ + ",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\","
+				+ "\"capabilities\":{},\"clientInfo\":{\"name\":\"fake-claude\",\"version\":\"0.0.0\"}}}");
+		post("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+		String listed = post("{\"jsonrpc\":\"2.0\",\"id\":" + nextId++ + ",\"method\":\"tools/list\"}");
+		List<String> tools = new ArrayList<>();
+		Matcher m = Pattern.compile("\\{\"name\":\"([a-z_]+)\",\"description\"").matcher(listed);
+		while (m.find()) {
+			tools.add("mcp__aibuilder__" + m.group(1));
+		}
+		return tools;
+	}
+
+	/** One model turn that calls one tool: the assistant line, the call over HTTP, the tool result line. */
+	static void call(String tool, String arguments) throws Exception {
+		turns++;
+		String useId = "toolu_" + UUID.randomUUID().toString().replace("-", "");
+		OUT.println("{\"type\":\"assistant\",\"message\":{\"id\":\"msg_" + UUID.randomUUID() + "\",\"model\":\"claude-opus-5-5\",\"role\":\"assistant\","
+				+ "\"content\":[{\"type\":\"tool_use\",\"id\":\"" + useId + "\",\"name\":\"mcp__aibuilder__" + tool + "\",\"input\":" + arguments + "}],"
+				+ "\"usage\":{\"input_tokens\":2,\"output_tokens\":1}},\"session_id\":\"" + session + "\"}");
+		OUT.println("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":100}},"
+				+ "\"session_id\":\"" + session + "\"}");
+		String reply = post("{\"jsonrpc\":\"2.0\",\"id\":" + nextId++ + ",\"method\":\"tools/call\",\"params\":{\"name\":\"" + tool + "\",\"arguments\":"
+				+ arguments + ",\"_meta\":{\"claudecode/toolUseId\":\"" + useId + "\"}}}");
+		String text = reply == null ? "unauthorized" : group(reply, "\"text\":\"((?:[^\"\\\\]|\\\\.)*)\"");
+		OUT.println("{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"tool_use_id\":\"" + useId + "\",\"type\":\"tool_result\",\"content\":"
+				+ "[{\"type\":\"text\",\"text\":\"" + (text == null ? "" : text) + "\"}]}]},\"session_id\":\"" + session + "\"}");
+	}
+
+	static void rateLimit(String status, boolean overage) {
+		OUT.println("{\"type\":\"rate_limit_event\",\"rate_limit_info\":{\"status\":\"" + status + "\",\"resetsAt\":"
+				+ Instant.now().plusSeconds(3600).getEpochSecond() + ",\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\","
+				+ "\"isUsingOverage\":" + overage + "},\"session_id\":\"" + session + "\"}");
+	}
+
+	static void result(boolean isError, String subtype, String text, String reason, int exitCode) {
+		done = true;
+		OUT.println("{\"type\":\"result\",\"subtype\":\"" + subtype + "\",\"is_error\":" + isError + ",\"num_turns\":" + Math.max(1, turns)
+				+ ",\"result\":" + quote(text) + ",\"terminal_reason\":\"" + reason + "\",\"session_id\":\"" + session + "\",\"total_cost_usd\":0}");
+		OUT.flush();
+		System.exit(exitCode);
+	}
+
+	/** The reply's body, or null when refused (401). */
+	static String post(String body) throws Exception {
+		HttpRequest request = HttpRequest.newBuilder(URI.create(url)).header("Content-Type", "application/json")
+				.header("Accept", "application/json, text/event-stream").header("Authorization", "Bearer " + token)
+				.POST(HttpRequest.BodyPublishers.ofString(body)).build();
+		HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
+		return response.statusCode() == 401 ? null : response.body();
+	}
+
+	static String after(List<String> args, String flag) {
+		int i = args.indexOf(flag);
+		return i >= 0 && i + 1 < args.size() ? args.get(i + 1) : null;
+	}
+
+	static String group(String text, String regex) {
+		Matcher m = Pattern.compile(regex).matcher(text);
+		return m.find() ? m.group(1) : null;
+	}
+
+	static String quote(String s) {
+		StringBuilder b = new StringBuilder("\"");
+		for (char c : s.toCharArray()) {
+			switch (c) {
+				case '"' -> b.append("\\\"");
+				case '\\' -> b.append("\\\\");
+				case '\n' -> b.append("\\n");
+				case '\r' -> b.append("\\r");
+				case '\t' -> b.append("\\t");
+				default -> {
+					if (c < 0x20) {
+						b.append(String.format("\\u%04x", (int) c));
+					} else {
+						b.append(c);
+					}
+				}
+			}
+		}
+		return b.append('"').toString();
+	}
+}

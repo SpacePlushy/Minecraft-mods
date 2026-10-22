@@ -26,6 +26,11 @@ public final class McpSessions {
 		sessions.remove(token);
 	}
 
+	/** Live sessions. */
+	public int size() {
+		return sessions.size();
+	}
+
 	public Optional<McpSession> find(String token) {
 		return token == null ? Optional.empty() : Optional.ofNullable(sessions.get(token));
 	}
