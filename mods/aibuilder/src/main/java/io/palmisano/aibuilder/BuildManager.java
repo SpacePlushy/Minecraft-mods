@@ -1,5 +1,6 @@
 package io.palmisano.aibuilder;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -42,6 +43,7 @@ import io.palmisano.aibuilder.core.agent.BuildLog;
 import io.palmisano.aibuilder.core.agent.BuildOutcome;
 import io.palmisano.aibuilder.core.agent.BuildRequest;
 import io.palmisano.aibuilder.core.agent.ClaudeLaunch;
+import io.palmisano.aibuilder.core.agent.ClaudeLocator;
 import io.palmisano.aibuilder.core.agent.ClaudeSettings;
 import io.palmisano.aibuilder.core.agent.McpHandler;
 import io.palmisano.aibuilder.core.agent.McpSessions;
@@ -145,6 +147,10 @@ public final class BuildManager {
 	 * build without a restart. Written with the defaults on the first run. Server thread.
 	 */
 	public AiBuilderConfig config() {
+		AiBuilderConfig override = TestHooks.config;
+		if (override != null) {
+			return override;
+		}
 		Path dir = FabricLoader.getInstance().getConfigDir();
 		FileTime time = modified(dir.resolve(ConfigFile.NAME));
 		if (config == null || time == null || !time.equals(configTime)) {
@@ -216,7 +222,7 @@ public final class BuildManager {
 
 	/** What a player who asks while {@link #busy()} is told. */
 	private String busyLine() {
-		return undo != null ? Messages.undoing() : build != null || starting != null ? Messages.busy() : Messages.stillStopping();
+		return undo != null ? Messages.undoing() : Messages.busy();
 	}
 
 	/**
@@ -316,7 +322,7 @@ public final class BuildManager {
 		// the last build's process is still ending (right after "Done:", or in a cancel's grace) starts once it has.
 		CompletableFuture<?> previous = lastBackend;
 		CompletableFuture.supplyAsync(() -> ended(previous) ? check(override, environment, cfg.claudePath())
-				: new Checked(List.of(), Messages.stillStopping()), CHECKS).whenComplete((checked, error) -> server.execute(() -> {
+				: new Checked(List.of(), environment, Messages.stillStopping()), CHECKS).whenComplete((checked, error) -> server.execute(() -> {
 			if (starting != start) {
 				return;
 			}
@@ -338,7 +344,7 @@ public final class BuildManager {
 				Scrub scrub = new Scrub();
 				LogWriter writer = new LogWriter(logs.resolve(name + ".jsonl"));
 				Logging logging = new Logging(new BuildLog(writer, scrub, System::currentTimeMillis), writer, scrub);
-				build = new Build(owner, level, frame, allowed, claudeBackend(checked.command(), environment, cfg, logs.resolve(name + ".stream.jsonl"),
+				build = new Build(owner, level, frame, allowed, claudeBackend(checked.command(), checked.environment(), cfg, logs.resolve(name + ".stream.jsonl"),
 						scrub), request, cfg.placementRate(), budget(cfg), cfg, refines.orElse(null), prompt, logging);
 			} catch (IOException e) {
 				tell(start.owner, Component.literal(Messages.failed("the mod's tool server couldn't start: " + e.getMessage())));
@@ -362,17 +368,22 @@ public final class BuildManager {
 	private static Checked check(List<String> override, Map<String, String> environment, String path) {
 		List<String> command = override;
 		if (command == null) {
+			ClaudeLocator.configuredProblem(path, Files::isExecutable).ifPresent(AiBuilderMod.LOG::warn);
 			Optional<List<String>> found = ClaudeChecks.command(path.isEmpty() ? null : path, System.getenv(), Path.of(System.getProperty("user.home")),
 					Files::isExecutable);
 			if (found.isEmpty()) {
-				return new Checked(List.of(), Messages.notInstalled());
+				return new Checked(List.of(), environment, Messages.notInstalled());
 			}
 			command = found.get();
 		}
-		return new Checked(command, ClaudeChecks.login(command, environment).orElse(""));
+		// An npm install's claude starts with `env node`, and node sits beside it: a game started from the launcher
+		// has a short PATH without that folder (M4 review).
+		Map<String, String> launch = ClaudeLaunch.binaryFirst(environment, Path.of(command.getFirst()), File.pathSeparator);
+		return new Checked(command, launch, ClaudeChecks.login(command, launch).orElse(""));
 	}
 
-	private record Checked(List<String> command, String problem) {
+	/** The command that runs Claude Code, the environment it runs with, and what's wrong ("" when nothing). */
+	private record Checked(List<String> command, Map<String, String> environment, String problem) {
 	}
 
 	/** A Claude build's log (spec §16): the lines, the file they go to, and the scrubber the backend tells its token. */
@@ -478,6 +489,10 @@ public final class BuildManager {
 			return Outcome.REFUSED;
 		}
 		if (starting != null) {
+			if (!starting.owner.equals(player.getUUID())) {
+				reply(player, Messages.notYourBuild(name(starting.owner)));
+				return Outcome.REFUSED;
+			}
 			// Still checking Claude Code: nothing has started, so nothing is left to undo.
 			starting.cancelled = true;
 			starting = null;
@@ -488,8 +503,19 @@ public final class BuildManager {
 			reply(player, Messages.nothingToCancel());
 			return Outcome.NOTHING;
 		}
+		if (!build.owner.equals(player.getUUID())) {
+			// Where several players may build (a server's allowed_players), a build is its owner's to stop.
+			reply(player, Messages.notYourBuild(name(build.owner)));
+			return Outcome.REFUSED;
+		}
 		build.cancel();
 		return Outcome.DONE;
+	}
+
+	/** The player's name while they're online; "" otherwise. */
+	private String name(UUID player) {
+		ServerPlayer online = server.getPlayerList().getPlayer(player);
+		return online == null ? "" : online.getName().getString();
 	}
 
 	/** {@code /aibuild undo}: take back the player's newest build. */
@@ -585,7 +611,10 @@ public final class BuildManager {
 	}
 
 	/** {@code /aibuild status}. */
-	public void status(ServerPlayer player) {
+	public Outcome status(ServerPlayer player) {
+		if (!mayBuild(player)) {
+			return Outcome.REFUSED;
+		}
 		if (build != null) {
 			reply(player, Messages.status(build.sink.phase(), build.job.placed(), build.budget.used(), build.budget.max()));
 		} else if (starting != null) {
@@ -593,6 +622,7 @@ public final class BuildManager {
 		} else {
 			reply(player, undo != null ? Messages.undoing() : Messages.nothingBuilding());
 		}
+		return Outcome.DONE;
 	}
 
 	private void tick() {
@@ -754,6 +784,10 @@ public final class BuildManager {
 			});
 			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Set.copyOf(cfg.bannedBlocks())), frame, allowed, request.size(),
 					cap, sink, budget, world);
+			tools.siteGap(cfg.siteGap());
+			if (refines != null) {
+				tools.refining(refines.title().isBlank() ? Messages.untitledBuild() : refines.title(), refines.changed());
+			}
 			if (logging != null) {
 				logging.log().request(playerPrompt, request.size().label(), refines != null, refines == null ? "" : refines.title(), cfg.model(),
 						cfg.effort(), request.session().toString());
@@ -785,7 +819,10 @@ public final class BuildManager {
 				}
 			});
 			handle.outcome().thenAccept(outcome -> server.execute(() -> backendEnded(outcome)));
-			lastBackend = handle.outcome();
+			if (claude) {
+				// The process itself, not its output (a child of it may hold that open); the demo has none to wait for.
+				lastBackend = handle.exited();
+			}
 		}
 
 		void cancel() {

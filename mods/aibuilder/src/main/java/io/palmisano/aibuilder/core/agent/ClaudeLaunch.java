@@ -60,6 +60,27 @@ public final class ClaudeLaunch {
 		return env;
 	}
 
+	/**
+	 * {@code env} with the folder {@code binary} is in first on the PATH (once, under the name the environment already
+	 * uses: Windows' {@code Path}): an npm install's claude starts with {@code env node}, and node sits beside it, but a
+	 * game started from the launcher gets a short PATH without that folder (M4 review).
+	 */
+	public static Map<String, String> binaryFirst(Map<String, String> env, Path binary, String separator) {
+		Path folder = binary.getParent();
+		if (folder == null) {
+			return env;
+		}
+		String key = env.keySet().stream().filter(name -> name.equalsIgnoreCase("PATH")).findFirst().orElse("PATH");
+		String path = env.getOrDefault(key, "");
+		String dir = folder.toString();
+		if (path.equals(dir) || path.startsWith(dir + separator)) {
+			return env;
+		}
+		Map<String, String> out = new LinkedHashMap<>(env);
+		out.put(key, path.isEmpty() ? dir : dir + separator + path);
+		return out;
+	}
+
 	/** {@code mcp.json}: our one server, over HTTP on loopback, with this build's token. */
 	public static String mcpConfig(int port, String token) {
 		JsonObject headers = new JsonObject();

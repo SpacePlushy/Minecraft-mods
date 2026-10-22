@@ -7,6 +7,7 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.palmisano.aibuilder.BuildManager;
 import io.palmisano.aibuilder.BuildPermission;
+import io.palmisano.aibuilder.TestHooks;
 import io.palmisano.aibuilder.core.config.AiBuilderConfig;
 import io.palmisano.aibuilder.core.request.BuildRules;
 import io.palmisano.aibuilder.core.request.SizeTier;
@@ -36,6 +37,39 @@ public class PermissionGameTest {
 		// The other gametests' jobs share the scheduler, so ask the manager rather than count jobs.
 		helper.assertFalse(manager.busy(), "something started for a non-owner");
 		helper.succeed();
+	}
+
+	/** Someone who may not build doesn't see what a build is doing either (M6 review). */
+	@SuppressWarnings("removal")
+	@GameTest
+	public void strangersDontSeeTheStatus(GameTestHelper helper) {
+		ServerPlayer player = helper.makeMockServerPlayerInLevel();
+		helper.assertValueEqual(BuildManager.of(helper.getLevel().getServer()).status(player), BuildManager.Outcome.REFUSED, "/aibuild status");
+		helper.succeed();
+	}
+
+	/**
+	 * On a server where two players may build, a build is its owner's to stop: the other is told whose it is, and it
+	 * goes on (M6 review). In a test environment of its own, so its build never overlaps the other tests here, which
+	 * ask the same manager whether anything is running.
+	 */
+	@SuppressWarnings("removal")
+	@GameTest(environment = "aibuilder-test:alone", maxTicks = 400)
+	public void onlyTheBuildsOwnerCancelsIt(GameTestHelper helper) {
+		ServerPlayer owner = helper.makeMockServerPlayerInLevel();
+		ServerPlayer other = helper.makeMockServerPlayerInLevel();
+		BuildManager manager = BuildManager.of(helper.getLevel().getServer());
+		TestHooks.config = AiBuilderConfig.load("{\"allowed_players\": [\"" + owner.getUUID() + "\", \"" + other.getUUID() + "\"],"
+				+ " \"require_op\": false}").config();
+		try {
+			helper.assertValueEqual(manager.startTest(owner), BuildManager.Outcome.STARTED, "the owner's demo build");
+			helper.assertValueEqual(manager.cancel(other), BuildManager.Outcome.REFUSED, "someone else's cancel");
+			helper.assertTrue(manager.busy(), "someone else's cancel stopped the build");
+			helper.assertValueEqual(manager.cancel(owner), BuildManager.Outcome.DONE, "the owner's cancel");
+		} finally {
+			TestHooks.config = null;
+		}
+		helper.succeedWhen(() -> helper.assertFalse(manager.busy(), "the owner's cancel didn't stop the build"));
 	}
 
 	/**

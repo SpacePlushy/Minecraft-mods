@@ -45,6 +45,19 @@ public final class ClaudeLocator {
 		return candidates.stream().filter(executable).findFirst();
 	}
 
+	/** Why {@code configured} (the config's claude_path) won't do, for the log; empty when it's blank or runs. */
+	public static Optional<String> configuredProblem(String configured, Predicate<Path> executable) {
+		if (configured == null || configured.isBlank()) {
+			return Optional.empty();
+		}
+		Optional<Path> path = path(configured.strip());
+		if (path.isPresent() && executable.test(path.get())) {
+			return Optional.empty();
+		}
+		return Optional.of("claude_path \"" + configured.strip() + "\" in config/aibuilder.json isn't a program that runs (it isn't there, or"
+				+ " isn't executable); looking in the usual places instead");
+	}
+
 	/** Environment names are case-insensitive on Windows ({@code Path}). */
 	private static String variable(Map<String, String> env, String name) {
 		return env.entrySet().stream().filter(e -> e.getKey().equalsIgnoreCase(name)).map(Map.Entry::getValue).findFirst().orElse("");

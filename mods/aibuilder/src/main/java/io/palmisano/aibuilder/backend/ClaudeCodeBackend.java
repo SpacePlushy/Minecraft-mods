@@ -129,6 +129,8 @@ public final class ClaudeCodeBackend implements AiBackend {
 		private final Budget budget;
 		private final BuildEvents events;
 		private final CompletableFuture<BuildOutcome> outcome = new CompletableFuture<>();
+		/** The process itself has ended (or never started). */
+		private final CompletableFuture<Void> exited = new CompletableFuture<>();
 		/** True once the start check passes; false if it fails or the run stops first. */
 		private final CompletableFuture<Boolean> ready = new CompletableFuture<>();
 		private final AtomicReference<Stop> stop = new AtomicReference<>();
@@ -182,7 +184,9 @@ public final class ClaudeCodeBackend implements AiBackend {
 				builder.environment().clear();
 				builder.environment().putAll(config.environment());
 				process = builder.start();
+				process.onExit().whenComplete((ended, error) -> exited.complete(null));
 			} catch (IOException | RuntimeException e) {
+				exited.complete(null);
 				LOG.warn("Couldn't start Claude Code", e);
 				stop.compareAndSet(null, new Stop(BuildOutcome.FAILED, Messages.couldNotStartClaude(String.valueOf(e.getMessage()))));
 				finish(-1);
@@ -209,6 +213,11 @@ public final class ClaudeCodeBackend implements AiBackend {
 		@Override
 		public CompletableFuture<BuildOutcome> outcome() {
 			return outcome;
+		}
+
+		@Override
+		public CompletableFuture<?> exited() {
+			return exited;
 		}
 
 		@Override

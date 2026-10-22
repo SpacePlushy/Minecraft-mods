@@ -73,6 +73,10 @@ public final class ToolExecutor {
 	private ProtectionMask protection;
 	private FireRule fire;
 	private boolean briefed;
+	private int siteGap = Tunables.SITE_GAP;
+	/** The build a refinement changes, and its changes so far; "" and null for a new build. */
+	private String refining = "";
+	private Box changes;
 	private volatile boolean finished;
 	private volatile CallListener listener = (name, args, result, millis) -> {
 	};
@@ -107,6 +111,17 @@ public final class ToolExecutor {
 	/** The build's caps; the Claude Code backend adds output tokens to it as they stream in. */
 	public Budget budget() {
 		return budget;
+	}
+
+	/** How far in front of the player a new build's origin is (the config's site_gap), for get_context. */
+	public synchronized void siteGap(int gap) {
+		siteGap = gap;
+	}
+
+	/** A refinement (spec §8): get_context names the build and the box its changes fill so far. */
+	public synchronized void refining(String title, Box changes) {
+		refining = title;
+		this.changes = changes;
 	}
 
 	public void listen(CallListener listener) {
@@ -196,16 +211,22 @@ public final class ToolExecutor {
 	private ToolResult context() {
 		WorldFacts facts = world.facts();
 		int left = Math.max(0, budget.max() - budget.used());
-		return ToolResult.ok(String.join("\n",
-				"Frame: you build in a local frame. +x is the player's right, +z is forward (away from the player), +y is up; y=0 is the ground at"
-						+ " the origin, " + Tunables.SITE_GAP + " blocks in front of the player. Block states take forward, back, left, right, up and"
-						+ " down for directions, never compass names.",
-				"Size: " + tier.label() + " (" + tier.size() + " blocks): the allowed box is " + describe(allowed) + "; at most "
-						+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks.",
+		List<String> lines = new ArrayList<>();
+		lines.add("Frame: you build in a local frame. +x is the player's right, +z is forward (away from the player), +y is up; y=0 is the ground"
+				+ " at the origin, " + (refining.isEmpty() ? siteGap + " blocks in front of the player." : "where this build began.")
+				+ " Block states take forward, back, left, right, up and down for directions, never compass names.");
+		lines.add("Size: " + tier.label() + " (" + tier.size() + " blocks): the allowed box is " + describe(allowed) + "; at most "
+				+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks.");
+		if (!refining.isEmpty()) {
+			lines.add("Refining: " + refining + ", the build this session made: its blocks fill " + describe(changes) + "; the allowed box"
+					+ " reaches past them, and they're yours to change.");
+		}
+		lines.addAll(List.of(
 				"World: " + facts.dimension() + ", biome " + facts.biome() + ", " + facts.time() + ", " + facts.weather()
 						+ "; the ground block at the origin is " + facts.groundBlock() + ".",
 				whereThePlayerIs(facts),
 				"Budget: " + left + " of " + budget.max() + " tool calls left."));
+		return ToolResult.ok(String.join("\n", lines));
 	}
 
 	/** Centred on the allowed box's footprint; the default radius covers it with 8 blocks to spare, as the site does. */

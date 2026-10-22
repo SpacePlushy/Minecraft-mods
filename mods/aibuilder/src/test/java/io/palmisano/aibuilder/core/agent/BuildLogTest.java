@@ -139,6 +139,14 @@ class BuildLogTest {
 		assertTrue(result.endsWith("…"));
 	}
 
+	/** A prompt that opens with a key (pasted by mistake) names the file without it. */
+	@Test
+	void aKeyNeverNamesTheFile() {
+		String name = BuildLog.baseName(LocalDateTime.of(2026, 10, 22, 7, 58, 1), "Frankie", "sk-ant-api03-abcdefghijklmnop a stone castle");
+		assertFalse(name.contains("abcdefgh"), name);
+		assertEquals("2026-10-22_07-58-01_Frankie_redacted-a-stone-castle", name);
+	}
+
 	@Test
 	void fileNamesAreSafe() {
 		LocalDateTime time = LocalDateTime.of(2026, 10, 22, 7, 58, 1);

@@ -149,8 +149,9 @@ public final class BuildLog {
 	}
 
 	/** The log's name without its extension: when, who, and the prompt's first words. */
+	/** When, who and what; the prompt scrubbed first, so a key pasted into it never names a file. */
 	public static String baseName(LocalDateTime time, String player, String prompt) {
-		return time.format(FILE_TIME) + "_" + player.replaceAll("[^A-Za-z0-9_]", "_") + "_" + slug(prompt);
+		return time.format(FILE_TIME) + "_" + player.replaceAll("[^A-Za-z0-9_]", "_") + "_" + slug(new Scrub().apply(prompt));
 	}
 
 	/** The prompt's words in lowercase ASCII joined by dashes, at most 40 characters; "build" when nothing is left. */

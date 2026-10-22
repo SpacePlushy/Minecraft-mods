@@ -71,8 +71,9 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   mod places with the pokes off and tidies the shapes once at the end.
 - **Networking (payloads).** Client and server talk only in packets. The mod adds two small ones: your prompt
   (client to server) and the status (server to client, M5).
-- **Mixins.** Patches that change the game's own code as it loads. This design needs none so far, which keeps
-  the mod sturdy across game updates.
+- **Mixins.** Patches that change the game's own code as it loads. The mod has one, and only reads with it (who
+  sent a command, so a command block can't speak for the player); the tests have one more (vsync off, so they run
+  while the Mac is locked). Nothing changes how the game plays, which keeps the mod sturdy across game updates.
 - **Chunk tickets.** How the server decides which 16×16 chunks stay loaded. The mod holds a temporary one over
   the site while it builds.
 - **GameTests.** Automated tests that run inside a real game world, headless or with a window.

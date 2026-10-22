@@ -110,4 +110,13 @@ class MessagesTest {
 		assertEquals("Building Test hut: walls · 26 blocks placed", Messages.screenStatus("Test hut", "walls", 26));
 		assertEquals("Building · 1,234 blocks placed", Messages.screenStatus("", "", 1234));
 	}
+
+	/** A key pasted into a prompt by mistake never goes back out in the echo (chat, and the client's log). */
+	@Test
+	void aKeyInThePromptIsntEchoed() {
+		String prompt = "a castle sk-ant-api03-abcdefghijklmnop";
+		for (String line : List.of(Messages.accepted(prompt, SizeTier.AUTO), Messages.refining("Stonehold", prompt))) {
+			assertTrue(!line.contains("abcdefgh") && line.contains("a castle [redacted]"), line);
+		}
+	}
 }

@@ -17,7 +17,9 @@ milestone by milestone, is in [`PLAN.md`](PLAN.md).
 ## What you need
 
 - **Claude Code**, installed and logged in with your Claude subscription: in a terminal, run `claude` once and log
-  in. AI Builder finds it in the usual places (`~/.local/bin/claude` and the like) and never sees your login.
+  in. AI Builder finds it in the usual places (`~/.local/bin/claude` and the like) and never sees your login. A token
+  from `claude setup-token` in the `CLAUDE_CODE_OAUTH_TOKEN` variable doesn't count: AI Builder passes none of the
+  game's Claude variables on to Claude Code, so log in with `claude` itself.
 - Builds count against your plan's usage limits: at the plan's limit a build stops. AI Builder never builds on paid
   extra usage: it stops at the first sign of it, and if your account allows extra usage it stops already when the
   plan is about 95% used. Claude Code reports extra usage only after the step that used it, so for a hard guarantee
@@ -45,7 +47,7 @@ milestone by milestone, is in [`PLAN.md`](PLAN.md).
 | `/aibuild new <prompt>` | A new build, even next to your last one |
 | `/aibuild test` | Builds the demo house 3 blocks in front of you, facing the way you face, slowly enough to watch (about 10 seconds). The action bar shows the phase and the block count; chat says `Done: …` with a clickable **[Undo]** |
 | `/aibuild undo` | Takes back your newest build (repeat for older ones: the last 5, or as many as `undo_history_size` says), even after the game crashed or restarted. Anything you changed since, like a chest you filled, stays |
-| `/aibuild cancel` | Stops the build at once (Claude too); what's placed stays and can be undone |
+| `/aibuild cancel` | Stops your build at once (Claude too); what's placed stays and can be undone. On a server, only the player whose build it is can stop it |
 | `/aibuild status` | The phase, blocks placed and tool calls used so far |
 | `/aibuild survey` | Reads the spot in front of you the way a build does and shows what Claude will "see": heights, water, trees and any player-made blocks, with the full text saved in `aibuilder/surveys/` |
 
@@ -83,9 +85,10 @@ AI Builder runs on the Claude Code login of whoever runs the game, and Anthropic
 as one person's own use, so builds are for that person:
 
 - **Singleplayer** (opened to LAN too): only the world's owner. A friend on your LAN is told no.
-- **A dedicated server:** only the players named in `allowed_players` (names or UUIDs), and while `require_op` is
+- **A dedicated server:** only the players named in `allowed_players` (UUIDs, or names), and while `require_op` is
   on (the default) only with operator level `op_level` (2). Claude Code must be installed and logged in on the
-  server itself. List only yourself.
+  server itself. List only yourself, by UUID: a name can change hands, and an offline-mode server lets anyone take
+  one. `/aibuild status` and `/aibuild cancel` are for the same players, and a build is stopped only by its owner.
 - At most `rate_limit_per_hour` (20) builds an hour per player, as a guard against a runaway loop of prompts (0: no
   limit).
 

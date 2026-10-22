@@ -63,6 +63,27 @@ class ReadToolsTest {
 		assertTrue(text.contains("149 of 150 tool calls left"), text);
 	}
 
+	/** On a refinement get_context names the build and where its changes are so far (spec §8). */
+	@Test
+	void aRefinementsContextNamesItsBuild() {
+		ToolExecutor tools = tools();
+		tools.refining("Stonehold Castle", Box.of(-5, 0, 2, 5, 12, 14));
+		String text = tools.call("get_context", json("{}")).text();
+		assertTrue(text.contains("\nRefining: Stonehold Castle, the build this session made: its blocks fill x -5..5, y 0..12, z 2..14;"), text);
+		assertTrue(text.contains("y=0 is the ground at the origin, where this build began."), text);
+		assertFalse(text.contains("in front of the player"), text);
+	}
+
+	/** The origin is site_gap ahead of the player, as the config sets it. */
+	@Test
+	void theSiteGapIsTheConfigs() {
+		ToolExecutor tools = tools();
+		tools.siteGap(7);
+		String text = tools.call("get_context", json("{}")).text();
+		assertTrue(text.contains("y=0 is the ground at the origin, 7 blocks in front of the player."), text);
+		assertFalse(text.contains("Refining"), text);
+	}
+
 	/** The default radius is half the tier's size plus 8, centred on the box's footprint. */
 	@Test
 	void surveyUsesTheSnapshot() {

@@ -191,6 +191,11 @@ public class FakeClaude {
 				result(false, "success", "done", "completed", 0);
 			}
 			case "hang" -> Thread.sleep(60_000);
+			case "orphan" -> {
+				// A child that keeps the output open after this process has gone (a helper Claude Code left running).
+				new ProcessBuilder("sleep", "4").redirectOutput(ProcessBuilder.Redirect.INHERIT).start();
+				result(false, "success", "done", "completed", 0);
+			}
 			case "spam" -> {
 				for (int i = 0; i < 400; i++) {
 					call("get_context", "{}");

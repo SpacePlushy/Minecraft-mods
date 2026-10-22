@@ -121,7 +121,8 @@ public record AiBuilderConfig(String backend, String model, String effort, Strin
 		o.addProperty("max_tokens_per_build", maxTokensPerBuild);
 		o.addProperty("max_build_minutes", maxBuildMinutes);
 		o.addProperty("_comment_allowed_players", "Dedicated servers only: who may build. Builds run on the Claude Code login of whoever runs "
-				+ "the server, and Anthropic's terms describe a Pro or Max plan as one person's own use, so list only yourself.");
+				+ "the server, and Anthropic's terms describe a Pro or Max plan as one person's own use, so list only yourself, by UUID (a name "
+				+ "can change hands, and an offline-mode server lets anyone take one).");
 		o.add("allowed_players", strings(allowedPlayers));
 		o.addProperty("require_op", requireOp);
 		o.addProperty("op_level", opLevel);
