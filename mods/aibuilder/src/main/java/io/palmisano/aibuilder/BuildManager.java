@@ -615,6 +615,12 @@ public final class BuildManager {
 		if (!mayBuild(player)) {
 			return Outcome.REFUSED;
 		}
+		// Where several players may build, a build is its owner's to follow, as it's theirs to stop.
+		UUID running = build != null ? build.owner : starting != null ? starting.owner : null;
+		if (running != null && !running.equals(player.getUUID())) {
+			reply(player, Messages.notYourBuild(name(running)));
+			return Outcome.REFUSED;
+		}
 		if (build != null) {
 			reply(player, Messages.status(build.sink.phase(), build.job.placed(), build.budget.used(), build.budget.max()));
 		} else if (starting != null) {

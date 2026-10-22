@@ -88,7 +88,7 @@ as one person's own use, so builds are for that person:
 - **A dedicated server:** only the players named in `allowed_players` (UUIDs, or names), and while `require_op` is
   on (the default) only with operator level `op_level` (2). Claude Code must be installed and logged in on the
   server itself. List only yourself, by UUID: a name can change hands, and an offline-mode server lets anyone take
-  one. `/aibuild status` and `/aibuild cancel` are for the same players, and a build is stopped only by its owner.
+  one. A build is its owner's: only they see its `/aibuild status` and stop it.
 - At most `rate_limit_per_hour` (20) builds an hour per player, as a guard against a runaway loop of prompts (0: no
   limit).
 

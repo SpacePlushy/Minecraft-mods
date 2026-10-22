@@ -20,6 +20,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContex
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.NarratorStatus;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.MultiLineEditBox;
@@ -38,12 +39,13 @@ public class BuilderScreenClientGameTest implements FabricClientGameTest {
 		}
 		writeHistory("{oops"); // a corrupt history file must not stop the screen from opening
 		try (TestSingleplayerContext singleplayer = GameTestSupport.world(ctx)) {
-			// Ctrl+B (Cmd+B on macOS) is the narrator's shortcut, not the builder's.
-			ctx.getInput().holdControl();
+			// A held Ctrl (the sprint key, on a Mac not the narrator's) doesn't keep the builder shut (final review).
+			ctx.getInput().holdKey(InputConstants.KEY_LCONTROL);
 			ctx.getInput().pressKey(InputConstants.KEY_B);
-			ctx.getInput().releaseControl();
-			ctx.waitTicks(3);
-			check(ctx.computeOnClient(mc -> mc.gui.screen() == null), "Ctrl+B opened a screen");
+			ctx.getInput().releaseKey(InputConstants.KEY_LCONTROL);
+			ctx.waitForScreen(BuilderScreen.class);
+			ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
+			ctx.waitFor(mc -> mc.gui.screen() == null);
 
 			// B opens an empty screen.
 			ctx.getInput().pressKey(InputConstants.KEY_B);
@@ -155,6 +157,17 @@ public class BuilderScreenClientGameTest implements FabricClientGameTest {
 			ctx.waitFor(mc -> mc.gui.screen() != null && mc.gui.screen().width == guiWidth);
 			ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
 			ctx.waitFor(mc -> mc.gui.screen() == null);
+
+			// The press that toggles the narrator (Ctrl+B; Cmd+B on macOS) is the narrator's, not the builder's. The
+			// test's key events carry no modifiers, so vanilla never toggles it here: the test does, as that press would,
+			// then puts it back. Last, as the narrator's toast would show in a screenshot.
+			NarratorStatus narrator = ctx.computeOnClient(mc -> mc.options.narrator().get());
+			ctx.runOnClient(mc -> mc.options.narrator().set(NarratorStatus.byId(narrator.getId() + 1)));
+			ctx.getInput().pressKey(InputConstants.KEY_B);
+			ctx.waitTicks(3);
+			check(ctx.computeOnClient(mc -> mc.gui.screen() == null), "the narrator's shortcut opened the builder");
+			ctx.runOnClient(mc -> mc.options.narrator().set(narrator));
+			ctx.waitTick();
 		}
 	}
 

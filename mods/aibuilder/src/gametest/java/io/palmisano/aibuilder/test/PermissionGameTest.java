@@ -49,13 +49,13 @@ public class PermissionGameTest {
 	}
 
 	/**
-	 * On a server where two players may build, a build is its owner's to stop: the other is told whose it is, and it
-	 * goes on (M6 review). In a test environment of its own, so its build never overlaps the other tests here, which
-	 * ask the same manager whether anything is running.
+	 * On a server where two players may build, a build is its owner's to follow and to stop: the other is told whose it
+	 * is, and it goes on (M6 review; final review). In a test environment of its own, so its build never overlaps the
+	 * other tests here, which ask the same manager whether anything is running.
 	 */
 	@SuppressWarnings("removal")
 	@GameTest(environment = "aibuilder-test:alone", maxTicks = 400)
-	public void onlyTheBuildsOwnerCancelsIt(GameTestHelper helper) {
+	public void onlyTheBuildsOwnerStopsItOrSeesItsStatus(GameTestHelper helper) {
 		ServerPlayer owner = helper.makeMockServerPlayerInLevel();
 		ServerPlayer other = helper.makeMockServerPlayerInLevel();
 		BuildManager manager = BuildManager.of(helper.getLevel().getServer());
@@ -63,10 +63,16 @@ public class PermissionGameTest {
 				+ " \"require_op\": false}").config();
 		try {
 			helper.assertValueEqual(manager.startTest(owner), BuildManager.Outcome.STARTED, "the owner's demo build");
+			helper.assertValueEqual(manager.status(other), BuildManager.Outcome.REFUSED, "someone else's status");
+			helper.assertValueEqual(manager.status(owner), BuildManager.Outcome.DONE, "the owner's status");
 			helper.assertValueEqual(manager.cancel(other), BuildManager.Outcome.REFUSED, "someone else's cancel");
 			helper.assertTrue(manager.busy(), "someone else's cancel stopped the build");
 			helper.assertValueEqual(manager.cancel(owner), BuildManager.Outcome.DONE, "the owner's cancel");
 		} finally {
+			// A check above that fails mustn't leave the demo running into the next batch.
+			if (manager.busy()) {
+				manager.cancel(owner);
+			}
 			TestHooks.config = null;
 		}
 		helper.succeedWhen(() -> helper.assertFalse(manager.busy(), "the owner's cancel didn't stop the build"));

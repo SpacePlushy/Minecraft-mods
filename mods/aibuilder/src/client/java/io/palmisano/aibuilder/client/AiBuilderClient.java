@@ -1,7 +1,5 @@
 package io.palmisano.aibuilder.client;
 
-import java.util.stream.IntStream;
-
 import com.mojang.blaze3d.platform.InputConstants;
 import io.palmisano.aibuilder.AiBuilderMod;
 import io.palmisano.aibuilder.net.BuildModePayload;
@@ -13,11 +11,14 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.client.NarratorStatus;
 
 public class AiBuilderClient implements ClientModInitializer {
 	/** Opens the builder screen; B by default, rebindable in Controls under "AI Builder". */
 	public static final KeyMapping OPEN_BUILDER = new KeyMapping("key.aibuilder.open", InputConstants.KEY_B,
 			KeyMapping.Category.register(AiBuilderMod.id("main")));
+	/** The narrator's status as the last tick ended. Client thread. */
+	private static NarratorStatus narratorBefore;
 
 	@Override
 	public void onInitializeClient() {
@@ -28,18 +29,18 @@ public class AiBuilderClient implements ClientModInitializer {
 		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, AiBuilderMod.id("build_status"), new StatusHud());
 		// Drain every click each tick, so a press while another screen is open never opens the builder later.
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+			// Vanilla's narrator shortcut is a B press too (Ctrl+B; Cmd+B on macOS, only while the narrator can speak and
+			// its hotkey is on), and it changes the narrator's status in the same press: that press is the narrator's. A
+			// held key alone (Ctrl is the sprint key) proves nothing.
+			NarratorStatus narrator = mc.options.narrator().get();
+			boolean narratorPress = narratorBefore != null && narrator != narratorBefore;
+			narratorBefore = narrator;
 			while (OPEN_BUILDER.consumeClick()) {
-				if (mc.player != null && mc.gui.screen() == null && !shortcutHeld()) {
+				if (mc.player != null && mc.gui.screen() == null && !narratorPress) {
 					mc.gui.setScreen(new BuilderScreen(PromptHistoryStore.standard()));
 				}
 			}
 		});
 	}
 
-	/** Ctrl or Cmd is down (and isn't the builder's own key): B is the narrator's shortcut then (Ctrl+B; Cmd+B on macOS). */
-	private static boolean shortcutHeld() {
-		int bound = KeyMappingHelper.getBoundKeyOf(OPEN_BUILDER).getValue();
-		return IntStream.of(InputConstants.KEY_LCONTROL, InputConstants.KEY_RCONTROL, InputConstants.KEY_LGUI, InputConstants.KEY_RGUI)
-				.anyMatch(key -> key != bound && InputConstants.isKeyDown(key));
-	}
 }

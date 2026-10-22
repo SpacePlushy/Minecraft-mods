@@ -29,9 +29,10 @@ public final class Messages {
 		return new Scrub().apply(prompt);
 	}
 
-	/** Someone else's build: where several players may build, only its owner stops it. */
+	/** Someone else's build: where several players may build, only its owner follows it and stops it. */
 	public static String notYourBuild(String owner) {
-		return (owner.isEmpty() ? "That build is someone else's" : "That's " + owner + "'s build") + ": only they can stop it.";
+		return (owner.isEmpty() ? "That build is someone else's" : "That's " + owner + "'s build") + ": only they can stop it or see how it's"
+				+ " going.";
 	}
 
 	/** A refined build that never got a title from its brief. */
