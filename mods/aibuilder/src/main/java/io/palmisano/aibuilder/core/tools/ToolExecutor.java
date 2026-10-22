@@ -428,7 +428,7 @@ public final class ToolExecutor {
 				long depth = box.max().z() - box.min().z() + 1 + grow;
 				yield width * depth * (Math.max(width, depth) + 1);
 			}
-			case "staircase" -> a.string("style").equals("spiral")
+			case "staircase" -> a.string("style").equalsIgnoreCase("spiral")
 					? atLeast0(a.integer("to_y") - (long) a.integer("from_y") + 1) + 8 * atLeast0(a.integer("radius"))
 					: atLeast0(a.integer("steps")) * atLeast0(a.optInt("width", 1));
 			default -> 0;
@@ -449,7 +449,7 @@ public final class ToolExecutor {
 	}
 
 	private static List<LocalBlock> fill(Args a) {
-		String mode = a.optString("mode", "solid");
+		String mode = a.optString("mode", "solid").toLowerCase(Locale.ROOT);
 		if (mode.equals("replace")) {
 			return Shapes.replace(a.box("box"), a.block("block"), a.string("filter"));
 		}
@@ -457,8 +457,9 @@ public final class ToolExecutor {
 	}
 
 	private static List<LocalBlock> staircase(Args a) {
-		return switch (a.string("style")) {
-			case "straight" -> Staircases.straight(a.pos("from"), a.string("direction"), a.integer("steps"), a.optInt("width", 1),
+		return switch (a.string("style").toLowerCase(Locale.ROOT)) {
+			case "straight" -> Staircases.straight(a.pos("from"), a.string("direction").toLowerCase(Locale.ROOT), a.integer("steps"),
+					a.optInt("width", 1),
 					a.block("block"));
 			case "spiral" -> Staircases.spiral(a.pos("center"), a.integer("radius"), a.integer("from_y"), a.integer("to_y"),
 					a.block("block"), a.optBool("clockwise", true));
@@ -538,7 +539,15 @@ public final class ToolExecutor {
 		int fitCount = 0;
 		Map<String, Integer> grouped = new LinkedHashMap<>();
 		List<String> lines = new ArrayList<>();
+		// Claude's entries for one spot: only the last given goes in and is judged. Placement sorts a batch (fluids
+		// last), so an earlier lava would otherwise end up over a later block the lava rule took the spot for.
+		boolean[] superseded = perEntry ? superseded(blocks) : null;
+		int supersededCount = 0;
 		for (int i = 0; i < blocks.size(); i++) {
+			if (superseded != null && superseded[i]) {
+				supersededCount++;
+				continue;
+			}
 			LocalBlock block = blocks.get(i);
 			Validation v = checked.computeIfAbsent(block.block(), validator::validate);
 			String problem = null;
@@ -588,7 +597,7 @@ public final class ToolExecutor {
 			claimed.addAll(others);
 			batch.add(new Placement(frame.toWorld(block.pos()), resolved, block.onlyReplacing(), block.data()));
 		}
-		int rejected = blocks.size() - batch.size();
+		int rejected = blocks.size() - supersededCount - batch.size();
 		// Those spots are the build's own from now on, even where it may clear a protected block.
 		claimed.forEach(mask::release);
 		grouped.forEach((problem, count) -> lines.add(blocks(count) + " — " + problem));
@@ -604,6 +613,19 @@ public final class ToolExecutor {
 			}
 		}
 		return new ToolResult(text.toString(), batch.isEmpty() && rejected > 0, List.copyOf(lines));
+	}
+
+	/** Which entries a later entry for the same spot replaces. */
+	private static boolean[] superseded(List<LocalBlock> blocks) {
+		boolean[] earlier = new boolean[blocks.size()];
+		Map<Pos, Integer> last = new HashMap<>();
+		for (int i = 0; i < blocks.size(); i++) {
+			Integer before = last.put(blocks.get(i).pos(), i);
+			if (before != null) {
+				earlier[before] = true;
+			}
+		}
+		return earlier;
 	}
 
 	/** Why a block's other half (a door's top, a bed's head) can't go where it would, or null if it can. */
