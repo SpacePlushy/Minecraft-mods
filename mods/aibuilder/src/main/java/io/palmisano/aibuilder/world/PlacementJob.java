@@ -79,6 +79,9 @@ public final class PlacementJob implements Tickable {
 	private int skipped;
 	private int failures;
 	private volatile int placed;
+	private volatile PlacementFeel feel = PlacementFeel.STANDARD;
+	/** Blocks this tick that got the feel. */
+	private int felt;
 
 	public PlacementJob(ServerLevel level, Rotation rotation, UndoJournal<BlockState, CompoundTag> journal, Occupancy occupancy,
 			int blocksPerTick, long nanosPerTick, long maxChanged) {
@@ -111,6 +114,11 @@ public final class PlacementJob implements Tickable {
 				queue.addAll(sorted);
 			}
 		}
+	}
+
+	/** What placing sounds and looks like; tests listen in. Any thread, before the job starts. */
+	public void feel(PlacementFeel feel) {
+		this.feel = feel;
 	}
 
 	/** Positions written so far, each counted once however often it's rewritten; a door's two halves count two. */
@@ -173,6 +181,7 @@ public final class PlacementJob implements Tickable {
 			return true;
 		}
 		long deadline = System.nanoTime() + nanosPerTick;
+		felt = 0;
 		settle();
 		if (shapePass == null) {
 			boolean drop;
@@ -338,12 +347,19 @@ public final class PlacementJob implements Tickable {
 		journal.addSpawned(new UndoJournal.Spawned(frame.getUUID(), Positions.toPos(pos), data.item()));
 	}
 
-	/** One block of a placement; a position the build hadn't changed before adds one to {@link #placed()}. */
+	/**
+	 * One block of a placement; a position the build hadn't changed before adds one to {@link #placed()}. The first
+	 * few blocks of a tick get the feel (not the finalize pass, which writes through {@link #write} alone).
+	 */
 	private boolean placeBlock(BlockPos pos, BlockState state) {
 		int known = journal.size();
 		boolean wrote = write(pos, state);
 		if (journal.size() > known) {
 			placed++;
+		}
+		if (wrote && !state.isAir() && felt < Tunables.FEEL_PER_TICK) {
+			felt++;
+			feel.placed(level, pos, state);
 		}
 		return wrote;
 	}

@@ -2,6 +2,10 @@ package io.palmisano.aibuilder.test;
 
 import static io.palmisano.aibuilder.test.ArenaBuilds.ARENA;
 
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.palmisano.aibuilder.core.Tunables;
@@ -260,6 +264,33 @@ public class PlacementGameTest {
 			ArenaBuilds.assertDone(helper, build);
 			BlockState leaves = build.state(0, 1, 4);
 			helper.assertTrue(leaves.is(Blocks.OAK_LEAVES) && leaves.getValue(LeavesBlock.PERSISTENT), "leaves: " + leaves);
+		});
+	}
+
+	/**
+	 * A build sounds like blocks going in (spec §9's feel), softly: at most two a tick however fast they go in, none for
+	 * air, none for the finalize pass.
+	 */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void placementFeelIsAtMostTwoATick(GameTestHelper helper) {
+		Map<Long, Integer> perTick = new ConcurrentHashMap<>();
+		List<BlockState> felt = new CopyOnWriteArrayList<>();
+		ArenaBuild build = start(helper, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "cube", "style": "test"}},
+				  {"tool": "fill", "args": {"box": [-1, 1, 3, 1, 3, 5], "block": "stone"}},
+				  {"tool": "clear", "args": {"box": [-1, 3, 3, 1, 3, 5]}},
+				  {"tool": "finish", "args": {"summary": "a cube"}}
+				]}""");
+		build.job().feel((level, pos, state) -> {
+			perTick.merge(level.getGameTime(), 1, Integer::sum);
+			felt.add(state);
+		});
+		helper.succeedWhen(() -> {
+			ArenaBuilds.assertDone(helper, build);
+			helper.assertFalse(felt.isEmpty(), "no feel at all");
+			helper.assertTrue(perTick.values().stream().allMatch(n -> n <= Tunables.FEEL_PER_TICK), "per tick: " + perTick);
+			helper.assertTrue(felt.stream().noneMatch(BlockState::isAir), "air made a sound");
 		});
 	}
 

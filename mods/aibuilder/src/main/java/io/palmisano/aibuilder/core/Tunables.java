@@ -79,6 +79,10 @@ public final class Tunables {
 	public static final int CHECK_BUILD_LIGHT_WAIT_SECONDS = 5;
 	/** How long undo waits for a far build's item frames to load (entities load after their chunk) before going on. */
 	public static final int UNDO_ENTITY_WAIT_SECONDS = 10;
+	/** Placement feel (spec §9): blocks a tick that get a sound and a puff of particles; how loud next to a player's; how many particles. */
+	public static final int FEEL_PER_TICK = 2;
+	public static final float FEEL_VOLUME = 0.5f;
+	public static final int FEEL_PARTICLES = 4;
 
 	private Tunables() {
 	}
