@@ -9,7 +9,8 @@
 	],
 	"entrypoints": {
 		"fabric-client-gametest": [
-			"io.palmisano.aibuilder.test.SmokeClientGameTest"
+			"io.palmisano.aibuilder.test.SmokeClientGameTest",
+			"io.palmisano.aibuilder.test.PromptServerClientGameTest"
 		]
 	},
 	"depends": {
