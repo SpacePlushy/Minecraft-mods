@@ -41,7 +41,7 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 |---|---|---|---|
 | M1 Skeleton | ✅ built, waiting for Frankie's test | Press B, type, Build, and chat echoes your prompt | Press B, type, Build; try `/aibuild hello`; rebind B in Options → Controls |
 | M2 Placement engine | ✅ built, waiting for Frankie's test | `/aibuild test` builds a scripted house in front of you, with undo and cancel | Face each direction and run `/aibuild test`: door toward you, stairs the right way; `/aibuild undo`; `/aibuild cancel` half-way, then undo |
-| M3 Survey | ⬜ | `/aibuild survey` shows what Claude will "see" | Plains, a mountain, a beach, a forest |
+| M3 Survey | ✅ built (play-test after M6) | `/aibuild survey` shows what Claude will "see" | Plains, a mountain, a beach, a forest |
 | M4 Claude | ⬜ | Real builds from your prompts | "small cabin", then "castle"; cancel one; undo; log out of Claude Code and read the message |
 | M5 Quality | ⬜ | Better builds: phases, self-check, the HUD | Builds have depth, lit interiors, working doors |
 | M6 Polish | ⬜ | Config, refinement ("add a moat"), logs, error handling, permissions | The brief's manual checklist |
@@ -96,3 +96,10 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   world, so a crash mid-build can still be undone; hoppers and vaults undo; lava counts as a surface to build on;
   `/aibuild test` goes slowly enough to cancel half-way. Also: no build where the spot is outside the world's height.
   Twelve smaller findings are deferred and listed in the M2 ledger, several to settle before M4.
+- **2026-10-22:** Frankie handed over the rest of the project: M3–M6 get built, reviewed and fixed without a stop
+  between them, and Frankie tries it all after M6 (Decisions row "Finishing").
+- **2026-10-22:** M3 built from `docs/superpowers/plans/2026-10-22-aibuilder-m3-plan.md`: the read tools
+  (`get_context`, `survey_area`, `inspect_region`, `search_blocks`) and `terraform`, the survey (heights, water,
+  lava, trees, ceilings, surface blocks; coarsened to stay under 30,000 characters), and protection: blocks that
+  look player-made are refused unless a clear asks for them, while blocks left by your own earlier builds aren't
+  protected. `/aibuild survey` shows the survey in chat and saves the full text.

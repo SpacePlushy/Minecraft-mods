@@ -59,6 +59,11 @@ public final class McWorldReader implements WorldReader {
 		this.site = survey.result();
 	}
 
+	/** The site's survey and protection, completed on the server thread once read; for waiting without blocking. */
+	public CompletableFuture<WorldSurvey.Survey> whenRead() {
+		return site;
+	}
+
 	@Override
 	public TerrainSnapshot terrain(int minX, int minZ, int width, int depth) {
 		if (minX >= siteMinX && minZ >= siteMinZ && minX + width <= siteMinX + siteSize && minZ + depth <= siteMinZ + siteSize) {

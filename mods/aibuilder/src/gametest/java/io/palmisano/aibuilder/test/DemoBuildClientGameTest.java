@@ -1,5 +1,9 @@
 package io.palmisano.aibuilder.test;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.UUID;
 
 import io.palmisano.aibuilder.core.Tunables;
@@ -20,6 +24,14 @@ import net.minecraft.world.level.block.Blocks;
 public class DemoBuildClientGameTest implements FabricClientGameTest {
 	@Override
 	public void runTest(ClientGameTestContext ctx) {
+		try {
+			run(ctx);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+	}
+
+	private static void run(ClientGameTestContext ctx) throws IOException {
 		try (TestSingleplayerContext singleplayer = GameTestSupport.world(ctx)) {
 			TestServerContext server = singleplayer.getServer();
 			// Face south on the flat test world. The frame's origin is SITE_GAP ahead of the feet, on the grass.
@@ -29,6 +41,13 @@ public class DemoBuildClientGameTest implements FabricClientGameTest {
 			// The door is at local (0, 1, 2): the origin is one below the feet, SITE_GAP south of them.
 			BlockPos door = new BlockPos(0, feetY, Tunables.SITE_GAP + 2);
 			BlockPos underDoor = door.below();
+
+			// What Claude would see of this spot: the summary in chat, the full text saved beside the game.
+			GameTestSupport.runPlayerCommand(ctx, "aibuild survey");
+			GameTestSupport.awaitChatStartingWith(ctx, "Survey: ", 200);
+			GameTestSupport.awaitChatStartingWith(ctx, "Full survey (", 200);
+			Path surveys = server.computeOnServer(s -> s.getServerDirectory().resolve("aibuilder/surveys"));
+			GameTestSupport.check(Files.isDirectory(surveys) && Files.list(surveys).findAny().isPresent(), "no survey saved in " + surveys);
 
 			GameTestSupport.runPlayerCommand(ctx, "aibuild test");
 			GameTestSupport.runPlayerCommand(ctx, "aibuild test");

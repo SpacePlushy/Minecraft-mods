@@ -4,12 +4,17 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.List;
 import java.util.UUID;
 
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.survey.SurveyEncoder;
 import io.palmisano.aibuilder.core.agent.AiBackend;
 import io.palmisano.aibuilder.core.agent.BuildHandle;
 import io.palmisano.aibuilder.core.agent.BuildOutcome;
@@ -181,6 +186,52 @@ public final class BuildManager {
 			return Outcome.NOTHING;
 		}
 		undo = new Undo(player.getUUID(), stored.get(), new UndoRunner(level, stored.get().journal(), Tunables.BLOCKS_PER_TICK));
+		return Outcome.STARTED;
+	}
+
+	/**
+	 * {@code /aibuild survey}: reads the site in front of the player as a build would (Auto size) and shows what
+	 * Claude would read: the summary in chat, the whole text in the log and in a file under the game folder.
+	 */
+	public Outcome survey(ServerPlayer player) {
+		if (!BuildPermission.canBuild(player)) {
+			reply(player, Messages.ownerOnly());
+			return Outcome.REFUSED;
+		}
+		LocalFrame frame = Sites.ahead(player);
+		ServerLevel level = player.level();
+		Optional<Box> allowed = BuildBox.allowed(SizeTier.AUTO, frame.origin().y(), level.getMinY(), level.getMaxY());
+		if (allowed.isEmpty()) {
+			reply(player, Messages.noRoom());
+			return Outcome.NOTHING;
+		}
+		UUID owner = player.getUUID();
+		List<UndoJournal<BlockState, CompoundTag>> earlier = UndoStore.get(server).builds(owner).stream()
+				.filter(build -> build.dimension().equals(level.dimension())).map(StoredBuild::journal).toList();
+		McWorldReader reader = new McWorldReader(level, frame, allowed.get(), SizeTier.AUTO, player::blockPosition, earlier);
+		reply(player, Messages.surveying());
+		reader.whenRead().whenComplete((survey, error) -> {
+			if (error != null) {
+				tell(owner, Component.literal(Messages.failed(reason(error))));
+				return;
+			}
+			String text = SurveyEncoder.encode(survey.terrain(), allowed.get(), Tunables.SURVEY_MAX_CHARS);
+			AiBuilderMod.LOG.info("Survey of the site in front of {}:\n{}", player.getName().getString(), text);
+			String saved;
+			try {
+				Path folder = server.getServerDirectory().resolve("aibuilder/surveys");
+				Files.createDirectories(folder);
+				String name = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")) + ".txt";
+				Files.writeString(folder.resolve(name), text, StandardCharsets.UTF_8);
+				saved = "aibuilder/surveys/" + name;
+			} catch (IOException e) {
+				AiBuilderMod.LOG.warn("Couldn't save the survey", e);
+				saved = "the log only (the file couldn't be written)";
+			}
+			// The header and the summaries; the maps are too long for chat.
+			text.lines().takeWhile(line -> !line.startsWith("Surface blocks:")).forEach(line -> tell(owner, Component.literal(line)));
+			tell(owner, Component.literal(Messages.surveySaved(text.length(), saved)));
+		});
 		return Outcome.STARTED;
 	}
 

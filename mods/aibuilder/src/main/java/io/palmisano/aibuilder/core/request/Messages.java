@@ -92,6 +92,14 @@ public final class Messages {
 		return "Nothing is building.";
 	}
 
+	public static String surveying() {
+		return "Reading the site in front of you, as a build would…";
+	}
+
+	public static String surveySaved(int characters, String path) {
+		return "Full survey (" + String.format(Locale.ROOT, "%,d", characters) + " characters, what Claude reads) saved to " + path + ".";
+	}
+
 	public static String noRoom() {
 		return "There's no room to build here: this spot is outside the world's build height.";
 	}

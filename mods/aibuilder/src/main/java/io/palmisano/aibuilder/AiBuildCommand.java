@@ -12,9 +12,9 @@ import net.minecraft.commands.Commands;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
- * {@code /aibuild <prompt>}, {@code test}, {@code undo}, {@code cancel} and {@code status}. No permission requirement
- * on the nodes, so a non-owner gets a plain refusal. Brigadier tries only the literal when a word matches one, so a
- * prompt starting with "test", "undo", "cancel" or "status" has to come from the screen.
+ * {@code /aibuild <prompt>}, {@code test}, {@code undo}, {@code cancel}, {@code status} and {@code survey}. No permission
+ * requirement on the nodes, so a non-owner gets a plain refusal. Brigadier tries only the literal when a word matches
+ * one, so a prompt starting with one of those words has to come from the screen.
  */
 public final class AiBuildCommand {
 	private AiBuildCommand() {
@@ -26,6 +26,7 @@ public final class AiBuildCommand {
 				.then(Commands.literal("undo").executes(context -> run(context, BuildManager::undo)))
 				.then(Commands.literal("cancel").executes(context -> run(context, BuildManager::cancel)))
 				.then(Commands.literal("status").executes(context -> run(context, BuildManager::status)))
+				.then(Commands.literal("survey").executes(context -> run(context, BuildManager::survey)))
 				.then(Commands.argument("prompt", StringArgumentType.greedyString())
 						.executes(context -> run(context,
 								(manager, player) -> manager.submit(player, StringArgumentType.getString(context, "prompt"), SizeTier.AUTO)))));

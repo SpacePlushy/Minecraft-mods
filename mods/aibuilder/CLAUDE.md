@@ -16,12 +16,12 @@ headless `claude -p`) calls build tools that this mod serves over a localhost MC
 - Only the world's owner can build (spec §15): never route other players' prompts through Frankie's subscription.
 - Every subagent runs on Opus 5.5 (root `CLAUDE.md`).
 
-## Architecture (as of M2)
+## Architecture (as of M3)
 
 ```
 B key ──► AiBuilderClient ──► BuilderScreen ──Build──► BuildPromptPayload ──┐
 /aibuild <prompt> ──────────────────────────────────────────────────────────┤──► BuildManager.submit: M1's echo (M4: Claude)
-/aibuild test|undo|cancel|status ──► AiBuildCommand ──► BuildManager (one per server, server thread)
+/aibuild test|undo|cancel|status|survey ──► AiBuildCommand ──► BuildManager (one per server, server thread)
                                                               │ test: Sites.ahead (frame) + BuildBox (allowed box)
    worker thread:  ScriptedBackend ──calls──► ToolExecutor ──batches──► McBuildSink ──enqueue──► PlacementJob
    (M4: Claude)    replays demo_house.json    validate, shapes,          checkpoint waits    server tick (JobScheduler):
@@ -38,16 +38,18 @@ B key ──► AiBuilderClient ──► BuilderScreen ──Build──► Bui
 | `core/blocks/` | **Pure**: `Validator` (unknown, banned, compass words, bad property/value, with suggestions) over a `BlockCatalog`. |
 | `core/shapes/` | **Pure**: `Shapes` (fill, wall, line, cylinder, sphere, cone, arch), `Roofs`, `Staircases` → local blocks. |
 | `core/place/` | **Pure**: `PlacementOrder` (passes, bottom-up), `UndoJournal` (first original wins; restore only if unchanged), `UndoHistory`. |
-| `core/tools/` | **Pure**: `ToolExecutor` (the write tools; `tools.json` is the catalog), `Budget`, `PhaseProgress`, `BuildSink`. |
+| `core/tools/` | **Pure**: `ToolExecutor` (all 19 tools; `tools.json` is the catalog), `WorldReader` (what the read tools and protection read through), `Budget`, `PhaseProgress`, `BuildSink`. |
+| `core/survey/` | **Pure**: `TerrainSnapshot`/`Column` and `SurveyEncoder` (survey_area's compact text, coarsened to stay under 30,000 characters), `RegionEncoder` (inspect_region). |
+| `core/place/ProtectionMask` | **Pure**: protected (probably player-made) and unbreakable spots in the allowed box; a write there is rejected `protected`. |
 | `core/agent/` | **Pure**: `AiBackend`, `ScriptedBackend` (replays a script on a worker thread). M4 adds Claude Code. |
 | `core/site/` | **Pure**: `GroundFinder` (the floor nearest the feet), `BuildBox` (allowed box per tier, clipped to the world). |
-| `world/` | Minecraft side: `McBlockCatalog`, `StateFactory` (rotate, second halves, persistent leaves), `PlacementJob`, `ShapePass`, `JobScheduler`, `BuildTickets`, `UndoStore`, `UndoRunner`, `Sites`, `Occupancy`. |
-| `BuildManager` | One per server: one job at a time (build or undo), owner only; status in the action bar; saves on stop. |
+| `world/` | Minecraft side: `McBlockCatalog`, `StateFactory` (rotate, second halves, persistent leaves), `PlacementJob`, `ShapePass`, `JobScheduler`, `BuildTickets`, `UndoStore`, `UndoRunner`, `Sites`, `Occupancy`, `ProtectionHeuristic` (natural = vanilla terrain/growth tags + a short list), `WorldSurvey` (columns and the protection mask, read over ticks), `McWorldReader` (the real `WorldReader`: starts the site survey when a build starts; region and fact reads hop to the server thread). |
+| `BuildManager` | One per server: one job at a time (build or undo), owner only; status in the action bar; saves on stop; `/aibuild survey`. |
 | `BuildPermission` | Singleplayer owner only (M6 adds the dedicated-server allow list). |
 | `net/BuildPromptPayload` | Serverbound packet. Wire limit 8,192 chars, far above the 2,000 prompt limit, so a long prompt gets a chat answer instead of a decode failure that drops the connection. |
 | `client/BuilderScreen` | The screen. The typed text lives in a field and survives `init()` re-runs (resize, GUI scale). |
 | `client/PromptHistoryStore` | `config/aibuilder-history.json`; write-temp-then-move; never throws. |
-| `src/gametest/` | Client gametests (smoke, prompt to server, the screen, the demo build) and server gametests (`PlacementGameTest`, `UndoGameTest`, `PermissionGameTest`, run in the `aibuilder-test:arena` structure through `ArenaBuilds`). `GameTestSupport` captures chat with `ClientReceiveMessageEvents.GAME`. |
+| `src/gametest/` | Client gametests (smoke, prompt to server, the screen, the demo build) and server gametests (`PlacementGameTest`, `UndoGameTest`, `PermissionGameTest`, `SiteGameTest`, `SurveyGameTest`, run in the `aibuilder-test:arena` structure through `ArenaBuilds`). `GameTestSupport` captures chat with `ClientReceiveMessageEvents.GAME`. |
 
 **Directions (spec §7).** Tool input says forward/back/left/right/up/down, never compass names. They map to the
 compass as if the player faced south (forward → south, right → west), then vanilla `BlockState.rotate` turns the
@@ -82,7 +84,7 @@ from its arguments, is more than the whole allowed box is refused as `too_many` 
 | `./gradlew build` | Compile, run unit tests, produce the jar in `build/libs/` |
 | `./gradlew test` | Unit tests only (JUnit): fast, no game launch |
 | `./gradlew runClient` | Launch a dev Minecraft with the mod, for manual play |
-| `./gradlew runGameTest` | Headless server gametests (placement, undo, permissions) in the arena structure |
+| `./gradlew runGameTest` | Headless server gametests (placement, undo, permissions, survey) in the arena structure; `build` runs them too |
 | `./gradlew runClientGameTest` | Launch the real client, run the client gametests, save screenshots to `build/run/clientGameTest/screenshots/`. **Look at them.** |
 | `python3 tools/gen_arena.py` | Rewrite the server gametests' arena (`src/gametest/resources/data/aibuilder-test/gametest/structure/arena.snbt`) |
 
@@ -122,3 +124,7 @@ from its arguments, is more than the whole allowed box is refused as `too_many` 
 - **Lava has no collision shape** for an empty collision context, so `getCollisionShape(level, pos).isEmpty()` is
   true for it: check the fluid state first when telling ground from air.
 - A vault's saved data holds a timer (`server_data.state_updating_resumes_at`) it rewrites about once a second.
+- No `getDayTime()`: the time of day is `level.getOverworldClockTime() % 24000`. Fabric's ore tag is
+  `ConventionalBlockTags.ORES` (vanilla has only some per-ore tags). `level.getHeight(WORLD_SURFACE, x, z) - 1` is
+  a column's highest non-air block, without a scan.
+- With `enableGameTests = true`, `./gradlew build` runs the server gametests too.

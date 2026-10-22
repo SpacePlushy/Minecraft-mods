@@ -4,9 +4,10 @@ A mod for **Minecraft Java Edition 26.3** (Fabric) where you press **B**, type a
 with a dock", "a Japanese garden with a koi pond"), and Claude designs it and builds it in front of you, block by
 block, while you watch. It never moves you, ignores your inventory, and `/aibuild undo` puts the land back.
 
-**Status: M2.** The building machinery works: `/aibuild test` builds a small demo house in front of you through
-the same tools Claude will use, and `/aibuild undo` takes it back. Your prompts still only get an echo; Claude
-starts building them in M4. The plan, milestone by milestone, is in [`PLAN.md`](PLAN.md).
+**Status: M3.** The building machinery works: `/aibuild test` builds a small demo house in front of you through
+the same tools Claude will use, `/aibuild survey` shows how Claude will see the land, and `/aibuild undo` takes a
+build back. Your prompts still only get an echo; Claude starts building them in M4. The plan, milestone by
+milestone, is in [`PLAN.md`](PLAN.md).
 
 ![The demo house built by /aibuild test, facing the player, with the chat lines it printed](docs/demo-house.png)
 
@@ -22,9 +23,13 @@ starts building them in M4. The plan, milestone by milestone, is in [`PLAN.md`](
 | `/aibuild undo` | Takes back your newest build (repeat for older ones, up to 5), even after the game crashed or restarted. Anything you changed since, like a chest you filled, stays |
 | `/aibuild cancel` | Stops the build at once; what's placed stays and can be undone |
 | `/aibuild status` | The phase, blocks placed and tool calls used so far |
+| `/aibuild survey` | Reads the spot in front of you the way a build does and shows what Claude will "see": heights, water, trees and any player-made blocks, with the full text saved in `aibuilder/surveys/` |
 
 The screen remembers your last 10 prompts and the size you picked last. Prompts can be up to 2,000 characters.
 Only the world's owner can build. Builds never move you: a spot you're standing in waits until you step away.
+Builds leave your own blocks alone: anything that doesn't look like natural terrain or plants (a house, a farm, a
+village) counts as yours, and a build won't replace it unless you ask for that. It's a rule of thumb, so a log cabin
+looks like trees to it; `/aibuild undo` is always there.
 
 ## Trying it
 
