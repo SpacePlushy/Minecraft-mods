@@ -8,6 +8,9 @@
 		"Frankie Palmisano"
 	],
 	"environment": "*",
+	"mixins": [
+		"aibuilder.mixins.json"
+	],
 	"entrypoints": {
 		"main": [
 			"io.palmisano.aibuilder.AiBuilderMod"

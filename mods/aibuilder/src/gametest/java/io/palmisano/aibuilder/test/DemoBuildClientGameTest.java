@@ -60,6 +60,9 @@ public class DemoBuildClientGameTest implements FabricClientGameTest {
 			GameTestSupport.check(server.computeOnServer(s -> UndoStore.get(s).peek(player).isPresent()),
 					"the running build isn't in the undo history");
 			GameTestSupport.awaitChatStartingWith(ctx, "Done: ", 600);
+			// The finish summary goes to chat (spec §8).
+			GameTestSupport.awaitChat(ctx, "A small oak house on a stone-brick footing, with a spruce gable roof, a path to the door and a poppy either"
+					+ " side.");
 			GameTestSupport.check(server.computeOnServer(s -> s.overworld().getBlockState(door).is(Blocks.OAK_DOOR)), "no door at " + door);
 
 			// Step back to see the whole house.

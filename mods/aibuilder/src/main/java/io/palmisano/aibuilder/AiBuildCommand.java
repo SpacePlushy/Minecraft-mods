@@ -6,9 +6,11 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
@@ -35,6 +37,11 @@ public final class AiBuildCommand {
 	private static int run(CommandContext<CommandSourceStack> context, BiConsumer<BuildManager, ServerPlayer> action)
 			throws CommandSyntaxException {
 		ServerPlayer player = context.getSource().getPlayerOrException();
+		if (!BuildPermission.ownCommand(context.getSource(), player)) {
+			// A command block's /execute as the owner would send someone else's prompt through the owner's login.
+			context.getSource().sendFailure(Component.literal(Messages.typeItYourself()));
+			return 0;
+		}
 		action.accept(BuildManager.of(context.getSource().getServer()), player);
 		return 1;
 	}

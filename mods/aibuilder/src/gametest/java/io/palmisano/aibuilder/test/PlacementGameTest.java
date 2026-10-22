@@ -14,6 +14,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.AbstractBedBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CrossCollisionBlock;
@@ -132,6 +133,17 @@ public class PlacementGameTest {
 			helper.assertTrue(middle.is(Blocks.OAK_FENCE) && middle.getValue(CrossCollisionBlock.EAST)
 					&& middle.getValue(CrossCollisionBlock.WEST), "the middle fence isn't connected: " + middle);
 		});
+	}
+
+	/**
+	 * A spectator has no body to trap, so a block goes in where one floats (M2 review). The helper's in-level mock
+	 * player always reports creative, so this checks the rule on mocks made in each game mode.
+	 */
+	@GameTest
+	public void spectatorsDontHoldBackBlocks(GameTestHelper helper) {
+		helper.assertFalse(Occupancy.inTheWay(helper.makeMockServerPlayer(GameType.SPECTATOR)), "a spectator holds back blocks");
+		helper.assertTrue(Occupancy.inTheWay(helper.makeMockServerPlayer(GameType.SURVIVAL)), "a player in survival doesn't hold back blocks");
+		helper.succeed();
 	}
 
 	/**

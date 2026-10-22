@@ -22,6 +22,15 @@ class MessagesTest {
 	}
 
 	@Test
+	void summaryIsTrimmedTo300() {
+		assertEquals("A tiny oak hut.", Messages.summary("  A tiny oak hut. \n"));
+		String cut = Messages.summary("🏰".repeat(400));
+		assertEquals(300, cut.codePointCount(0, cut.length()));
+		assertEquals("🏰".repeat(299) + "…", cut);
+		assertEquals("x".repeat(300), Messages.summary("x".repeat(300)));
+	}
+
+	@Test
 	void claudeCodeProblemsUseTheSpecsWords() {
 		assertEquals("AI Builder needs Claude Code: install it, or set claude_path in config/aibuilder.json.", Messages.notInstalled());
 		assertEquals("AI Builder runs on your Claude Code login: open a terminal, run claude and log in.", Messages.notLoggedIn());

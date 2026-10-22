@@ -328,6 +328,8 @@ public final class BuildManager {
 		StoredBuild stored;
 		boolean cancelled;
 		String failure;
+		/** finish's summary, from the backend's thread. */
+		volatile String summary = "";
 
 		Build(ServerPlayer player, LocalFrame frame, Box allowed, AiBackend backend, BuildRequest request, int blocksPerTick) {
 			owner = player.getUUID();
@@ -349,7 +351,10 @@ public final class BuildManager {
 			JobScheduler.add(job);
 			job.whenEnded().whenComplete(this::ended);
 			// The sink's callbacks come from the backend's thread.
-			sink = new McBuildSink(job, brief -> server.execute(() -> briefed(brief)), summary -> job.finish());
+			sink = new McBuildSink(job, brief -> server.execute(() -> briefed(brief)), finished -> {
+				summary = finished == null ? "" : finished;
+				job.finish();
+			});
 			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, allowed, request.size(),
 					request.size().maxChangedBlocks(), sink, budget, world);
 			handle = backend.start(request, tools);
@@ -379,6 +384,10 @@ public final class BuildManager {
 
 		/** Server thread, once the job has placed everything and finalized. */
 		private void ended(Integer skipped, Throwable error) {
+			// Whatever ended the job (a failure too), the backend has nothing left to build with: stop it.
+			if (handle != null) {
+				handle.cancel();
+			}
 			BuildTickets.release(level, chunks);
 			// A build that changed nothing leaves the history, so undo never answers with nothing restored.
 			boolean undoable = journal.size() > 0;
@@ -401,6 +410,10 @@ public final class BuildManager {
 			if (online != null) {
 				// The last "Building …" would otherwise linger for seconds after the build is over.
 				online.sendOverlayMessage(Component.empty());
+			}
+			if (error == null && failure == null && !cancelled && !summary.isBlank()) {
+				// finish's summary goes to chat (spec §8), above the count and [Undo].
+				tell(owner, Component.literal(Messages.summary(summary)));
 			}
 			tell(owner, undoable ? withUndo(line) : Component.literal(line));
 			if (build == this) {

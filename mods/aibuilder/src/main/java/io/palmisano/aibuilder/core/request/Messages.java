@@ -100,6 +100,19 @@ public final class Messages {
 		return "Full survey (" + String.format(Locale.ROOT, "%,d", characters) + " characters, what Claude reads) saved to " + path + ".";
 	}
 
+	/** Claude's finish summary for chat: trimmed, at most 300 characters (cut with "…"). */
+	public static String summary(String summary) {
+		String text = summary.strip();
+		if (text.codePointCount(0, text.length()) <= 300) {
+			return text;
+		}
+		return text.substring(0, text.offsetByCodePoints(0, 299)) + "…";
+	}
+
+	public static String typeItYourself() {
+		return "AI Builder only takes commands its owner types in chat.";
+	}
+
 	public static String notInstalled() {
 		return "AI Builder needs Claude Code: install it, or set claude_path in config/aibuilder.json.";
 	}

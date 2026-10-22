@@ -11,6 +11,11 @@ public interface Occupancy {
 
 	/** Where any player's hitbox is: a block there would trap them (spec §5.5). */
 	static Occupancy players(ServerLevel level) {
-		return pos -> !level.getEntitiesOfClass(Player.class, new AABB(pos)).isEmpty();
+		return pos -> !level.getEntitiesOfClass(Player.class, new AABB(pos), Occupancy::inTheWay).isEmpty();
+	}
+
+	/** Whether a block on this player would trap them: a spectator has no body to trap (M2 review). */
+	static boolean inTheWay(Player player) {
+		return !player.isSpectator();
 	}
 }

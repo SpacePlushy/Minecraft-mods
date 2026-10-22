@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "io.palmisano.aibuilder.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"CommandSourceStackAccessor"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
