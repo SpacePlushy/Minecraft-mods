@@ -1,7 +1,5 @@
 package io.palmisano.aibuilder.test;
 
-import java.util.List;
-
 import io.palmisano.aibuilder.AiBuilderMod;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.request.Messages;
@@ -26,14 +24,11 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 	/** The build's own time cap is 45 minutes. */
 	private static final int MAX_TICKS = 20 * 60 * 50;
 	private static final int SCREENSHOT_EVERY_TICKS = 20 * 60 * 2;
-	/** How every build ends, one way or another. */
-	private static final List<String> ENDS = List.of("Done: ", "Stopped", "Your Claude usage limit", Messages.extraUsage(), "Lost the connection",
-			"Claude Code ", "Couldn't start Claude Code", Messages.notLoggedIn(), Messages.notInstalled(), Messages.stillStopping());
 
 	@Override
 	public void runTest(ClientGameTestContext ctx) {
-		if (!TestSetup.live()) {
-			return;
+		if (!TestSetup.live() || ShowcaseClientGameTest.showcase()) {
+			return; // a showcase run is for ShowcaseClientGameTest alone
 		}
 		String prompt = System.getenv().getOrDefault("AIBUILDER_LIVE_PROMPT", "a small cozy cabin");
 		SizeTier size = SizeTier.parse(System.getenv().getOrDefault("AIBUILDER_LIVE_SIZE", "small"));
@@ -52,7 +47,7 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 
 			ctx.runOnClient(mc -> ClientPlayNetworking.send(new BuildPromptPayload(prompt, size)));
 			GameTestSupport.awaitChat(ctx, Messages.accepted(prompt, size), 200);
-			String end = awaitEnd(ctx, 0, "aibuilder-live-progress-");
+			String end = GameTestSupport.awaitBuildEnd(ctx, 0, MAX_TICKS, SCREENSHOT_EVERY_TICKS, n -> ctx.takeScreenshot("aibuilder-live-progress-" + n));
 			AiBuilderMod.LOG.info("Live build ended: {}", end);
 			AiBuilderMod.LOG.info("Live build chat: {}", GameTestSupport.chat());
 			ctx.waitTicks(40);
@@ -70,30 +65,14 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 			int from = GameTestSupport.chat().size();
 			ctx.runOnClient(mc -> ClientPlayNetworking.send(new BuildPromptPayload(refine, size, false)));
 			GameTestSupport.awaitChatStartingWith(ctx, "AI Builder: changing ", 200);
-			String refined = awaitEnd(ctx, from, "aibuilder-live-refine-progress-");
+			String refined = GameTestSupport.awaitBuildEnd(ctx, from, MAX_TICKS, SCREENSHOT_EVERY_TICKS,
+					n -> ctx.takeScreenshot("aibuilder-live-refine-progress-" + n));
 			AiBuilderMod.LOG.info("Live refinement ended: {}", refined);
 			AiBuilderMod.LOG.info("Live refinement chat: {}", GameTestSupport.chat().subList(from, GameTestSupport.chat().size()));
 			ctx.waitTicks(40);
 			ctx.takeScreenshot("aibuilder-live-refined-player-view");
 			// The refinement may build 16 blocks past the first build on every side: the views stand farther off.
 			viewpoints(ctx, singleplayer, feetY, span + 24, "-refined");
-		}
-	}
-
-	/** The first line from {@code from} on that ends a build; a screenshot every two minutes meanwhile. */
-	private static String awaitEnd(ClientGameTestContext ctx, int from, String progress) {
-		for (int tick = 0; ; tick++) {
-			List<String> chat = GameTestSupport.chat();
-			for (String line : chat.subList(Math.min(from, chat.size()), chat.size())) {
-				if (ENDS.stream().anyMatch(line::startsWith)) {
-					return line;
-				}
-			}
-			GameTestSupport.check(tick < MAX_TICKS, "the build never ended: " + chat);
-			if (tick > 0 && tick % SCREENSHOT_EVERY_TICKS == 0) {
-				ctx.takeScreenshot(progress + tick / SCREENSHOT_EVERY_TICKS);
-			}
-			ctx.waitTick();
 		}
 	}
 

@@ -27,7 +27,8 @@
 			"io.palmisano.aibuilder.test.BuilderScreenClientGameTest",
 			"io.palmisano.aibuilder.test.DemoBuildClientGameTest",
 			"io.palmisano.aibuilder.test.ClaudeBuildClientGameTest",
-			"io.palmisano.aibuilder.test.LiveBuildClientGameTest"
+			"io.palmisano.aibuilder.test.LiveBuildClientGameTest",
+			"io.palmisano.aibuilder.test.ShowcaseClientGameTest"
 		]
 	},
 	"depends": {

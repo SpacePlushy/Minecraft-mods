@@ -5,6 +5,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.IntConsumer;
 
 import io.palmisano.aibuilder.TestHooks;
+import io.palmisano.aibuilder.core.request.Messages;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
@@ -77,22 +78,25 @@ final class GameTestSupport {
 		return (int) CHAT.stream().filter(line -> line.startsWith(prefix)).count();
 	}
 
+	/** How every build ends, one way or another. */
+	static final List<String> BUILD_ENDS = List.of("Done: ", "Stopped", "Your Claude usage limit", Messages.extraUsage(), "Lost the connection",
+			"Claude Code ", "Couldn't start Claude Code", Messages.notLoggedIn(), Messages.notInstalled(), Messages.stillStopping());
+
 	/**
-	 * Waits, up to {@code maxTicks}, for a line starting with any of {@code prefixes}, and returns it; {@code every}
+	 * The first line from chat line {@code from} on that ends a build, waiting up to {@code maxTicks}; {@code every}
 	 * runs every {@code everyTicks} meanwhile (with the count so far), for progress screenshots of a long build.
 	 */
-	static String awaitChatAny(ClientGameTestContext ctx, int maxTicks, int everyTicks, IntConsumer every, String... prefixes) {
-		for (int i = 0; ; i++) {
-			for (String line : CHAT) {
-				for (String prefix : prefixes) {
-					if (line.startsWith(prefix)) {
-						return line;
-					}
+	static String awaitBuildEnd(ClientGameTestContext ctx, int from, int maxTicks, int everyTicks, IntConsumer every) {
+		for (int tick = 0; ; tick++) {
+			List<String> chat = chat();
+			for (String line : chat.subList(Math.min(from, chat.size()), chat.size())) {
+				if (BUILD_ENDS.stream().anyMatch(line::startsWith)) {
+					return line;
 				}
 			}
-			check(i < maxTicks, "chat never showed a line starting with any of " + List.of(prefixes) + "; it showed " + CHAT);
-			if (i > 0 && i % everyTicks == 0) {
-				every.accept(i / everyTicks);
+			check(tick < maxTicks, "the build never ended: " + chat);
+			if (tick > 0 && tick % everyTicks == 0) {
+				every.accept(tick / everyTicks);
 			}
 			ctx.waitTick();
 		}
