@@ -34,6 +34,15 @@ public final class Tunables {
 	 * first tick (a hopper's transfer cooldown), and undo must still recognise them as the build's own.
 	 */
 	public static final int BLOCK_ENTITY_SETTLE_TICKS = 2;
+	/** survey_area's largest radius (spec §8); the default is half the tier's size plus 8. */
+	public static final int SURVEY_RADIUS_MAX = 96;
+	/** The longest survey text: Claude Code swaps a tool result over 50,000 characters for a file path (spec §8, §11). */
+	public static final int SURVEY_MAX_CHARS = 30_000;
+	/** Blocks one inspect_region call may read (spec §8). */
+	public static final int INSPECT_MAX_BLOCKS = 4096;
+	/** search_blocks: results by default, and at most. */
+	public static final int SEARCH_LIMIT_DEFAULT = 20;
+	public static final int SEARCH_LIMIT_MAX = 50;
 
 	private Tunables() {
 	}

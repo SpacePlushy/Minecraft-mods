@@ -26,6 +26,15 @@ public final class Validator {
 		this.bannedIds = bannedIds;
 	}
 
+	public BlockCatalog catalog() {
+		return catalog;
+	}
+
+	/** Unbreakable, or on the banned list: never placed. */
+	public boolean isBanned(BlockInfo info) {
+		return info.unbreakable() || bannedIds.contains(info.id());
+	}
+
 	public Validation validate(BlockSpec spec) {
 		Optional<BlockInfo> found = catalog.find(BlockNames.normalize(spec.id()));
 		if (found.isEmpty()) {
@@ -33,7 +42,7 @@ public final class Validator {
 					+ String.join(", ", BlockNames.suggest(catalog.ids(), spec.id(), 5)) + "?");
 		}
 		BlockInfo info = found.get();
-		if (info.unbreakable() || bannedIds.contains(info.id())) {
+		if (isBanned(info)) {
 			return invalid(RejectReason.BANNED_BLOCK, info.id() + " can't be used in builds");
 		}
 		for (Map.Entry<String, String> entry : spec.state().entrySet()) {

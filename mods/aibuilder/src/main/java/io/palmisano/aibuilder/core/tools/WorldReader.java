@@ -11,6 +11,13 @@ import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
  * reads the world on the server thread and waits for it, with a timeout.
  */
 public interface WorldReader {
+	/** The world couldn't be read (in time, or at all); the tool says so and Claude carries on. */
+	final class Unreadable extends RuntimeException {
+		public Unreadable(String message) {
+			super(message);
+		}
+	}
+
 	/** The columns of a local area, minX..minX+width−1 by minZ..minZ+depth−1. */
 	TerrainSnapshot terrain(int minX, int minZ, int width, int depth);
 
@@ -26,17 +33,17 @@ public interface WorldReader {
 	WorldReader NONE = new WorldReader() {
 		@Override
 		public TerrainSnapshot terrain(int minX, int minZ, int width, int depth) {
-			throw new IllegalStateException("the world can't be read here");
+			throw new Unreadable("the world can't be read here");
 		}
 
 		@Override
 		public List<String> states(Box local) {
-			throw new IllegalStateException("the world can't be read here");
+			throw new Unreadable("the world can't be read here");
 		}
 
 		@Override
 		public WorldFacts facts() {
-			throw new IllegalStateException("the world can't be read here");
+			throw new Unreadable("the world can't be read here");
 		}
 
 		@Override

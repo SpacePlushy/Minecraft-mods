@@ -11,6 +11,8 @@ import java.util.Set;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.blocks.BlockInfo;
+import io.palmisano.aibuilder.core.blocks.BlockSearch;
 import io.palmisano.aibuilder.core.blocks.BlockSpec;
 import io.palmisano.aibuilder.core.blocks.RejectReason;
 import io.palmisano.aibuilder.core.blocks.Validation;
@@ -29,14 +31,19 @@ import io.palmisano.aibuilder.core.shapes.RoofStyle;
 import io.palmisano.aibuilder.core.shapes.Roofs;
 import io.palmisano.aibuilder.core.shapes.Shapes;
 import io.palmisano.aibuilder.core.shapes.Staircases;
+import io.palmisano.aibuilder.core.survey.Column;
+import io.palmisano.aibuilder.core.survey.RegionEncoder;
+import io.palmisano.aibuilder.core.survey.SurveyEncoder;
+import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 
 /**
  * Runs the write tools: expands each shape, validates its blocks, drops positions outside the allowed box, maps
  * the rest to the world through the frame and queues them as one batch. A bad entry never fails the whole call.
  */
 public final class ToolExecutor {
-	private static final Set<String> TOOLS = Set.of("submit_brief", "set_blocks", "fill", "line", "wall", "cylinder", "sphere",
-			"cone", "arch", "roof", "staircase", "clear", "checkpoint", "finish");
+	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
+			"set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof", "staircase", "clear", "terraform", "checkpoint",
+			"finish");
 	private static final int REJECTION_LINES = 10;
 	private static final BlockSpec AIR = BlockSpec.of("minecraft:air");
 
@@ -88,6 +95,11 @@ public final class ToolExecutor {
 				case "submit_brief" -> brief(a);
 				case "checkpoint" -> checkpoint(a);
 				case "finish" -> finish(a);
+				// Looking around needs no brief: it's what the brief is made from.
+				case "get_context" -> context();
+				case "survey_area" -> survey(a);
+				case "inspect_region" -> inspect(a);
+				case "search_blocks" -> search(a);
 				default -> {
 					if (!TOOLS.contains(name)) {
 						yield ToolResult.error("There is no tool called \"" + name + "\".");
@@ -100,9 +112,96 @@ public final class ToolExecutor {
 			};
 		} catch (IllegalArgumentException e) {
 			result = ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + e.getMessage());
+		} catch (WorldReader.Unreadable e) {
+			// The world couldn't be read in time (or at all): Claude can try again or go on without it.
+			result = ToolResult.error("Couldn't read the world: " + e.getMessage());
 		}
 		String footer = budget.footer();
 		return footer.isEmpty() ? result : new ToolResult(result.text() + "\n" + footer, result.isError());
+	}
+
+	private ToolResult context() {
+		WorldFacts facts = world.facts();
+		int left = Math.max(0, budget.max() - budget.used());
+		return ToolResult.ok(String.join("\n",
+				"Frame: you build in a local frame. +x is the player's right, +z is forward (away from the player), +y is up; y=0 is the ground at"
+						+ " the origin, " + Tunables.SITE_GAP + " blocks in front of the player. Block states take forward, back, left, right, up and"
+						+ " down for directions, never compass names.",
+				"Size: " + tier.label() + " (" + tier.size() + " blocks): the allowed box is " + describe(allowed) + "; at most "
+						+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks.",
+				"World: " + facts.dimension() + ", biome " + facts.biome() + ", " + facts.time() + ", " + facts.weather()
+						+ "; the ground block at the origin is " + facts.groundBlock() + ".",
+				"The player stands at x " + facts.player().x() + ", y " + facts.player().y() + ", z " + facts.player().z() + ".",
+				"Budget: " + left + " of " + budget.max() + " tool calls left."));
+	}
+
+	/** Centred on the allowed box's footprint; the default radius covers it with 8 blocks to spare. */
+	private ToolResult survey(Args a) {
+		int radius = Math.max(1, Math.min(a.optInt("radius", tier.size() / 2 + 8), Tunables.SURVEY_RADIUS_MAX));
+		int centreX = Math.floorDiv(allowed.min().x() + allowed.max().x() + 1, 2);
+		int centreZ = Math.floorDiv(allowed.min().z() + allowed.max().z() + 1, 2);
+		TerrainSnapshot snapshot = world.terrain(centreX - radius, centreZ - radius, 2 * radius + 1, 2 * radius + 1);
+		return ToolResult.ok(SurveyEncoder.encode(snapshot, allowed, Tunables.SURVEY_MAX_CHARS));
+	}
+
+	private ToolResult inspect(Args a) {
+		Box box = a.box("box");
+		if (box.volume() > Tunables.INSPECT_MAX_BLOCKS) {
+			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": inspect_region reads at most "
+					+ String.format(Locale.ROOT, "%,d", Tunables.INSPECT_MAX_BLOCKS) + " blocks a call; this box holds " + blocks(box.volume())
+					+ ". Look at it in parts.");
+		}
+		return ToolResult.ok(RegionEncoder.encode(box, world.states(box)));
+	}
+
+	private ToolResult search(Args a) {
+		String query = a.string("query");
+		int limit = Math.max(1, Math.min(a.optInt("limit", Tunables.SEARCH_LIMIT_DEFAULT), Tunables.SEARCH_LIMIT_MAX));
+		List<BlockInfo> found = BlockSearch.search(validator.catalog(), query, limit);
+		if (found.isEmpty()) {
+			return ToolResult.ok("Nothing matches \"" + query + "\".");
+		}
+		StringBuilder out = new StringBuilder(blocks(found.size())).append(" for \"").append(query)
+				.append("\" (each with its properties and values; directions are relative):");
+		for (BlockInfo info : found) {
+			out.append('\n').append(BlockSearch.describe(info)).append(validator.isBanned(info) ? " (can't be placed)" : "");
+		}
+		return ToolResult.ok(out.toString());
+	}
+
+	/**
+	 * Levels the box's footprint (inside the allowed box) to {@code target_y}, from the terrain as surveyed: what's
+	 * above becomes air, up to the column's highest block (so trees go too); below, the solid floor (under any
+	 * water or lava) is filled up with {@code fill_block}; {@code target_y} gets {@code surface_block}.
+	 */
+	private List<LocalBlock> terraform(Args a) {
+		Box box = a.box("box");
+		int target = a.integer("target_y");
+		BlockSpec surface = BlockSpec.of(a.string("surface_block"));
+		BlockSpec fill = BlockSpec.of(a.optString("fill_block", "minecraft:dirt"));
+		int minX = Math.max(box.min().x(), allowed.min().x());
+		int maxX = Math.min(box.max().x(), allowed.max().x());
+		int minZ = Math.max(box.min().z(), allowed.min().z());
+		int maxZ = Math.min(box.max().z(), allowed.max().z());
+		if (minX > maxX || minZ > maxZ) {
+			return List.of();
+		}
+		TerrainSnapshot terrain = world.terrain(minX, minZ, maxX - minX + 1, maxZ - minZ + 1);
+		List<LocalBlock> out = new ArrayList<>();
+		for (int z = minZ; z <= maxZ; z++) {
+			for (int x = minX; x <= maxX; x++) {
+				Column column = terrain.at(x, z);
+				int solid = column.floor() - column.water() - column.lava();
+				for (int y = solid + 1; y < target; y++) {
+					out.add(new LocalBlock(new Pos(x, y, z), fill));
+				}
+				out.add(new LocalBlock(new Pos(x, target, z), surface));
+				for (int y = target + 1; y <= Math.max(column.top(), column.floor()); y++) {
+					out.add(new LocalBlock(new Pos(x, y, z), AIR));
+				}
+			}
+		}
+		return out;
 	}
 
 	private ToolResult brief(Args a) {
@@ -161,6 +260,7 @@ public final class ToolExecutor {
 					a.has("slab") ? BlockSpec.of(a.string("slab")) : null, a.has("ridge") ? axis(a.string("ridge")) : null,
 					a.optInt("overhang", 0), a.has("gable_block") ? BlockSpec.of(a.string("gable_block")) : null);
 			case "staircase" -> staircase(a);
+			case "terraform" -> terraform(a);
 			default -> throw new IllegalStateException(name);
 		};
 		return queue(blocks, false, name.equals("clear") && a.optBool("include_protected", false));

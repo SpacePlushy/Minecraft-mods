@@ -1,5 +1,39 @@
 [
 	{
+		"name": "get_context",
+		"description": "Where you are: the local frame and direction rules, the size tier and allowed box, the dimension, biome, time and weather, the ground block at the origin, where the player stands (local) and how many tool calls are left. Call it first.",
+		"input_schema": {"type": "object", "properties": {}}
+	},
+	{
+		"name": "survey_area",
+		"description": "The terrain around the site as compact text: floor heights (y relative to the ground at the origin), surface blocks, water and lava, trees, cave ceilings and protected (probably player-made) regions as local boxes. Default radius covers the allowed box with 8 blocks to spare; at most 96. Read it before designing.",
+		"input_schema": {
+			"type": "object",
+			"properties": {"radius": {"type": "integer", "minimum": 1, "maximum": 96}}
+		}
+	},
+	{
+		"name": "inspect_region",
+		"description": "The exact blocks in a local box [x1, y1, z1, x2, y2, z2] (at most 4,096 blocks), layer by layer with a palette, directions relative. Use it to check what is already there, or to check your own work.",
+		"input_schema": {
+			"type": "object",
+			"properties": {"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6}},
+			"required": ["box"]
+		}
+	},
+	{
+		"name": "search_blocks",
+		"description": "Find block ids by words (\"oak stairs\", \"copper lantern\"), other mods' blocks included, each with its properties and allowed values (directions as relative words).",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"query": {"type": "string"},
+				"limit": {"type": "integer", "minimum": 1, "maximum": 50}
+			},
+			"required": ["query"]
+		}
+	},
+	{
 		"name": "submit_brief",
 		"description": "Describe the build before placing any block: a title, a style, the size you're aiming for, a palette of 4-8 blocks with roles (primary, secondary, accent, trim, roof, glass, floor, light) and the phases you'll build in. The player sees a one-line summary. Required before every other write tool.",
 		"input_schema": {
@@ -206,6 +240,20 @@
 				"include_protected": {"type": "boolean", "description": "Also remove blocks that look player-made. Only when the player asked for it."}
 			},
 			"required": ["box"]
+		}
+	},
+	{
+		"name": "terraform",
+		"description": "Level the box's footprint (its y range is ignored) to target_y, from the terrain as surveyed: everything above target_y becomes air up to each column's highest block (trees too), the ground below is filled up with fill_block (default dirt, replacing any water or lava), and target_y gets surface_block. Protected blocks stay. Use it to make a flat site, a terrace or a raised plinth before building.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
+				"target_y": {"type": "integer"},
+				"surface_block": {"type": "string"},
+				"fill_block": {"type": "string"}
+			},
+			"required": ["box", "target_y", "surface_block"]
 		}
 	},
 	{
