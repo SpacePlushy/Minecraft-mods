@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.world;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 import io.palmisano.aibuilder.AiBuilderMod;
 import net.minecraft.core.BlockPos;
@@ -43,6 +44,13 @@ public final class BuildTickets {
 	/** Server thread. */
 	public static void hold(ServerLevel level, Set<ChunkPos> chunks) {
 		chunks.forEach(chunk -> level.getChunkSource().addTicketWithRadius(TYPE, chunk, RADIUS));
+	}
+
+	/** {@link #hold}, completing once every chunk is loaded. Server thread. */
+	public static CompletableFuture<Void> holdAndLoad(ServerLevel level, Set<ChunkPos> chunks) {
+		return CompletableFuture.allOf(chunks.stream()
+				.map(chunk -> level.getChunkSource().addTicketAndLoadWithRadius(TYPE, chunk, RADIUS))
+				.toArray(CompletableFuture[]::new));
 	}
 
 	/** Server thread. */

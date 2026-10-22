@@ -9,7 +9,8 @@
 	],
 	"entrypoints": {
 		"fabric-gametest": [
-			"io.palmisano.aibuilder.test.PlacementGameTest"
+			"io.palmisano.aibuilder.test.PlacementGameTest",
+			"io.palmisano.aibuilder.test.UndoGameTest"
 		],
 		"fabric-client-gametest": [
 			"io.palmisano.aibuilder.test.SmokeClientGameTest",
