@@ -16,6 +16,27 @@ headless `claude -p`) calls build tools that this mod serves over a localhost MC
 - Only the world's owner can build (spec §15): never route other players' prompts through Frankie's subscription.
 - Every subagent runs on Opus 5.5 (root `CLAUDE.md`).
 
+## Architecture (as of M1)
+
+```
+B key ──► AiBuilderClient (END_CLIENT_TICK, drains OPEN_BUILDER clicks) ──► BuilderScreen
+                                                                              │ Build
+                                                    BuildPromptPayload(prompt, size) ──► server thread
+/aibuild <prompt> ──► AiBuildCommand ─────────────────────────────┐                     │
+                                                                  ▼                     ▼
+                              BuildManager.submit(player, prompt, size): owner check, prompt check, reply
+```
+
+| Where | What |
+|---|---|
+| `core/request/` | **Pure**: `SizeTier`, `BuildPrompt` (2,000 code points, normalize/check), `PromptHistory` (last 10 + last size, JSON), `Messages` (chat copy). Unit-tested. |
+| `BuildManager` | The one server entry point for prompts, from the packet and the command. M1 echoes; M2 starts a build here. |
+| `BuildPermission` | Singleplayer owner only (M6 adds the dedicated-server allow list). |
+| `net/BuildPromptPayload` | Serverbound packet. Wire limit 8,192 chars, far above the 2,000 prompt limit, so a long prompt gets a chat answer instead of a decode failure that drops the connection. |
+| `client/BuilderScreen` | The screen. The typed text lives in a field and survives `init()` re-runs (resize, GUI scale). |
+| `client/PromptHistoryStore` | `config/aibuilder-history.json`; write-temp-then-move; never throws. |
+| `src/gametest/` | Client gametests: smoke, prompt to server, the screen. `GameTestSupport` captures chat with `ClientReceiveMessageEvents.GAME`. |
+
 ## Commands (run here, in `mods/aibuilder/`)
 
 | Command | What it does |
@@ -25,7 +46,7 @@ headless `claude -p`) calls build tools that this mod serves over a localhost MC
 | `./gradlew runClient` | Launch a dev Minecraft with the mod, for manual play |
 | `./gradlew runClientGameTest` | Launch the real client, run the client gametests, save screenshots to `build/run/clientGameTest/screenshots/`. **Look at them.** |
 
-## Gotchas
+## Gotchas (26.3)
 
 - **Gametests while the Mac is locked:** a vsync'd buffer swap waits for a display refresh that never comes while
   the screen is locked or asleep, so the test client froze on its first frame (render thread stuck in
@@ -33,3 +54,13 @@ headless `claude -p`) calls build tools that this mod serves over a localhost MC
   `restoreDefaultGameOptions` resets options before every test, so editing `options.txt` doesn't help.
 - macOS has no `timeout` command; to bound a gametest run, background it and kill the client
   (`pkill -f fabric.client.gametest`) after a deadline.
+- **SDL, not GLFW:** there is no `org.lwjgl.glfw`. Key codes are SDL scancodes in `InputConstants.KEY_*`
+  (B is 5, not 66).
+- **Screens** draw through `extractRenderState(GuiGraphicsExtractor, …)`, not `render(GuiGraphics, …)`; for text
+  labels add `StringWidget`s (`addRenderableOnly`) instead of drawing.
+- `MultiLineEditBox` hides its placeholder while focused, and shows a `n/limit` counter under its right corner.
+- Client-side chat line: `player.sendSystemMessage(Component)` (there's no `displayClientMessage`).
+- `ClientGameTestContext.clickScreenButton(key)` resolves `key` as a translation (an unknown key is used as plain
+  text), then presses a `Button` whose label equals that text, or a `CycleButton` whose *name* does.
+- Auto GUI scale never makes the GUI smaller than 320×240 unless the window itself is: test the narrowest layout
+  with a 640×480 window (GUI 320×240), not 640×360 (that's GUI scale 1, 640×360).

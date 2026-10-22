@@ -1,1 +1,12 @@
-{}
+{
+	"key.aibuilder.open": "Open AI Builder",
+	"key.category.aibuilder.main": "AI Builder",
+	"gui.aibuilder.title": "AI Builder",
+	"gui.aibuilder.prompt": "What should Claude build?",
+	"gui.aibuilder.placeholder": "A castle, a cozy cabin with a dock, a Japanese garden with a koi pond…",
+	"gui.aibuilder.size": "Size",
+	"gui.aibuilder.mode.new": "New build here",
+	"gui.aibuilder.build": "Build",
+	"gui.aibuilder.recent": "Recent prompts",
+	"gui.aibuilder.no_server_mod": "This server doesn't have AI Builder."
+}

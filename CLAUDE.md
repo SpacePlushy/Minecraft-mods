@@ -16,7 +16,7 @@ so keep durable facts **here**, not in memory.
 |---|---|
 | `drone` | ✅ v1 done, reviewed, play-tested by Frankie, merged to `main`. Plan + ledger: `docs/superpowers/plans/2026-10-19-drone-mod-*`. Deferred minors are the `minor (deferred)` lines in the progress file. |
 | `rocket` | 🧠 next: brainstorming a rideable rocket ship with launch vapor (superpowers:brainstorming → spec → plan) |
-| `aibuilder` | 📝 Design approved 2026-10-21, on branch `aibuilder-v1` (worktree `.claude/worktrees/aibuilder-v1`): type a prompt, Claude Code (Frankie's Max login) builds it in the world. Spec `docs/superpowers/specs/2026-10-21-aibuilder-design.md`, living plan `mods/aibuilder/PLAN.md`. Six milestones, one plan each, with a stop for Frankie's test after every one. **Next:** M1 plan (superpowers:writing-plans), then execute it. |
+| `aibuilder` | 📝 Design approved 2026-10-21, on branch `aibuilder-v1` (worktree `.claude/worktrees/aibuilder-v1`): type a prompt, Claude Code (Frankie's Max login) builds it in the world. Spec `docs/superpowers/specs/2026-10-21-aibuilder-design.md`, living plan `mods/aibuilder/PLAN.md`. Six milestones, one plan each, with a stop for Frankie's test after every one. M1 (skeleton: B screen, prompt to server, `/aibuild` echo) built from `docs/superpowers/plans/2026-10-21-aibuilder-m1-plan.md`. **Next:** Frankie's M1 test (`cd mods/aibuilder && ./gradlew runClient`), then the M2 plan (placement engine). |
 
 **To resume a plan that's mid-execution (any mod):**
 1. Set up the machine (next section) and run `./gradlew build` in the mod's folder until it's green.
