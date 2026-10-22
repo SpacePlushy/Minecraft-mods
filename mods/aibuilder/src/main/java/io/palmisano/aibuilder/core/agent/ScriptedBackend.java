@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.tools.ToolExecutor;
 import io.palmisano.aibuilder.core.tools.ToolResult;
 
@@ -72,7 +73,7 @@ public final class ScriptedBackend implements AiBackend {
 				outcome.complete(BuildOutcome.FINISHED);
 			} catch (Throwable e) {
 				// Errors too (out of memory, a stack overflow): an outcome that never completes keeps the server busy.
-				failure.set(e.getMessage() == null ? e.toString() : e.getMessage());
+				failure.set(Messages.failed(e.getMessage() == null ? e.toString() : e.getMessage()));
 				outcome.completeExceptionally(e);
 			}
 		});

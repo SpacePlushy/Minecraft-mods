@@ -14,7 +14,9 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -227,20 +229,36 @@ public final class ClaudeCodeBackend implements AiBackend {
 			return answer;
 		}
 
+		/**
+		 * Reads to the end, whatever one line does: a reader that stopped would leave Claude Code running unwatched (no
+		 * token count, no usage stop). A log that can't be written is dropped, not the build.
+		 */
 		private void read() {
-			try (BufferedReader out = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
-					Writer log = openLog()) {
+			Writer log = openLog();
+			try (BufferedReader out = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
 				String line;
 				while ((line = out.readLine()) != null) {
 					if (log != null) {
-						log.write(line);
-						log.write('\n');
-						log.flush();
+						try {
+							log.write(line);
+							log.write('\n');
+							log.flush();
+						} catch (IOException e) {
+							LOG.warn("Couldn't write the build's stream log; going on without it", e);
+							closeQuietly(log);
+							log = null;
+						}
 					}
-					StreamEvents.parse(line).ifPresent(this::onEvent);
+					try {
+						StreamEvents.parse(line).ifPresent(this::onEvent);
+					} catch (RuntimeException e) {
+						LOG.warn("Couldn't handle a line from Claude Code; going on", e);
+					}
 				}
-			} catch (IOException | RuntimeException e) {
+			} catch (IOException e) {
 				LOG.warn("Reading Claude Code's output failed", e);
+			} finally {
+				closeQuietly(log);
 			}
 			int code;
 			try {
@@ -268,6 +286,16 @@ public final class ClaudeCodeBackend implements AiBackend {
 					if (turn.error().equals("authentication_failed")) {
 						stop(BuildOutcome.FAILED, Messages.notLoggedIn());
 						return;
+					}
+					// The plan's limit can come as an API error ("You've hit your session limit", spec §12.2). Only an error
+					// counts: Claude's own words about a size limit mustn't stop anything.
+					if (!turn.error().isEmpty()) {
+						Optional<String> limit = turn.error().equals("rate_limit") ? Optional.of(UsageLimits.resetsFromText(turn.text()))
+								: UsageLimits.limitFromText(turn.text());
+						if (limit.isPresent()) {
+							stop(BuildOutcome.LIMITED, Messages.usageLimit(limit.get()));
+							return;
+						}
 					}
 					if (retrying) {
 						retrying = false;
@@ -326,7 +354,11 @@ public final class ClaudeCodeBackend implements AiBackend {
 			}
 		}
 
-		/** The first stop wins. No more tool calls land from here on, and the process is asked to end. */
+		/**
+		 * The first stop wins. No more tool calls land from here on, and the process is asked to end: SIGINT, then
+		 * destroy, then destroy forcibly. The whole tree, taken now: Claude Code may run under a wrapper that doesn't
+		 * exec (a shell script, Windows' npm claude.cmd), and once the wrapper is gone its children can't be found.
+		 */
 		private void stop(BuildOutcome kind, String why) {
 			if (!stop.compareAndSet(null, new Stop(kind, why))) {
 				return;
@@ -337,28 +369,20 @@ public final class ClaudeCodeBackend implements AiBackend {
 			if (p == null || !p.isAlive()) {
 				return;
 			}
-			interrupt(p);
+			List<ProcessHandle> tree = p.descendants().toList();
+			interrupt(p, tree);
 			long grace = config.cancelGrace().toMillis();
-			TIMERS.schedule(() -> {
-				if (p.isAlive()) {
-					p.destroy();
-				}
-			}, grace, TimeUnit.MILLISECONDS);
-			TIMERS.schedule(() -> {
-				if (p.isAlive()) {
-					p.descendants().forEach(ProcessHandle::destroyForcibly);
-					p.destroyForcibly();
-				}
-			}, 2 * grace, TimeUnit.MILLISECONDS);
+			TIMERS.schedule(() -> destroyTree(p, tree, false), grace, TimeUnit.MILLISECONDS);
+			TIMERS.schedule(() -> destroyTree(p, tree, true), 2 * grace, TimeUnit.MILLISECONDS);
 		}
 
-		/** The game is stopping: no time for a grace period. */
+		/** The game is stopping: no time for a grace period. Children first, so none is left without its wrapper. */
 		void kill() {
-			stop(BuildOutcome.CANCELLED, "");
 			Process p = process;
-			if (p != null && p.isAlive()) {
-				p.descendants().forEach(ProcessHandle::destroyForcibly);
-				p.destroyForcibly();
+			List<ProcessHandle> tree = p == null ? List.of() : p.descendants().toList();
+			stop(BuildOutcome.CANCELLED, "");
+			if (p != null) {
+				destroyTree(p, tree, true);
 			}
 		}
 
@@ -394,6 +418,9 @@ public final class ClaudeCodeBackend implements AiBackend {
 					args.addProperty("summary", last.text().strip());
 					tools.call("finish", args);
 				}
+			} else if (last != null && UsageLimits.limitFromText(last.text()).isPresent()) {
+				kind = BuildOutcome.LIMITED;
+				reason = Messages.usageLimit(UsageLimits.limitFromText(last.text()).get());
 			} else if (last != null) {
 				kind = BuildOutcome.FAILED;
 				reason = Messages.claudeStopped(last.text().isBlank() ? last.terminalReason() : last.text());
@@ -422,6 +449,16 @@ public final class ClaudeCodeBackend implements AiBackend {
 				}
 			} catch (IOException e) {
 				// The process ended.
+			}
+		}
+
+		private static void closeQuietly(Writer writer) {
+			if (writer != null) {
+				try {
+					writer.close();
+				} catch (IOException e) {
+					// Nothing more to lose.
+				}
 			}
 		}
 
@@ -475,16 +512,43 @@ public final class ClaudeCodeBackend implements AiBackend {
 		Files.writeString(file, text, StandardCharsets.UTF_8);
 	}
 
-	/** SIGINT, so Claude Code ends its turn the way it would for a person (the M4 spike); Windows has none. */
-	private static void interrupt(Process process) {
+	/**
+	 * SIGINT to the process and everything under it, so Claude Code ends its turn the way it would for a person (the
+	 * M4 spike); Windows has no SIGINT.
+	 */
+	private static void interrupt(Process process, List<ProcessHandle> tree) {
 		if (WINDOWS) {
-			process.destroy();
+			destroyTree(process, tree, false);
 			return;
 		}
+		List<String> kill = new ArrayList<>(List.of("kill", "-INT", Long.toString(process.pid())));
+		tree.forEach(child -> kill.add(Long.toString(child.pid())));
 		try {
-			new ProcessBuilder("kill", "-INT", Long.toString(process.pid())).redirectErrorStream(true).start();
+			new ProcessBuilder(kill).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
 		} catch (IOException e) {
-			process.destroy();
+			destroyTree(process, tree, false);
+		}
+	}
+
+	/** Every process of the tree still alive, children first, whether or not the parent still is. */
+	private static void destroyTree(Process process, List<ProcessHandle> tree, boolean force) {
+		Set<ProcessHandle> all = new LinkedHashSet<>(tree);
+		process.descendants().forEach(all::add);
+		for (ProcessHandle child : all) {
+			if (child.isAlive()) {
+				if (force) {
+					child.destroyForcibly();
+				} else {
+					child.destroy();
+				}
+			}
+		}
+		if (process.isAlive()) {
+			if (force) {
+				process.destroyForcibly();
+			} else {
+				process.destroy();
+			}
 		}
 	}
 }

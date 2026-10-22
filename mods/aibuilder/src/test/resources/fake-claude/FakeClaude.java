@@ -103,6 +103,12 @@ public class FakeClaude {
 				System.err.println("boom: the fake crashed");
 				System.exit(3);
 			}
+			case "session_limit" -> {
+				OUT.println("{\"type\":\"assistant\",\"message\":{\"id\":\"" + UUID.randomUUID() + "\",\"model\":\"<synthetic>\",\"role\":\"assistant\","
+						+ "\"content\":[{\"type\":\"text\",\"text\":\"You've hit your session limit · resets 3pm\"}]},\"error\":\"rate_limit\","
+						+ "\"session_id\":\"" + session + "\"}");
+				result(true, "success", "You've hit your session limit · resets 3pm", "api_error", 1);
+			}
 			case "logged_out" -> {
 				OUT.println("{\"type\":\"assistant\",\"message\":{\"id\":\"" + UUID.randomUUID() + "\",\"model\":\"<synthetic>\",\"role\":\"assistant\","
 						+ "\"content\":[{\"type\":\"text\",\"text\":\"Not logged in · Please run /login\"}]},\"error\":\"authentication_failed\","

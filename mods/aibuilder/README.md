@@ -12,9 +12,12 @@ Max). `/aibuild test` builds a demo house without Claude, `/aibuild survey` show
 
 - **Claude Code**, installed and logged in with your Claude subscription: in a terminal, run `claude` once and log
   in. AI Builder finds it in the usual places (`~/.local/bin/claude` and the like) and never sees your login.
-- Builds count against your plan's usage limits, never your wallet: at the plan's limit a build stops, and if
-  paid extra usage would start, it stops before that too. A build also stops at 150 tool calls, 500,000 output
-  tokens or 45 minutes. Whatever it built stays, and `/aibuild undo` reverts it.
+- Builds count against your plan's usage limits: at the plan's limit a build stops. AI Builder never builds on paid
+  extra usage: it stops at the first sign of it, and if your account allows extra usage it stops already when the
+  plan is about 95% used. Claude Code reports extra usage only after the step that used it, so for a hard guarantee
+  keep extra usage turned off in your Claude account. A build also stops at 150 tool calls, 500,000 output tokens or
+  45 minutes. Whatever it built stays, and `/aibuild undo` reverts it.
+- Only prompts you type build: a command from a click (a link in a book or on a sign) can't start one.
 
 ![The demo house built by /aibuild test, facing the player, with the chat lines it printed](docs/demo-house.png)
 

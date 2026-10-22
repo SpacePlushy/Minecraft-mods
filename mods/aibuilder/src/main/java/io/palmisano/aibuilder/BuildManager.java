@@ -578,7 +578,8 @@ public final class BuildManager {
 			if (error != null) {
 				line = Messages.failed(reason(error));
 			} else if (failure != null) {
-				line = Messages.failed(failure);
+				// The backend's reason is the player's whole line (spec §12.2's messages word for word).
+				line = failure;
 			} else if (stoppedBy == BuildOutcome.CAPPED) {
 				line = Messages.capped(stopReason, job.placed());
 			} else if (stoppedBy == BuildOutcome.LIMITED) {

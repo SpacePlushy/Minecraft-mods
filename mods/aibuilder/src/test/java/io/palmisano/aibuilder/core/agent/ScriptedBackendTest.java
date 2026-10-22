@@ -15,6 +15,7 @@ import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.Placement;
+import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.tools.Budget;
@@ -67,7 +68,8 @@ class ScriptedBackendTest {
 		};
 		BuildHandle handle = new ScriptedBackend(script(BRIEF, FILL), Runnable::run).start(REQUEST, tools(sink), BuildEvents.NONE);
 		assertEquals(BuildOutcome.FAILED, handle.outcome().get(5, TimeUnit.SECONDS));
-		assertEquals("the world is read-only", handle.reason());
+		// A backend's reason is the player's whole line: BuildManager shows it as it is (M4 review).
+		assertEquals(Messages.failed("the world is read-only"), handle.reason());
 	}
 
 	/** An Error (out of memory, a stack overflow) must still end the build, or the server would stay busy forever. */

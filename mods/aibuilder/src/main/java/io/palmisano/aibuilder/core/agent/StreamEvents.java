@@ -52,8 +52,15 @@ public final class StreamEvents {
 			}
 			case "rate_limit_event" -> {
 				JsonObject info = object(o, "rate_limit_info");
+				double fullest = 0;
+				JsonObject windows = object(info, "unifiedWindows");
+				if (windows != null) {
+					for (String window : windows.keySet()) {
+						fullest = Math.max(fullest, decimal(object(windows, window), "utilization"));
+					}
+				}
 				yield new StreamEvent.RateLimit(string(info, "status"), number(info, "resetsAt"), string(info, "rateLimitType"),
-						bool(info, "isUsingOverage"));
+						bool(info, "isUsingOverage"), string(info, "overageStatus"), fullest);
 			}
 			case "result" -> new StreamEvent.Result(subtype, bool(o, "is_error"), integer(o, "num_turns"), string(o, "result"),
 					string(o, "terminal_reason"));
@@ -122,6 +129,15 @@ public final class StreamEvents {
 		JsonElement e = o == null ? null : o.get(key);
 		if (e instanceof JsonPrimitive p && p.isNumber()) {
 			return p.getAsLong();
+		}
+		return 0;
+	}
+
+	private static double decimal(JsonObject o, String key) {
+		JsonElement e = o == null ? null : o.get(key);
+		if (e instanceof JsonPrimitive p && p.isNumber()) {
+			double value = p.getAsDouble();
+			return Double.isFinite(value) ? value : 0;
 		}
 		return 0;
 	}

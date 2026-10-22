@@ -58,6 +58,7 @@ class ClaudeCodeBackendTest {
 	private McpHttpServer server;
 	private Budget budget = new Budget(150);
 	private Duration startupTimeout = Duration.ofSeconds(30);
+	private volatile boolean listenerThrows;
 
 	@BeforeEach
 	void startServer() throws IOException {
@@ -71,10 +72,14 @@ class ClaudeCodeBackendTest {
 	}
 
 	private BuildHandle start(String scenario, String prompt, Map<String, String> extra) {
+		return start(scenario, prompt, extra, List.of(JAVA, FAKE.toString()));
+	}
+
+	private BuildHandle start(String scenario, String prompt, Map<String, String> extra, List<String> command) {
 		Map<String, String> env = new HashMap<>(System.getenv());
 		env.put("FAKE_CLAUDE_SCENARIO", scenario);
 		env.putAll(extra);
-		ClaudeCodeBackend backend = new ClaudeCodeBackend(new ClaudeCodeBackend.Config(List.of(JAVA, FAKE.toString()), ClaudeLaunch.environment(env),
+		ClaudeCodeBackend backend = new ClaudeCodeBackend(new ClaudeCodeBackend.Config(command, ClaudeLaunch.environment(env),
 				ClaudeSettings.DEFAULT, "You build.", new McpEndpoint(server.port(), sessions), temp, temp.resolve("stream.jsonl"), startupTimeout,
 				Duration.ofSeconds(5), Duration.ofSeconds(2)));
 		ToolExecutor tools = new ToolExecutor(new Validator(FakeCatalog.standard(), Validator.DEFAULT_BANNED), new LocalFrame(new Pos(0, 64, 0),
@@ -83,6 +88,9 @@ class ClaudeCodeBackendTest {
 			@Override
 			public void status(String note) {
 				notes.add(note);
+				if (listenerThrows && note.equals(Messages.surveyingTerrain())) {
+					throw new IllegalStateException("a listener that fails");
+				}
 			}
 
 			@Override
@@ -223,6 +231,51 @@ class ClaudeCodeBackendTest {
 		assertEquals(BuildOutcome.FINISHED, outcome(handle));
 		// Claude didn't call finish: its last text is passed on as the summary.
 		assertEquals(prompt, sink.finishedWith);
+	}
+
+	/**
+	 * Claude Code started through a wrapper that doesn't exec (a shell script, Windows' npm claude.cmd): a cancel must
+	 * end the wrapper's children too, or Claude goes on spending the owner's usage with nobody watching (M4 review).
+	 */
+	@Test
+	void cancelEndsAClaudeBehindAWrapper() throws Exception {
+		List<String> wrapper = List.of("/bin/sh", "-c", "'" + JAVA + "' '" + FAKE + "' \"$@\"; exit $?", "sh");
+		BuildHandle handle = start("hang", "a tiny hut", Map.of(), wrapper);
+		awaitInit();
+		// The wrapper and the fake under it, by pid (macOS doesn't show other processes' command lines).
+		List<ProcessHandle> launched = ProcessHandle.current().descendants().toList();
+		assertTrue(launched.size() >= 2, "expected the wrapper and the fake: " + launched);
+		long began = System.nanoTime();
+		handle.cancel();
+		assertEquals(BuildOutcome.CANCELLED, handle.outcome().get(20, TimeUnit.SECONDS));
+		assertTrue(System.nanoTime() - began < TimeUnit.SECONDS.toNanos(8), "cancel waited for the wrapped Claude Code");
+		Thread.sleep(300);
+		assertEquals(List.of(), launched.stream().filter(ProcessHandle::isAlive).toList(), "a wrapped Claude Code outlived the cancel");
+	}
+
+	/** Spec §12.2: "You've hit your session limit" is the usage limit, with its message, not a failure. */
+	@Test
+	void aSessionLimitIsTheUsageLimit() throws Exception {
+		BuildHandle handle = start("session_limit");
+		assertEquals(BuildOutcome.LIMITED, outcome(handle));
+		assertTrue(handle.reason().startsWith("Your Claude usage limit is reached"), handle.reason());
+	}
+
+	/** Whatever goes wrong handling one line, the reader keeps reading (a stuck reader means a runaway Claude). */
+	@Test
+	void aThrowingListenerDoesntStopTheReader() throws Exception {
+		listenerThrows = true;
+		BuildHandle handle = start("build");
+		assertEquals(BuildOutcome.FINISHED, outcome(handle));
+		assertEquals("A tiny oak hut.", sink.finishedWith);
+	}
+
+	/** A stream log that can't be written (here a folder) never stops the build. */
+	@Test
+	void anUnwritableStreamLogDoesntStopTheBuild() throws Exception {
+		Files.createDirectories(temp.resolve("stream.jsonl"));
+		BuildHandle handle = start("build");
+		assertEquals(BuildOutcome.FINISHED, outcome(handle));
 	}
 
 	@Test

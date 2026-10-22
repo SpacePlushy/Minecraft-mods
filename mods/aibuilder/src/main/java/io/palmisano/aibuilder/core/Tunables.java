@@ -24,6 +24,8 @@ public final class Tunables {
 	public static final int STATUS_INTERVAL_TICKS = 20;
 	/** How long a checkpoint waits for its blocks to be placed: well inside Claude Code's 120 s MCP timeout. */
 	public static final int CHECKPOINT_TIMEOUT_SECONDS = 90;
+	/** terraform's wait for what's queued before it reads the ground again; with that read, inside the MCP timeout. */
+	public static final int TERRAFORM_PLACE_WAIT_SECONDS = 40;
 	/** Output tokens one build may use (spec §12.2's max_tokens_per_build). */
 	public static final long MAX_OUTPUT_TOKENS = 500_000;
 	/** Minutes one build may take (spec §12.2's max_build_minutes). */
@@ -36,6 +38,11 @@ public final class Tunables {
 	public static final int CANCEL_GRACE_SECONDS = 5;
 	/** How long Claude Code may take to start (its system/init line) before the build fails. */
 	public static final int STARTUP_TIMEOUT_SECONDS = 60;
+	/**
+	 * With paid extra usage allowed on the account, the fullest usage window this full stops a build before the plan
+	 * runs out (Claude Code reports extra usage only after the turn that used it).
+	 */
+	public static final double USAGE_STOP_UTILIZATION = 0.95;
 	/** How long a tool call waits for the build's start check before it's refused (spec §12.2). */
 	public static final int READY_WAIT_SECONDS = 10;
 	/** Placements queued and not yet placed, at most: beyond it a write call is refused until placement catches up. */

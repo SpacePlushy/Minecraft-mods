@@ -52,7 +52,8 @@ class StreamEventsTest {
 		assertEquals(135, only(events, StreamEvent.OutputTokens.class).stream().mapToLong(StreamEvent.OutputTokens::tokens).sum());
 
 		List<StreamEvent.RateLimit> limits = only(events, StreamEvent.RateLimit.class);
-		assertEquals(List.of(new StreamEvent.RateLimit("allowed", 1792681200L, "five_hour", false)), limits);
+		// The fullest window decides how close the plan is to its limit (here the seven-day one, at 51%).
+		assertEquals(List.of(new StreamEvent.RateLimit("allowed", 1792681200L, "five_hour", false, "rejected", 0.51)), limits);
 
 		List<StreamEvent.Result> results = only(events, StreamEvent.Result.class);
 		assertEquals(1, results.size());
@@ -112,7 +113,7 @@ class StreamEventsTest {
 		assertEquals(List.of(), init.plugins());
 		assertEquals("", init.version());
 		// A rate limit without its info, a result without numbers: defaults, no exception.
-		assertEquals(Optional.of(new StreamEvent.RateLimit("", 0, "", false)), StreamEvents.parse("{\"type\":\"rate_limit_event\"}"));
+		assertEquals(Optional.of(new StreamEvent.RateLimit("", 0, "", false, "", 0)), StreamEvents.parse("{\"type\":\"rate_limit_event\"}"));
 		StreamEvent.Result result = (StreamEvent.Result) StreamEvents.parse("{\"type\":\"result\",\"subtype\":\"success\"}").orElseThrow();
 		assertEquals(new StreamEvent.Result("success", false, 0, "", ""), result);
 		// Wrong types where a value is expected don't throw either.

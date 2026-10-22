@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -198,6 +201,41 @@ class ToolExecutorTest {
 		sink.pending = 0;
 		ToolResult fill = tools.call("fill", json("{\"box\":[0,0,1,0,0,1],\"block\":\"stone\"}"));
 		assertTrue(fill.text().contains("protected"), fill.text());
+	}
+
+	/**
+	 * Claude Code may send a turn's calls at once: a checkpoint waiting for placement mustn't hold the others up, or
+	 * they'd reach the 120 s MCP timeout and still run after Claude was told they failed (M4 review).
+	 */
+	@Test
+	void aCheckpointDoesntHoldUpOtherCalls() throws Exception {
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		RecordingSink slow = new RecordingSink() {
+			@Override
+			public int checkpoint(String phase) {
+				entered.countDown();
+				try {
+					release.await(10, TimeUnit.SECONDS);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+				return super.checkpoint(phase);
+			}
+		};
+		ToolExecutor tools = new ToolExecutor(new Validator(FakeCatalog.standard(), Validator.DEFAULT_BANNED),
+				new LocalFrame(new Pos(0, 64, 0), Facing.SOUTH), ALLOWED, SizeTier.SMALL, 100_000, slow, new Budget(150), world);
+		tools.call("submit_brief", json(BRIEF));
+		CompletableFuture<ToolResult> waiting = CompletableFuture.supplyAsync(() -> tools.call("checkpoint", json("{\"phase\":\"walls\"}")));
+		assertTrue(entered.await(5, TimeUnit.SECONDS), "the checkpoint never started waiting");
+		ToolResult context = CompletableFuture.supplyAsync(() -> tools.call("get_context", json("{}"))).get(5, TimeUnit.SECONDS);
+		assertFalse(context.isError(), context.text());
+		ToolResult fill = CompletableFuture.supplyAsync(() -> tools.call("fill", json("{\"box\":[0,0,0,1,0,0],\"block\":\"stone\"}")))
+				.get(5, TimeUnit.SECONDS);
+		assertFalse(fill.isError(), fill.text());
+		assertFalse(waiting.isDone(), "the checkpoint answered before placement caught up");
+		release.countDown();
+		assertTrue(waiting.get(5, TimeUnit.SECONDS).text().startsWith("Checkpoint walls"));
 	}
 
 	/** A checkpoint answers within the MCP timeout even when placement is behind, and says so. */

@@ -46,6 +46,7 @@ public final class ToolExecutor {
 			"finish");
 	private static final int REJECTION_LINES = 10;
 	private static final BlockSpec AIR = BlockSpec.of("minecraft:air");
+	private static final String BRIEF_FIRST = "Call submit_brief first: title, style, size, palette and phases, before placing any block.";
 
 	private final Validator validator;
 	private final LocalFrame frame;
@@ -84,35 +85,28 @@ public final class ToolExecutor {
 		return budget;
 	}
 
-	public synchronized ToolResult call(String name, JsonObject args) {
-		budget.count();
-		if (finished) {
-			return ToolResult.error("This build is finished.");
-		}
-		if (budget.exhausted() && !name.equals("finish")) {
-			return ToolResult.error("Budget reached: call finish now.");
+	/**
+	 * One tool call; thread-safe. Claude Code may send a turn's calls at once, so the ones that wait (a checkpoint for
+	 * placement, the read tools for the world, terraform for both) wait outside the lock: they read only what never
+	 * changes or what's thread-safe, and the writes that change the executor's state take the lock (M4 review).
+	 */
+	public ToolResult call(String name, JsonObject args) {
+		ToolResult refusal = admit(name);
+		if (refusal != null) {
+			return withFooter(refusal);
 		}
 		ToolResult result;
 		try {
 			Args a = new Args(args);
 			result = switch (name) {
-				case "submit_brief" -> brief(a);
-				case "checkpoint" -> checkpoint(a);
-				case "finish" -> finish(a);
 				// Looking around needs no brief: it's what the brief is made from.
 				case "get_context" -> context();
 				case "survey_area" -> survey(a);
 				case "inspect_region" -> inspect(a);
 				case "search_blocks" -> search(a);
-				default -> {
-					if (!TOOLS.contains(name)) {
-						yield ToolResult.error("There is no tool called \"" + name + "\".");
-					}
-					if (!briefed) {
-						yield ToolResult.error("Call submit_brief first: title, style, size, palette and phases, before placing any block.");
-					}
-					yield write(name, a);
-				}
+				case "checkpoint" -> checkpoint(a);
+				case "terraform" -> terraform(a);
+				default -> locked(name, a);
 			};
 		} catch (IllegalArgumentException e) {
 			result = ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + e.getMessage());
@@ -120,6 +114,39 @@ public final class ToolExecutor {
 			// The world couldn't be read in time (or at all): Claude can try again or go on without it.
 			result = ToolResult.error("Couldn't read the world: " + e.getMessage());
 		}
+		return withFooter(result);
+	}
+
+	/** Counts the call; refuses it when the build is over or over budget (finish still goes through). */
+	private synchronized ToolResult admit(String name) {
+		budget.count();
+		if (finished) {
+			return ToolResult.error("This build is finished.");
+		}
+		if (budget.exhausted() && !name.equals("finish")) {
+			return ToolResult.error("Budget reached: call finish now.");
+		}
+		return null;
+	}
+
+	/** The brief, finish and the writes: they change what later calls see. */
+	private synchronized ToolResult locked(String name, Args a) {
+		return switch (name) {
+			case "submit_brief" -> brief(a);
+			case "finish" -> finish(a);
+			default -> {
+				if (!TOOLS.contains(name)) {
+					yield ToolResult.error("There is no tool called \"" + name + "\".");
+				}
+				if (!briefed) {
+					yield ToolResult.error(BRIEF_FIRST);
+				}
+				yield write(name, a);
+			}
+		};
+	}
+
+	private ToolResult withFooter(ToolResult result) {
 		String footer = budget.footer();
 		return footer.isEmpty() ? result : new ToolResult(result.text() + "\n" + footer, result.isError());
 	}
@@ -188,6 +215,25 @@ public final class ToolExecutor {
 	 * below, the solid floor (under any water or lava) is filled up with {@code fill_block}; {@code target_y} gets
 	 * {@code surface_block}. Nothing outside the allowed box's height.
 	 */
+	private ToolResult terraform(Args a) {
+		synchronized (this) {
+			if (!briefed) {
+				return ToolResult.error(BRIEF_FIRST);
+			}
+		}
+		// Outside the box's height it couldn't place its surface anyway, and a far target would mean millions of blocks.
+		int target = a.integer("target_y");
+		if (target < allowed.min().y() || target > allowed.max().y()) {
+			return ToolResult.error(RejectReason.OUT_OF_BOUNDS.wireName() + ": target_y " + target + " is outside the allowed box's height, y "
+					+ allowed.min().y() + ".." + allowed.max().y() + "; nothing was queued");
+		}
+		List<LocalBlock> blocks = terraform(a, target);
+		synchronized (this) {
+			return queue(blocks, false, false);
+		}
+	}
+
+	/** The waits (for what's queued, then for the ground) happen outside the lock, within the MCP timeout together. */
 	private List<LocalBlock> terraform(Args a, int target) {
 		Box box = a.box("box");
 		BlockSpec surface = BlockSpec.of(a.string("surface_block"));
@@ -257,15 +303,6 @@ public final class ToolExecutor {
 		if (name.equals("set_blocks")) {
 			return setBlocks(a);
 		}
-		int terraformTarget = 0;
-		if (name.equals("terraform")) {
-			// Outside the box's height it couldn't place its surface anyway, and a far target would mean millions of blocks.
-			terraformTarget = a.integer("target_y");
-			if (terraformTarget < allowed.min().y() || terraformTarget > allowed.max().y()) {
-				return ToolResult.error(RejectReason.OUT_OF_BOUNDS.wireName() + ": target_y " + terraformTarget + " is outside the allowed box's height, y "
-						+ allowed.min().y() + ".." + allowed.max().y() + "; nothing was queued");
-			}
-		}
 		// A shape bigger than the whole allowed box is a mistake; refuse it before building it in memory.
 		long size = upperBound(name, a);
 		if (size > allowed.volume()) {
@@ -289,7 +326,6 @@ public final class ToolExecutor {
 					a.has("slab") ? BlockSpec.of(a.string("slab")) : null, a.has("ridge") ? axis(a.string("ridge")) : null,
 					a.optInt("overhang", 0), a.has("gable_block") ? BlockSpec.of(a.string("gable_block")) : null);
 			case "staircase" -> staircase(a);
-			case "terraform" -> terraform(a, terraformTarget);
 			default -> throw new IllegalStateException(name);
 		};
 		return queue(blocks, false, name.equals("clear") && a.optBool("include_protected", false));

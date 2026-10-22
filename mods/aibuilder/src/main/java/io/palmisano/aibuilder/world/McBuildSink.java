@@ -59,7 +59,7 @@ public final class McBuildSink implements BuildSink {
 	@Override
 	public void awaitPlaced() {
 		try {
-			job.whenIdle().get(Tunables.CHECKPOINT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			job.whenIdle().get(Tunables.TERRAFORM_PLACE_WAIT_SECONDS, TimeUnit.SECONDS);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 		} catch (ExecutionException | TimeoutException e) {

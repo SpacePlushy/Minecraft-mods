@@ -8,6 +8,9 @@ public interface BuildHandle {
 
 	CompletableFuture<BuildOutcome> outcome();
 
-	/** Why the build ended, for the player, once {@link #outcome()} is FAILED, CAPPED or LIMITED; "" otherwise. */
+	/**
+	 * Why the build ended, once {@link #outcome()} is FAILED, CAPPED or LIMITED; "" otherwise. For FAILED and LIMITED
+	 * it's the player's whole line, shown as it is; for CAPPED, which limit ("the 150 tool-call limit").
+	 */
 	String reason();
 }

@@ -124,6 +124,10 @@ public final class Messages {
 		return text.substring(0, text.offsetByCodePoints(0, 299)) + "…";
 	}
 
+	public static String clickedPrompt() {
+		return "AI Builder builds only what you type: a click tried to send it a prompt, so nothing was sent.";
+	}
+
 	public static String typeItYourself() {
 		return "AI Builder only takes commands its owner types in chat.";
 	}
@@ -183,10 +187,10 @@ public final class Messages {
 		return "Claude usage is close to its limit" + (resets.isEmpty() ? "" : " (resets " + resets + ")") + ".";
 	}
 
-	/** Paid extra usage is about to take over from the plan: AI Builder never lets it (Frankie). */
+	/** Paid extra usage took over from the plan: AI Builder stops at once (Frankie: never). */
 	public static String extraUsage() {
-		return "Claude's paid extra usage would start now, so the build stopped: AI Builder never uses it. What's built so far stays;"
-				+ " /aibuild undo reverts it.";
+		return "Claude started using paid extra usage, so the build stopped at once: AI Builder never builds on it. What's built so far"
+				+ " stays; /aibuild undo reverts it.";
 	}
 
 	public static String noRoom() {

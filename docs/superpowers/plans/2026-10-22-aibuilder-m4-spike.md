@@ -27,11 +27,15 @@ the test fixtures in `mods/aibuilder/src/test/resources/stream/` (local paths re
   `claude_code_version`, `skills: []`, `slash_commands: []`, a list of built-in `agents` (harmless: no tool can
   start one), and three **built-in plugins** (`path: "builtin"`, sources `cc-plugin-*@builtin`). So the init check
   allows built-in plugins and refuses any other.
-- **Usage and extra usage are visible.** Each turn's `rate_limit_event.rate_limit_info` has `status` (`"allowed"`),
+- **Usage and extra usage are visible.** A `rate_limit_event.rate_limit_info` has `status` (`"allowed"`),
   `resetsAt` (epoch seconds), `rateLimitType` (`"five_hour"`), `overageStatus` (`"rejected"`, reason
   `"org_level_disabled"` on this account), `isUsingOverage` (`false`) and `unifiedWindows` with each window's
   utilization. `isUsingOverage: true` is the sign that paid extra usage has taken over, so the mod can stop a build
-  there; the per-build caps aren't the only bound.
+  there; the per-build caps aren't the only bound. **When it comes** (settled from the live build's log, M4 review):
+  with the first response, and again whenever the state changes (there, after turn 12, when the five-hour window went
+  from 5% to 6%), not every turn. So extra usage is reported only after the turn that used it: the mod stops at
+  once, and, when the account allows extra usage at all (`overageStatus` not `rejected`), already when the fullest
+  window is 95% used. A `rateLimitType` of `overage` stops it too.
 - **Not logged in:** `claude auth status --json` exits 1 with `loggedIn: false`, `authMethod: "none"`. A `-p` run
   prints `system/init`, an assistant message with `"error": "authentication_failed"` and the text "Not logged in ·
   Please run /login", then a `result` with `is_error: true`, `terminal_reason: "api_error"`, and exits 1. Logged

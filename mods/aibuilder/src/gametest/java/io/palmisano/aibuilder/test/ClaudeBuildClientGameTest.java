@@ -44,10 +44,26 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 				GameTestSupport.runPlayerCommand(ctx, "aibuild a limited hut");
 				GameTestSupport.awaitChatStartingWith(ctx, "Your Claude usage limit is reached (resets ", 600);
 
+				// The login lapsing mid-build (the check passed, then the stream says otherwise): the spec's line word for word.
+				TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "logged_out");
+				GameTestSupport.runPlayerCommand(ctx, "aibuild a hut after a logout");
+				GameTestSupport.awaitChat(ctx, Messages.notLoggedIn(), 600);
+
+				// A click (a book's page, a sign, a tellraw link) can't send a prompt as if typed; the mod's own buttons
+				// (undo, status) still go through (M4 review).
+				TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "build");
+				ctx.runOnClient(mc -> mc.player.connection.sendUnattendedCommand("aibuild a castle from a link", mc.gui.screen()));
+				ctx.runOnClient(mc -> mc.player.connection.sendUnattendedCommand("aibuild status", mc.gui.screen()));
+				GameTestSupport.awaitChat(ctx, Messages.nothingBuilding(), 200);
+				ctx.waitTicks(20);
+				check(!server.computeOnServer(s -> BuildManager.of(s).busy()), "a clicked prompt started a build");
+				check(GameTestSupport.chat().stream().noneMatch(line -> line.startsWith("AI Builder: building \"a castle from a link\"")),
+						"a clicked prompt was taken: " + GameTestSupport.chat());
+
 				// Logged out: the check before the launch says so, and nothing starts.
 				TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "build", "FAKE_CLAUDE_LOGGED_OUT", "1");
 				GameTestSupport.runPlayerCommand(ctx, "aibuild a logged out hut");
-				GameTestSupport.awaitChat(ctx, Messages.notLoggedIn(), 600);
+				GameTestSupport.awaitChatCount(ctx, Messages.notLoggedIn(), 2, 600);
 				ctx.waitTicks(5);
 				check(!server.computeOnServer(s -> BuildManager.of(s).busy()), "a build started without a login");
 			} finally {

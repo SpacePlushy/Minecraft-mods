@@ -9,7 +9,11 @@
 	],
 	"environment": "*",
 	"mixins": [
-		"aibuilder.mixins.json"
+		"aibuilder.mixins.json",
+		{
+			"config": "aibuilder-client.mixins.json",
+			"environment": "client"
+		}
 	],
 	"entrypoints": {
 		"main": [

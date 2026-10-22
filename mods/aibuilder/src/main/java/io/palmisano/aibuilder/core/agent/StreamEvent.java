@@ -32,8 +32,13 @@ public sealed interface StreamEvent {
 	record Retry(int attempt, String error) implements StreamEvent {
 	}
 
-	/** {@code rate_limit_event}: the plan's usage window, and whether paid extra usage is being used. */
-	record RateLimit(String status, long resetsAt, String type, boolean usingOverage) implements StreamEvent {
+	/**
+	 * {@code rate_limit_event}: the plan's usage window, whether paid extra usage is being used, whether the account
+	 * allows it at all ({@code overageStatus}: "rejected" when it's off), and how full the fullest window is (0..1).
+	 * Claude Code sends one with the first response and again whenever the state changes (the M4 live build).
+	 */
+	record RateLimit(String status, long resetsAt, String type, boolean usingOverage, String overageStatus, double utilization)
+			implements StreamEvent {
 	}
 
 	/** {@code result}: the run is over. */
