@@ -38,8 +38,15 @@ public class BuilderScreenClientGameTest implements FabricClientGameTest {
 		}
 		writeHistory("{oops"); // a corrupt history file must not stop the screen from opening
 		try (TestSingleplayerContext singleplayer = GameTestSupport.world(ctx)) {
+			// Ctrl+B (Cmd+B on macOS) is the narrator's shortcut, not the builder's.
+			ctx.getInput().holdControl();
+			ctx.getInput().pressKey(InputConstants.KEY_B);
+			ctx.getInput().releaseControl();
+			ctx.waitTicks(3);
+			check(ctx.computeOnClient(mc -> mc.gui.screen() == null), "Ctrl+B opened a screen");
+
 			// B opens an empty screen.
-			ctx.getInput().pressKey(AiBuilderClient.OPEN_BUILDER);
+			ctx.getInput().pressKey(InputConstants.KEY_B);
 			ctx.waitForScreen(BuilderScreen.class);
 			check(screen(ctx, BuilderScreen::prompt).isEmpty(), "a new screen should have an empty prompt");
 			check(!screen(ctx, BuilderScreen::buildEnabled), "Build must be off while the prompt is empty");
@@ -92,12 +99,16 @@ public class BuilderScreenClientGameTest implements FabricClientGameTest {
 			check(screen(ctx, BuilderScreen::prompt).equals(BARN), "clicking a recent prompt should fill the box");
 			ctx.takeScreenshot("aibuilder-screen-recent");
 
-			// The box stops at 2,000 characters.
-			ctx.getInput().typeChars("x".repeat(2100));
+			// The box stops at 2,000 characters. An emoji typed at the limit is cut in half there; Build sends the prompt
+			// without the half (it would arrive as "?").
+			String full = BARN + "x".repeat(1999 - BARN.length());
+			ctx.getInput().typeChars(full.substring(BARN.length()) + "🏰" + "x".repeat(100));
 			int length = screen(ctx, s -> s.prompt().length());
 			check(length == 2000, "the box should stop at 2,000 characters, got " + length);
-			ctx.getInput().pressKey(InputConstants.KEY_ESCAPE);
+			ctx.clickScreenButton("gui.aibuilder.build");
 			ctx.waitFor(mc -> mc.gui.screen() == null);
+			GameTestSupport.awaitChat(ctx, Messages.accepted(full, SizeTier.SMALL));
+			GameTestSupport.awaitChatCount(ctx, "Done: ", 2, 600);
 
 			// B while chat is open doesn't open the builder, neither then nor after chat closes.
 			ctx.getInput().pressKey(options -> options.keyChat);
@@ -117,11 +128,13 @@ public class BuilderScreenClientGameTest implements FabricClientGameTest {
 			ctx.waitFor(mc -> mc.gui.screen() == null);
 			rebind(ctx, AiBuilderClient.OPEN_BUILDER.getDefaultKey());
 
-			// All ten stored prompts are reachable: the newest show first, the arrows reach the oldest.
-			writeHistory("{\"lastSize\":\"AUTO\",\"recent\":[\"p10\",\"p9\",\"p8\",\"p7\",\"p6\",\"p5\",\"p4\",\"p3\",\"p2\",\"p1\"]}");
+			// All ten stored prompts are reachable: the newest show first, the arrows reach the oldest. A prompt of more than
+			// one line shows its first, with "…".
+			writeHistory("{\"lastSize\":\"AUTO\",\"recent\":[\"p10\\nwith a flag\",\"p9\",\"p8\",\"p7\",\"p6\",\"p5\",\"p4\",\"p3\",\"p2\",\"p1\"]}");
 			ctx.getInput().pressKey(AiBuilderClient.OPEN_BUILDER);
 			ctx.waitForScreen(BuilderScreen.class);
-			check(hasButton(ctx, "p10") && hasButton(ctx, "p9") && !hasButton(ctx, "p1"), "the newest prompts should show first");
+			check(hasButton(ctx, "p10…") && hasButton(ctx, "p9") && !hasButton(ctx, "p1"), "the newest prompts should show first, a"
+					+ " prompt of two lines as \"p10…\"");
 			for (int i = 0; i < 8; i++) {
 				ctx.clickScreenButton("gui.aibuilder.recent.down");
 			}

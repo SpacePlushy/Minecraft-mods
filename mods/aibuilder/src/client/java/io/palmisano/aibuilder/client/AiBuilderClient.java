@@ -1,5 +1,7 @@
 package io.palmisano.aibuilder.client;
 
+import java.util.stream.IntStream;
+
 import com.mojang.blaze3d.platform.InputConstants;
 import io.palmisano.aibuilder.AiBuilderMod;
 import io.palmisano.aibuilder.net.BuildModePayload;
@@ -27,10 +29,17 @@ public class AiBuilderClient implements ClientModInitializer {
 		// Drain every click each tick, so a press while another screen is open never opens the builder later.
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
 			while (OPEN_BUILDER.consumeClick()) {
-				if (mc.player != null && mc.gui.screen() == null) {
+				if (mc.player != null && mc.gui.screen() == null && !shortcutHeld()) {
 					mc.gui.setScreen(new BuilderScreen(PromptHistoryStore.standard()));
 				}
 			}
 		});
+	}
+
+	/** Ctrl or Cmd is down (and isn't the builder's own key): B is the narrator's shortcut then (Ctrl+B; Cmd+B on macOS). */
+	private static boolean shortcutHeld() {
+		int bound = KeyMappingHelper.getBoundKeyOf(OPEN_BUILDER).getValue();
+		return IntStream.of(InputConstants.KEY_LCONTROL, InputConstants.KEY_RCONTROL, InputConstants.KEY_LGUI, InputConstants.KEY_RGUI)
+				.anyMatch(key -> key != bound && InputConstants.isKeyDown(key));
 	}
 }

@@ -43,8 +43,9 @@ public record PromptHistory(List<String> recent, SizeTier lastSize) {
 		return new PromptHistory(next, lastSize);
 	}
 
+	/** This history with {@code size} as the last picked; null changes nothing. */
 	public PromptHistory withSize(SizeTier size) {
-		return new PromptHistory(recent, size);
+		return size == null ? this : new PromptHistory(recent, size);
 	}
 
 	public String toJson() {
@@ -56,7 +57,10 @@ public record PromptHistory(List<String> recent, SizeTier lastSize) {
 		return GSON.toJson(root);
 	}
 
-	/** Reads what {@link #toJson} wrote. Anything unreadable gives {@link #empty()}, never an exception. */
+	/**
+	 * Reads what {@link #toJson} wrote. Anything unreadable gives {@link #empty()}, never an exception; an entry that
+	 * couldn't be sent (blank, or longer than a prompt may be: a hand-edited file) is skipped.
+	 */
 	public static PromptHistory fromJson(String json) {
 		if (json == null) {
 			return empty();
@@ -74,8 +78,11 @@ public record PromptHistory(List<String> recent, SizeTier lastSize) {
 					if (prompts.size() == MAX) {
 						break;
 					}
-					if (isString(entry) && !BuildPrompt.normalize(entry.getAsString()).isEmpty()) {
-						prompts.add(BuildPrompt.normalize(entry.getAsString()));
+					if (isString(entry)) {
+						String prompt = BuildPrompt.normalize(entry.getAsString());
+						if (BuildPrompt.check(prompt) == BuildPrompt.Problem.NONE) {
+							prompts.add(prompt);
+						}
 					}
 				}
 			}

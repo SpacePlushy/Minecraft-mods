@@ -55,6 +55,21 @@ class PromptHistoryTest {
 	}
 
 	@Test
+	void anEntryThatCantBeSentIsDropped() {
+		// A hand-edited file: an entry the server would refuse (or the connection drop) never reaches the screen.
+		String atTheLimit = "b".repeat(2000);
+		String json = "{\"recent\":[\"" + "a".repeat(2001) + "\",\"  a hut  \",\"\",\"" + atTheLimit + "\"]}";
+		assertEquals(List.of("a hut", atTheLimit), PromptHistory.fromJson(json).recent());
+	}
+
+	@Test
+	void withSizeNullKeepsTheSize() {
+		PromptHistory h = PromptHistory.empty().withSize(SizeTier.LARGE).withSize(null);
+		assertEquals(SizeTier.LARGE, h.lastSize());
+		assertEquals(h, PromptHistory.fromJson(h.toJson()));
+	}
+
+	@Test
 	void moreThanTenStoredAreCut() {
 		String json = "{\"recent\":[" + IntStream.rangeClosed(1, 12).mapToObj(i -> "\"p" + i + "\"").collect(Collectors.joining(",")) + "]}";
 		assertEquals(10, PromptHistory.fromJson(json).recent().size());

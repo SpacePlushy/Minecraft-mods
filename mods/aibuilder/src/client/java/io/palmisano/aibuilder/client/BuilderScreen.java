@@ -214,10 +214,10 @@ public class BuilderScreen extends Screen {
 		}
 	}
 
-	/** The prompt's first line, cut to {@code maxWidth} pixels with "…" when it doesn't fit. */
+	/** The prompt's first line, cut to {@code maxWidth} pixels; "…" when it doesn't fit or more lines follow. */
 	private String buttonLabel(String prompt, int maxWidth) {
 		String line = prompt.lines().findFirst().orElse("");
-		if (font.width(line) <= maxWidth) {
+		if (prompt.lines().count() == 1 && font.width(line) <= maxWidth) {
 			return line;
 		}
 		return font.plainSubstrByWidth(line, maxWidth - font.width("…")) + "…";
@@ -271,7 +271,7 @@ public class BuilderScreen extends Screen {
 			onClose();
 			return;
 		}
-		ClientPlayNetworking.send(new BuildPromptPayload(draft, size, forceNew && !refining.isEmpty()));
+		ClientPlayNetworking.send(new BuildPromptPayload(BuildPrompt.normalize(draft), size, forceNew && !refining.isEmpty()));
 		history = history.withPrompt(draft).withSize(size);
 		store.save(history);
 		onClose();
