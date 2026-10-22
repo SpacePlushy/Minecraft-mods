@@ -260,4 +260,43 @@ public class SurveyGameTest {
 			helper.assertTrue(read.join().isProtected(chestLocal), "the chest the player filled isn't protected");
 		});
 	}
+
+	/** Lava never goes in beside wood the world already has: lava lights fires even when it doesn't flow (spec §9). */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void lavaBesideTheWorldsWoodIsRejected(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		level.setBlock(ArenaBuilds.worldPos(helper, Facing.SOUTH, new Pos(2, 1, 4)), Blocks.OAK_PLANKS.defaultBlockState(), SIDE_EFFECT_FREE);
+		ArenaBuild build = ArenaBuilds.start(helper, Facing.SOUTH, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "lava pool", "style": "test"}},
+				  {"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "lava"}]}},
+				  {"tool": "finish", "args": {"summary": "a pool"}}
+				]}""", Occupancy.players(level), Tunables.BLOCKS_PER_TICK);
+		helper.succeedWhen(() -> {
+			helper.assertTrue(build.done(), "the build hasn't finished");
+			helper.assertTrue(build.errors().stream().anyMatch(e -> e.contains("#0 lava_near_flammable")), "the lava went in: " + build.errors());
+			helper.assertTrue(build.state(0, 1, 4).isAir(), "lava beside the planks: " + build.state(0, 1, 4));
+		});
+	}
+
+	/** Nor wood beside the world's lava; farther off it goes in. */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void woodBesideTheWorldsLavaIsRejected(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		level.setBlock(ArenaBuilds.worldPos(helper, Facing.SOUTH, new Pos(0, 1, 4)), Blocks.LAVA.defaultBlockState(), SIDE_EFFECT_FREE);
+		ArenaBuild build = ArenaBuilds.start(helper, Facing.SOUTH, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "bridge", "style": "test"}},
+				  {"tool": "set_blocks", "args": {"blocks": [{"pos": [1, 3, 5], "block": "oak_planks"}]}},
+				  {"tool": "set_blocks", "args": {"blocks": [{"pos": [4, 1, 4], "block": "oak_planks"}]}},
+				  {"tool": "finish", "args": {"summary": "a bridge"}}
+				]}""", Occupancy.players(level), Tunables.BLOCKS_PER_TICK);
+		helper.succeedWhen(() -> {
+			helper.assertTrue(build.done(), "the build hasn't finished");
+			helper.assertTrue(build.errors().size() == 1 && build.errors().getFirst().contains("#0 lava_near_flammable"),
+					"the planks above the lava went in: " + build.errors());
+			helper.assertTrue(build.state(1, 3, 5).isAir(), "planks above the lava: " + build.state(1, 3, 5));
+			helper.assertTrue(build.state(4, 1, 4).is(Blocks.OAK_PLANKS), "the planks 4 away: " + build.state(4, 1, 4));
+		});
+	}
 }

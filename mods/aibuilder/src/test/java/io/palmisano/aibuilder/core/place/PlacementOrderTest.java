@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 
 class PlacementOrderTest {
 	private static Placement at(String id, PlacementPass pass, int y) {
-		return new Placement(new Pos(0, y, 0), new ResolvedBlock(new BlockInfo(id, Map.of(), false, pass), Map.of()), null);
+		return new Placement(new Pos(0, y, 0), new ResolvedBlock(new BlockInfo(id, Map.of(), false, pass, false), Map.of()), null);
 	}
 
 	private static List<String> ids(List<Placement> placements) {

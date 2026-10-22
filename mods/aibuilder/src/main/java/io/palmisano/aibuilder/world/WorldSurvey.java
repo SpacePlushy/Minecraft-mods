@@ -11,6 +11,7 @@ import java.util.concurrent.CompletableFuture;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
+import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.place.RestoreDecision;
 import io.palmisano.aibuilder.core.place.UndoJournal;
@@ -32,11 +33,12 @@ import net.minecraft.world.level.levelgen.Heightmap;
 
 /**
  * Reads a local area of the world into a {@link TerrainSnapshot} on the server tick, a time budget at a time (spec
- * §11), and, when asked, the {@link ProtectionMask} of the allowed box: every block that isn't natural, isn't air and
- * isn't what one of the player's earlier builds left there. Loads the area's chunks first and lets them go after.
+ * §11), and, when asked, the {@link ProtectionMask} of the allowed box (every block that isn't natural, isn't air and
+ * isn't what one of the player's earlier builds left there) and the {@link FireMask} in and around it (lava, and what
+ * lava sets alight). Loads the area's chunks first and lets them go after.
  */
 public final class WorldSurvey implements Tickable {
-	public record Survey(TerrainSnapshot terrain, ProtectionMask protection) {
+	public record Survey(TerrainSnapshot terrain, ProtectionMask protection, FireMask fire) {
 	}
 
 	private final ServerLevel level;
@@ -51,6 +53,7 @@ public final class WorldSurvey implements Tickable {
 	private final Set<ChunkPos> chunks;
 	private final CompletableFuture<Void> loaded;
 	private final ProtectionMask mask;
+	private final FireMask fire;
 	private final List<Column> columns = new ArrayList<>();
 	private final CompletableFuture<Survey> result = new CompletableFuture<>();
 	private int next;
@@ -71,6 +74,7 @@ public final class WorldSurvey implements Tickable {
 				Positions.toBlockPos(frame.toWorld(new Pos(minX + width - 1, 0, minZ + depth - 1))));
 		this.loaded = BuildTickets.load(level, chunks);
 		this.mask = protect ? new ProtectionMask(allowed) : ProtectionMask.none();
+		this.fire = protect ? FireMask.around(allowed) : FireMask.none();
 	}
 
 	/** Completes on the server thread once every column is read. */
@@ -95,7 +99,7 @@ public final class WorldSurvey implements Tickable {
 			return false;
 		}
 		BuildTickets.unload(level, chunks);
-		result.complete(new Survey(new TerrainSnapshot(minX, minZ, width, depth, columns), mask));
+		result.complete(new Survey(new TerrainSnapshot(minX, minZ, width, depth, columns), mask, fire));
 		return true;
 	}
 
@@ -113,16 +117,26 @@ public final class WorldSurvey implements Tickable {
 		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 		ColumnProbe probe = Sites.column(level, wx, wz);
 
-		// Protection runs through the whole allowed box, so a cellar or a cave base counts too.
+		// Protection runs through the whole allowed box, so a cellar or a cave base counts too; the fire mask a little
+		// beyond it, as far as lava reaches.
 		int protectedCount = 0;
 		Map<String, Integer> kinds = new HashMap<>();
-		if (protect && x >= allowed.min().x() && x <= allowed.max().x() && z >= allowed.min().z() && z <= allowed.max().z()) {
-			for (int y = allowed.min().y(); y <= allowed.max().y(); y++) {
+		Box fireBox = fire.box();
+		if (protect && x >= fireBox.min().x() && x <= fireBox.max().x() && z >= fireBox.min().z() && z <= fireBox.max().z()) {
+			for (int y = fireBox.min().y(); y <= fireBox.max().y(); y++) {
 				BlockState state = level.getBlockState(pos.set(wx, originY + y, wz));
 				if (state.isAir()) {
 					continue;
 				}
 				Pos local = new Pos(x, y, z);
+				if (state.getFluidState().is(FluidTags.LAVA)) {
+					fire.lava(local);
+				} else if (state.ignitedByLava()) {
+					fire.flammable(local);
+				}
+				if (!allowed.contains(local)) {
+					continue;
+				}
 				if (ProtectionHeuristic.isUnbreakable(state)) {
 					mask.unbreakable(local);
 				} else if (!ProtectionHeuristic.isNatural(state) && !leftByAnEarlierBuild(pos, state)) {

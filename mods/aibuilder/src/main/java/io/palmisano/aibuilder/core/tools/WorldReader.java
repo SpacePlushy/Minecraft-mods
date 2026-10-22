@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.core.tools;
 
 import java.util.List;
 
+import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
@@ -31,4 +32,7 @@ public interface WorldReader {
 
 	/** Protected spots in the allowed box, read when the build started. */
 	ProtectionMask protection();
+
+	/** Lava and flammable blocks in the allowed box, read when the build started (spec §9). */
+	FireMask fire();
 }

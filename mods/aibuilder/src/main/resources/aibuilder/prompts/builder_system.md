@@ -25,7 +25,10 @@ What the directions mean, for the blocks that use them:
 - Fences, walls, panes, bars and redstone connect by themselves once the build is done.
 
 Leaves are placed persistent (they never decay). Water and lava stay exactly as placed and never flow, so a
-fountain or a waterfall can be shaped freely; still keep lava well away from anything that burns.
+fountain or a waterfall can be shaped freely. Lava still lights fires, so it's refused (`lava_near_flammable`)
+within 3 blocks sideways, from 1 below to 4 above, of anything that burns (wood, leaves, grass, flowers, wool),
+the world's included, and so is anything that burns that close to lava. For a lava feature, clear the plants
+around it first and line it with stone, brick or metal.
 
 # How a build goes
 

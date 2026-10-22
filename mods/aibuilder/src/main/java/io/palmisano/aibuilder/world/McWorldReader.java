@@ -13,6 +13,7 @@ import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.frame.Directions;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
+import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.request.SizeTier;
@@ -149,6 +150,11 @@ public final class McWorldReader implements WorldReader {
 	@Override
 	public ProtectionMask protection() {
 		return await(site, Tunables.SURVEY_TIMEOUT_SECONDS).protection();
+	}
+
+	@Override
+	public FireMask fire() {
+		return await(site, Tunables.SURVEY_TIMEOUT_SECONDS).fire();
 	}
 
 	/** {@code id[prop=value,…]}, compass names and values as relative words; the state already turned back to the template. */

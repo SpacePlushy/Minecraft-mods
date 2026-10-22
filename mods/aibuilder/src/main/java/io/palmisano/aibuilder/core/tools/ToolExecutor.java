@@ -15,10 +15,12 @@ import io.palmisano.aibuilder.core.blocks.BlockInfo;
 import io.palmisano.aibuilder.core.blocks.BlockSearch;
 import io.palmisano.aibuilder.core.blocks.BlockSpec;
 import io.palmisano.aibuilder.core.blocks.RejectReason;
+import io.palmisano.aibuilder.core.blocks.ResolvedBlock;
 import io.palmisano.aibuilder.core.blocks.Validation;
 import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
+import io.palmisano.aibuilder.core.place.FireRule;
 import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.request.SizeTier;
@@ -47,6 +49,13 @@ public final class ToolExecutor {
 	private static final int REJECTION_LINES = 10;
 	private static final BlockSpec AIR = BlockSpec.of("minecraft:air");
 	private static final String BRIEF_FIRST = "Call submit_brief first: title, style, size, palette and phases, before placing any block.";
+	// Spec §9: lava lights fires even when it doesn't flow. One wording each, so a shape's rejections group.
+	private static final String LAVA_BY_FLAMMABLE = RejectReason.LAVA_NEAR_FLAMMABLE.wireName()
+			+ ": something that burns (wood, leaves, grass, wool…) is within 3 blocks sideways, from 1 below to 4 above, and lava would set it"
+			+ " alight; clear it first or keep the lava farther away";
+	private static final String FLAMMABLE_BY_LAVA = RejectReason.LAVA_NEAR_FLAMMABLE.wireName()
+			+ ": lava is within 3 blocks sideways, from 4 below to 1 above, and would set it alight; build it farther from the lava, or in"
+			+ " something that doesn't burn";
 
 	private final Validator validator;
 	private final LocalFrame frame;
@@ -57,6 +66,7 @@ public final class ToolExecutor {
 	private final Budget budget;
 	private final WorldReader world;
 	private ProtectionMask protection;
+	private FireRule fire;
 	private boolean briefed;
 	private volatile boolean finished;
 
@@ -413,8 +423,9 @@ public final class ToolExecutor {
 	}
 
 	/**
-	 * Validates, bounds-checks, protection-checks and queues; {@code perEntry} reports each rejected entry by its
-	 * index; {@code includeProtected} (a clear that asked for it) may remove player-made blocks, never unbreakable ones.
+	 * Validates, bounds-checks, protection-checks, keeps lava apart from what burns, and queues; {@code perEntry}
+	 * reports each rejected entry by its index; {@code includeProtected} (a clear that asked for it) may remove
+	 * player-made blocks, never unbreakable ones.
 	 */
 	private ToolResult queue(List<LocalBlock> blocks, boolean perEntry, boolean includeProtected) {
 		if (sink.capReached()) {
@@ -423,11 +434,10 @@ public final class ToolExecutor {
 		}
 		ProtectionMask mask = protection();
 		Map<BlockSpec, Validation> checked = new HashMap<>();
-		List<Placement> batch = new ArrayList<>();
-		List<Pos> claimed = new ArrayList<>();
+		int[] fit = new int[blocks.size()];
+		int fitCount = 0;
 		Map<String, Integer> grouped = new LinkedHashMap<>();
 		List<String> lines = new ArrayList<>();
-		int rejected = 0;
 		for (int i = 0; i < blocks.size(); i++) {
 			LocalBlock block = blocks.get(i);
 			Validation v = checked.computeIfAbsent(block.block(), validator::validate);
@@ -444,23 +454,33 @@ public final class ToolExecutor {
 						+ ": it looks player-made, so it stays: build around it (include_protected is only for when the player asked to remove it)";
 			}
 			if (problem != null) {
-				rejected++;
-				if (perEntry) {
-					lines.add("#" + i + " " + problem);
-				} else {
-					grouped.merge(problem, 1, Integer::sum);
-				}
+				reject(lines, grouped, perEntry, i, problem);
 				continue;
 			}
-			claimed.add(block.pos());
-			batch.add(new Placement(frame.toWorld(block.pos()), ((Validation.Valid) v).block(), block.onlyReplacing()));
+			fit[fitCount++] = i;
 		}
-		// Far ahead of placement, the queue itself would fill the game's memory: refuse the call whole.
+		// Far ahead of placement, the queue itself would fill the game's memory: refuse the call whole, before the
+		// lava rule below remembers any of it.
 		long waiting = sink.pending();
-		if (!batch.isEmpty() && waiting + batch.size() > Tunables.PENDING_MAX) {
+		if (fitCount > 0 && waiting + fitCount > Tunables.PENDING_MAX) {
 			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": " + String.format(Locale.ROOT, "%,d", waiting)
 					+ " blocks are still waiting to be placed; call checkpoint, then go on; nothing was queued");
 		}
+		FireRule fire = fire();
+		List<Placement> batch = new ArrayList<>(fitCount);
+		List<Pos> claimed = new ArrayList<>(fitCount);
+		for (int n = 0; n < fitCount; n++) {
+			LocalBlock block = blocks.get(fit[n]);
+			ResolvedBlock resolved = ((Validation.Valid) checked.get(block.block())).block();
+			FireRule.Kind kind = FireRule.Kind.of(resolved.info());
+			if (!fire.admit(block.pos(), kind, block.onlyReplacing() != null)) {
+				reject(lines, grouped, perEntry, fit[n], kind == FireRule.Kind.LAVA ? LAVA_BY_FLAMMABLE : FLAMMABLE_BY_LAVA);
+				continue;
+			}
+			claimed.add(block.pos());
+			batch.add(new Placement(frame.toWorld(block.pos()), resolved, block.onlyReplacing()));
+		}
+		int rejected = blocks.size() - batch.size();
 		// Those spots are the build's own from now on, even where it may clear a protected block.
 		claimed.forEach(mask::release);
 		grouped.forEach((problem, count) -> lines.add(blocks(count) + " — " + problem));
@@ -478,12 +498,28 @@ public final class ToolExecutor {
 		return new ToolResult(text.toString(), batch.isEmpty() && rejected > 0);
 	}
 
+	private static void reject(List<String> lines, Map<String, Integer> grouped, boolean perEntry, int index, String problem) {
+		if (perEntry) {
+			lines.add("#" + index + " " + problem);
+		} else {
+			grouped.merge(problem, 1, Integer::sum);
+		}
+	}
+
 	/** Read once, on the first write: waiting for it is the backend's thread's business, never the server's. */
 	private ProtectionMask protection() {
 		if (protection == null) {
 			protection = world.protection();
 		}
 		return protection;
+	}
+
+	/** The same, for the lava rule. */
+	private FireRule fire() {
+		if (fire == null) {
+			fire = new FireRule(world.fire(), allowed);
+		}
+		return fire;
 	}
 
 	private static Axis axis(String name) {

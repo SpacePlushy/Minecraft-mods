@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.function.BiFunction;
 
 import io.palmisano.aibuilder.core.frame.Pos;
+import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.survey.Column;
@@ -13,6 +14,12 @@ import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 /** A world for tool tests: grass at y 0 unless told otherwise, a protection mask to set up, fixed facts. */
 public final class FakeWorld implements WorldReader {
 	public ProtectionMask protection = ProtectionMask.none();
+	public FireMask fire = FireMask.none();
+
+	@Override
+	public FireMask fire() {
+		return fire;
+	}
 	/** The column at local (x, z). */
 	public BiFunction<Integer, Integer, Column> columns = (x, z) -> new Column(0, 0, Column.NONE, "minecraft:grass_block", 0, 0, false, 0, "");
 	/** The state at a local position, for inspect_region. */

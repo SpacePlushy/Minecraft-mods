@@ -19,6 +19,7 @@ import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
+import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.request.SizeTier;
@@ -164,6 +165,110 @@ class ToolExecutorTest {
 		assertTrue(result.isError());
 		assertTrue(result.text().contains("too_many"), result.text());
 		assertEquals(0, sink.queuedCount());
+	}
+
+	/** Lava never goes in next to anything that burns, the world's or the build's own (spec §9). */
+	@Test
+	void lavaNextToPlanksIsRejected() {
+		world.fire = new FireMask(ALLOWED);
+		world.fire.flammable(new Pos(2, 0, 2));
+		ToolResult result = briefed().call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,2],\"block\":\"lava\"}]}"));
+		assertTrue(result.isError() && result.text().contains("lava_near_flammable"), result.text());
+		assertEquals(0, sink.queuedCount());
+	}
+
+	/** The other order: a lava moat first, the wooden bridge after (M5 Review Focus). */
+	@Test
+	void planksNextToLavaAreRejected() {
+		ToolExecutor tools = briefed();
+		assertFalse(tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,2],\"block\":\"lava\"}]}")).isError());
+		ToolResult bridge = tools.call("fill", json("{\"box\":[1,0,2,5,0,2],\"block\":\"oak_planks\"}"));
+		assertTrue(bridge.text().contains("3 blocks — lava_near_flammable"), bridge.text());
+		assertEquals(1 + 2, sink.queuedCount(), "the planks 4 and 5 away go in");
+	}
+
+	@Test
+	void theWorldsLavaCountsForWood() {
+		world.fire = new FireMask(ALLOWED);
+		world.fire.lava(new Pos(-4, 0, 8));
+		ToolResult result = briefed().call("set_blocks", json("{\"blocks\":[{\"pos\":[-4,2,9],\"block\":\"oak_planks\"},"
+				+ "{\"pos\":[0,0,8],\"block\":\"oak_planks\"}]}"));
+		assertTrue(result.text().contains("#0 lava_near_flammable"), result.text());
+		assertEquals(1, sink.queuedCount());
+	}
+
+	@Test
+	void farApartIsFine() {
+		ToolExecutor tools = briefed();
+		assertFalse(tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,2],\"block\":\"lava\"}]}")).isError());
+		assertFalse(tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[4,0,2],\"block\":\"oak_planks\"},"
+				+ "{\"pos\":[0,5,2],\"block\":\"oak_planks\"}]}")).isError());
+		assertEquals(3, sink.queuedCount());
+	}
+
+	@Test
+	void clearingTheWoodMakesRoom() {
+		world.fire = new FireMask(ALLOWED);
+		world.fire.flammable(new Pos(1, 0, 2));
+		ToolExecutor tools = briefed();
+		tools.call("clear", json("{\"box\":[1,0,2,1,0,2]}"));
+		ToolResult lava = tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,2],\"block\":\"lava\"}]}"));
+		assertFalse(lava.isError(), lava.text());
+	}
+
+	@Test
+	void stoneDoesntBurn() {
+		ToolExecutor tools = briefed();
+		assertFalse(tools.call("fill", json("{\"box\":[1,0,2,3,0,2],\"block\":\"stone\"}")).isError());
+		assertFalse(tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,2],\"block\":\"lava\"}]}")).isError());
+	}
+
+	@Test
+	void earlierBlocksOfTheSameCallCount() {
+		ToolResult result = briefed().call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,2],\"block\":\"lava\"},"
+				+ "{\"pos\":[1,1,2],\"block\":\"oak_planks\"}]}"));
+		assertTrue(result.text().contains("#1 lava_near_flammable"), result.text());
+		assertEquals(1, sink.queuedCount());
+	}
+
+	/** Lava where a log was replaces the log: its own spot doesn't count. */
+	@Test
+	void lavaCanReplaceWhatBurns() {
+		world.fire = new FireMask(ALLOWED);
+		world.fire.flammable(new Pos(0, 0, 2));
+		ToolResult result = briefed().call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,2],\"block\":\"lava\"}]}"));
+		assertFalse(result.isError(), result.text());
+	}
+
+	/** A replace-mode fill may leave the old block: the wood still counts. */
+	@Test
+	void aReplaceFillKeepsTheWood() {
+		world.fire = new FireMask(ALLOWED);
+		world.fire.flammable(new Pos(1, 0, 2));
+		ToolExecutor tools = briefed();
+		tools.call("fill", json("{\"box\":[1,0,2,1,0,2],\"block\":\"stone\",\"mode\":\"replace\",\"filter\":\"minecraft:dirt\"}"));
+		ToolResult lava = tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,2],\"block\":\"lava\"}]}"));
+		assertTrue(lava.text().contains("lava_near_flammable"), lava.text());
+	}
+
+	/** Lava just outside the allowed box still sets the build's wood alight (the world's mask reaches past it). */
+	@Test
+	void lavaOutsideTheBoxCounts() {
+		world.fire = FireMask.around(ALLOWED);
+		world.fire.lava(new Pos(-10, 0, 2));
+		ToolResult result = briefed().call("set_blocks", json("{\"blocks\":[{\"pos\":[-8,0,2],\"block\":\"oak_planks\"}]}"));
+		assertTrue(result.text().contains("lava_near_flammable"), result.text());
+	}
+
+	/** A call refused by the pending guard placed nothing, so its lava isn't remembered. */
+	@Test
+	void aRefusedCallLeavesNoLava() {
+		ToolExecutor tools = briefed();
+		sink.pending = Tunables.PENDING_MAX;
+		assertTrue(tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,2],\"block\":\"lava\"}]}")).isError());
+		sink.pending = 0;
+		ToolResult planks = tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[1,0,2],\"block\":\"oak_planks\"}]}"));
+		assertFalse(planks.isError(), planks.text());
 	}
 
 	/** The cap counts real changes, which only the placement job sees; once it's reached, writes are refused. */

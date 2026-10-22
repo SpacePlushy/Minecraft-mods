@@ -91,7 +91,7 @@ public final class McBlockCatalog implements BlockCatalog {
 				properties.put(property.getName(), valueNames(property));
 			}
 			boolean unbreakable = block.defaultBlockState().getDestroySpeed(EmptyBlockGetter.INSTANCE, BlockPos.ZERO) < 0;
-			blocks.put(id, new BlockInfo(id, properties, unbreakable, pass(block)));
+			blocks.put(id, new BlockInfo(id, properties, unbreakable, pass(block), block.defaultBlockState().ignitedByLava()));
 		}
 		return Collections.unmodifiableMap(blocks);
 	}
