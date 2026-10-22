@@ -100,6 +100,22 @@ public final class Messages {
 		return "Full survey (" + String.format(Locale.ROOT, "%,d", characters) + " characters, what Claude reads) saved to " + path + ".";
 	}
 
+	/** Spec §12.2's usage-limit line; {@code resets} is "at 14:30" and the like, or "" when unknown. */
+	public static String usageLimit(String resets) {
+		return "Your Claude usage limit is reached" + (resets.isEmpty() ? "" : " (resets " + resets + ")")
+				+ ". What's built so far stays; /aibuild undo reverts it.";
+	}
+
+	public static String usageWarning(String resets) {
+		return "Claude usage is close to its limit" + (resets.isEmpty() ? "" : " (resets " + resets + ")") + ".";
+	}
+
+	/** Paid extra usage is about to take over from the plan: AI Builder never lets it (Frankie). */
+	public static String extraUsage() {
+		return "Claude's paid extra usage would start now, so the build stopped: AI Builder never uses it. What's built so far stays;"
+				+ " /aibuild undo reverts it.";
+	}
+
 	public static String noRoom() {
 		return "There's no room to build here: this spot is outside the world's build height.";
 	}
