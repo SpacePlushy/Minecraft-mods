@@ -7,7 +7,7 @@ GitHub: `https://github.com/SpacePlushy/Minecraft-mods` (public). Frankie works 
 everything needed to continue lives in this repo. Claude's per-machine memory doesn't carry over,
 so keep durable facts **here**, not in memory.
 
-## ▶ Current status and how to resume (updated 2026-10-19)
+## ▶ Current status and how to resume (updated 2026-10-22)
 
 **Branch `main`** is GitHub's default and holds all finished work. Each mod is built on its own branch
 (`<modid>-v1`, ...) and merged into `main` when done.
@@ -16,7 +16,7 @@ so keep durable facts **here**, not in memory.
 |---|---|
 | `drone` | ✅ v1 done, reviewed, play-tested by Frankie, merged to `main`. Plan + ledger: `docs/superpowers/plans/2026-10-19-drone-mod-*`. Deferred minors are the `minor (deferred)` lines in the progress file. |
 | `rocket` | 🧠 next: brainstorming a rideable rocket ship with launch vapor (superpowers:brainstorming → spec → plan) |
-| `aibuilder` | 🚧 M1–M6 built (design approved 2026-10-21), on branch `aibuilder-v1` (worktree `.claude/worktrees/aibuilder-v1`): type a prompt, Claude Code (Frankie's Max login) builds it in the world. Spec `docs/superpowers/specs/2026-10-21-aibuilder-design.md`, living plan `mods/aibuilder/PLAN.md`, one plan and ledger per milestone in `docs/superpowers/plans/2026-10-2*-aibuilder-m<N>-*`. **Frankie (2026-10-22):** finish M3–M6 autonomously (no play-test stops), real Claude runs on Frankie's login OK for testing, then build a showcase world (in the dev game folder `mods/aibuilder/run/saves`, never Frankie's real saves). M6 (config, permissions, refinement, build logs, error handling) built from `…-m6-plan.md`. **Next:** M6's Opus review and fixes, the showcase world, then merge to `main`. |
+| `aibuilder` | ✅ v1 built: all six milestones, each reviewed by a fresh Opus 5.5 reviewer and fixed test-first, on branch `aibuilder-v1` (worktree `.claude/worktrees/aibuilder-v1`), with a pull request to `main` waiting for Frankie's play-test. Press B, type a prompt, and Claude Code (Frankie's Max login) builds it in the world. Spec `docs/superpowers/specs/2026-10-21-aibuilder-design.md`, living plan `mods/aibuilder/PLAN.md`, a plan and ledger per milestone in `docs/superpowers/plans/2026-10-2*-aibuilder-m<N>-*` (the deferred minors are their `minor (deferred)` lines). The showcase world Claude built live (`ShowcaseClientGameTest`) is `mods/aibuilder/run/saves/AI Builder Showcase` on the machine it was built on (git-ignored: copy it out before removing the worktree). **Next:** Frankie plays it (PLAN.md's milestone table says what to try for each milestone), then merges the pull request. |
 
 **To resume a plan that's mid-execution (any mod):**
 1. Set up the machine (next section) and run `./gradlew build` in the mod's folder until it's green.

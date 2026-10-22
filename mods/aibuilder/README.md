@@ -44,7 +44,7 @@ milestone by milestone, is in [`PLAN.md`](PLAN.md).
 | Type another prompt near your last build | Claude changes that build ("add a moat", "make the towers taller"): it picks up its own plan where it left off and may build up to 16 blocks past what it built. The screen says **Refining: *name***; click that to make a new build there instead. Each change is its own undo |
 | `/aibuild new <prompt>` | A new build, even next to your last one |
 | `/aibuild test` | Builds the demo house 3 blocks in front of you, facing the way you face, slowly enough to watch (about 10 seconds). The action bar shows the phase and the block count; chat says `Done: …` with a clickable **[Undo]** |
-| `/aibuild undo` | Takes back your newest build (repeat for older ones, up to 5), even after the game crashed or restarted. Anything you changed since, like a chest you filled, stays |
+| `/aibuild undo` | Takes back your newest build (repeat for older ones: the last 5, or as many as `undo_history_size` says), even after the game crashed or restarted. Anything you changed since, like a chest you filled, stays |
 | `/aibuild cancel` | Stops the build at once (Claude too); what's placed stays and can be undone |
 | `/aibuild status` | The phase, blocks placed and tool calls used so far |
 | `/aibuild survey` | Reads the spot in front of you the way a build does and shows what Claude will "see": heights, water, trees and any player-made blocks, with the full text saved in `aibuilder/surveys/` |
@@ -59,7 +59,7 @@ looks like trees to it; `/aibuild undo` is always there.
 
 ## Settings
 
-`config/aibuilder.json` in the game folder is written the first time a build starts, with every setting at its
+`config/aibuilder.json` in the game folder is written the first time you use AI Builder (a command or the screen), with every setting at its
 default; edits apply to the next build, no restart needed. A value that's wrong falls back to its default, with a
 warning in the log.
 
@@ -86,7 +86,8 @@ as one person's own use, so builds are for that person:
 - **A dedicated server:** only the players named in `allowed_players` (names or UUIDs), and while `require_op` is
   on (the default) only with operator level `op_level` (2). Claude Code must be installed and logged in on the
   server itself. List only yourself.
-- At most `rate_limit_per_hour` (20) builds an hour per player, as a guard against a runaway loop of prompts.
+- At most `rate_limit_per_hour` (20) builds an hour per player, as a guard against a runaway loop of prompts (0: no
+  limit).
 
 ## Build logs
 
@@ -115,6 +116,31 @@ Anthropic key come out as `[redacted]`.
 | Claude's paid extra usage would start now … | The plan's limit was reached and extra usage would have taken over: AI Builder never uses it |
 | Claude Code started with more than the build tools … | Something (an API key in the environment, a plugin, another MCP server) got past AI Builder's settings, so it refused to build with it |
 | Stopped at the 150 tool-call limit … | A cap stopped a build that ran too long; what it built stays |
+
+## The showcase world
+
+Claude built these with the real Claude Code, from the prompts below, in a world with real terrain, each in a biome
+that suits it (`ShowcaseClientGameTest`), in 70 minutes all told. The world is `run/saves/AI Builder Showcase` in this
+folder, on the machine it was built on (`./gradlew runClient` lists it; it isn't in git). It opens at the castle; fly to
+the others with `/tp`.
+
+| Build | Prompt | Size | Blocks | Go there |
+|---|---|---|---|---|
+| Castle | "a grand medieval castle with a gatehouse, round towers, a keep with a great hall, banners and a courtyard with a well", then, beside it, "add a moat around the castle with a drawbridge at the gate" | Large | 48,394 + 21,349 | `/tp @s -320 64 352` |
+| Temple | "a Japanese temple with a five-storey pagoda, a koi pond with a red bridge, stone lanterns and a raked gravel garden" | Medium | 16,990 | `/tp @s 448 107 1792` |
+| Lighthouse | "a lighthouse on the rocks by the sea, striped red and white, with a glowing lamp room on top and a keeper's cottage" | Medium | 4,294 | `/tp @s -608 64 512` |
+| Bazaar | "a desert bazaar: market stalls with colourful awnings, a domed sandstone palace, an oasis with palm trees" | Medium | 10,507 | `/tp @s -864 77 800` |
+| Wizard's tower | "a wizard's tower in the dark forest: crooked and tall, with a spiral staircase, a library, glowing windows and a telescope on the roof" | Medium | 4,982 | `/tp @s -544 72 64` |
+
+![The castle from above: round towers with slate cones, a keep with a great hall, the courtyard, and the moat Claude added when asked, with a drawbridge at the gate](docs/showcase-castle.png)
+
+![Walking up to the temple through a red torii gate: the hall and the five-storey pagoda among the cherry trees](docs/showcase-temple.png)
+
+![The lighthouse on the rocks, striped red and white, with its lamp room and the keeper's cottage behind](docs/showcase-lighthouse.png)
+
+![The bazaar from above: striped market stalls, a domed sandstone palace with gold finials, palms and the oasis](docs/showcase-bazaar.png)
+
+![The wizard's tower rising out of the dark forest, with a telescope on the roof](docs/showcase-tower.png)
 
 ## Trying it
 

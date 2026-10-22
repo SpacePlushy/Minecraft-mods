@@ -83,3 +83,4 @@ Final: minor (deferred): docs: "undo … up to 5" is undo_history_size; the conf
 Final: minor (deferred): busyLine()'s stillStopping case can't be reached.
 Final: minor (deferred): a claude_path that doesn't exist is passed over for the search without a warning.
 Final: minor (deferred): a UTF-8 BOM at the start of config/aibuilder.json reads as broken JSON (every setting at its default, with a warning).
+Final: Ruling: the branch goes to main through a pull request Frankie merges after trying it, as the drone did after its play-test, instead of my merging it: putting unplayed work into the public default branch is theirs to call, and finishing-a-development-branch leaves it to them — cost if wrong: one click for Frankie.

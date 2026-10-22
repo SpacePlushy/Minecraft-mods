@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.mojang.datafixers.util.Pair;
 import io.palmisano.aibuilder.AiBuilderMod;
 import io.palmisano.aibuilder.core.Tunables;
@@ -21,6 +23,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestServerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
@@ -36,8 +39,10 @@ import net.minecraft.world.level.levelgen.Heightmap;
 /**
  * The showcase world (Frankie, 2026-10-22): live builds with the real Claude Code on the owner's login, in a world with
  * real terrain, each in a biome that suits it, the world copied into the dev client's saves after every build (so
- * {@code ./gradlew runClient} lists it). Runs only with {@code AIBUILDER_LIVE=1 AIBUILDER_SHOWCASE=1}, and then it's
- * the only client gametest that does. Never touches the real game's folder.
+ * {@code ./gradlew runClient} lists it), with a {@code tour.json} of where each build is. Runs only with
+ * {@code AIBUILDER_LIVE=1 AIBUILDER_SHOWCASE=1}, and then it's the only client gametest that does; with
+ * {@code AIBUILDER_SHOWCASE_TOUR=1} as well it builds nothing and takes clean pictures of the saved world instead (a
+ * copy of it: the one in the saves is left as it is). Never touches the real game's folder.
  */
 @SuppressWarnings("UnstableApiUsage")
 public class ShowcaseClientGameTest implements FabricClientGameTest {
@@ -58,8 +63,16 @@ public class ShowcaseClientGameTest implements FabricClientGameTest {
 	record Build(String name, String biome, String prompt, SizeTier size, String refines) {
 	}
 
+	/** Where a build stands in the world: the player's spot when it was asked for, its facing and how wide it is. */
+	record Stop(String name, int x, int y, int z, int yaw, int span) {
+	}
+
 	static boolean showcase() {
 		return "1".equals(System.getenv("AIBUILDER_SHOWCASE"));
+	}
+
+	static boolean tour() {
+		return "1".equals(System.getenv("AIBUILDER_SHOWCASE_TOUR"));
 	}
 
 	/** The builds, from AIBUILDER_SHOWCASE_ONLY (names, comma-separated) when given. */
@@ -88,6 +101,10 @@ public class ShowcaseClientGameTest implements FabricClientGameTest {
 		if (!TestSetup.live() || !showcase()) {
 			return;
 		}
+		if (tour()) {
+			tour(ctx);
+			return;
+		}
 		try (TestSingleplayerContext singleplayer = ctx.worldBuilder().setUseConsistentSettings(false).adjustSettings(s -> {
 			s.setName(WORLD);
 			s.setSeed(SEED);
@@ -104,6 +121,7 @@ public class ShowcaseClientGameTest implements FabricClientGameTest {
 			Files.writeString(config, CAPS);
 			try {
 				List<String> tour = new ArrayList<>();
+				List<Stop> stops = new ArrayList<>();
 				List<BlockPos> taken = new ArrayList<>();
 				for (Build build : builds()) {
 					Spot spot = server.computeOnServer(s -> find(s.overworld(), build.biome(), build.size(), taken));
@@ -122,8 +140,11 @@ public class ShowcaseClientGameTest implements FabricClientGameTest {
 						run(ctx, singleplayer, server, build, spot, build.refines());
 					}
 					tour.add(build.name() + " at x " + spot.pos().getX() + ", y " + spot.pos().getY() + ", z " + spot.pos().getZ());
+					// A refinement may build 16 past the first build on every side: the tour stands farther off.
+					stops.add(new Stop(build.name(), spot.pos().getX(), spot.pos().getY(), spot.pos().getZ(), spot.yaw(),
+							build.size().size() + (build.refines().isEmpty() ? 0 : 24)));
 					AiBuilderMod.LOG.info("Showcase tour so far: {}", tour);
-					keep(server, singleplayer);
+					keep(server, singleplayer, stops);
 				}
 			} finally {
 				if (before == null) {
@@ -260,33 +281,112 @@ public class ShowcaseClientGameTest implements FabricClientGameTest {
 		server.runCommand("gamemode creative @a");
 	}
 
-	/** The world, saved and copied into the dev client's saves ({@code run/saves}), replacing the last copy. */
-	private static void keep(TestServerContext server, TestSingleplayerContext singleplayer) {
+	/** The dev client's copy of the showcase world, in {@code run/saves}. */
+	private static Path savedWorld() {
+		return FabricLoader.getInstance().getGameDir().resolve("../../../run/saves").normalize().resolve(WORLD);
+	}
+
+	/** The world, saved and copied into the dev client's saves ({@code run/saves}), replacing the last copy, with its tour. */
+	private static void keep(TestServerContext server, TestSingleplayerContext singleplayer, List<Stop> stops) {
 		server.runCommand("save-all flush");
-		Path from = singleplayer.getWorldSave().getSaveDirectory();
-		Path to = FabricLoader.getInstance().getGameDir().resolve("../../../run/saves").normalize().resolve(WORLD);
+		Path to = savedWorld();
 		try {
-			if (Files.exists(to)) {
-				try (Stream<Path> old = Files.walk(to)) {
-					for (Path p : old.sorted(Comparator.reverseOrder()).toList()) {
-						Files.delete(p);
-					}
-				}
-			}
-			try (Stream<Path> files = Files.walk(from)) {
-				for (Path p : files.toList()) {
-					if (p.getFileName().toString().equals("session.lock")) {
-						continue;
-					}
-					Path target = to.resolve(from.relativize(p).toString());
-					if (Files.isDirectory(p)) {
-						Files.createDirectories(target);
-					} else {
-						Files.copy(p, target, StandardCopyOption.REPLACE_EXISTING);
-					}
-				}
-			}
+			copyWorld(singleplayer.getWorldSave().getSaveDirectory(), to);
+			Files.writeString(to.resolve("tour.json"), new GsonBuilder().setPrettyPrinting().create().toJson(stops));
 			AiBuilderMod.LOG.info("Showcase world copied to {}", to);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+	}
+
+	/** {@code to} emptied, then everything in {@code from} but the lock copied into it. */
+	private static void copyWorld(Path from, Path to) throws IOException {
+		if (Files.exists(to)) {
+			try (Stream<Path> old = Files.walk(to)) {
+				for (Path p : old.sorted(Comparator.reverseOrder()).toList()) {
+					Files.delete(p);
+				}
+			}
+		}
+		try (Stream<Path> files = Files.walk(from)) {
+			for (Path p : files.toList()) {
+				if (p.getFileName().toString().equals("session.lock")) {
+					continue;
+				}
+				Path target = to.resolve(from.relativize(p).toString());
+				if (Files.isDirectory(p)) {
+					Files.createDirectories(target);
+				} else {
+					Files.copy(p, target, StandardCopyOption.REPLACE_EXISTING);
+				}
+			}
+		}
+	}
+
+	/**
+	 * The saved showcase world again, with no HUD: from the front-left, from above and from where a visitor walks up,
+	 * each build in the middle of the picture. A copy is opened (a blank world's folder, refilled), so the one in the
+	 * saves stays as it was built.
+	 */
+	private static void tour(ClientGameTestContext ctx) {
+		try {
+			Path saved = savedWorld();
+			List<Stop> stops = List.of(new Gson().fromJson(Files.readString(saved.resolve("tour.json")), Stop[].class));
+			TestWorldSave save;
+			try (TestSingleplayerContext blank = ctx.worldBuilder().setUseConsistentSettings(false).adjustSettings(s -> {
+				s.setName(WORLD + " tour");
+				s.setGameMode(WorldCreationUiState.SelectedGameMode.CREATIVE);
+				s.setAllowCommands(true);
+			}).create()) {
+				save = blank.getWorldSave();
+			}
+			copyWorld(saved, save.getSaveDirectory());
+			try (TestSingleplayerContext world = save.open()) {
+				TestServerContext server = world.getServer();
+				server.runCommand("gamemode spectator @a");
+				// Far enough to see a whole Large build without fog (the test client draws 5 chunks; 16 never finishes).
+				ctx.runOnClient(mc -> {
+					mc.options.renderDistance().set(10);
+					if (!mc.gui.hud.isHidden()) {
+						mc.gui.hud.toggle();
+					}
+				});
+				for (Stop stop : stops) {
+					double yaw = Math.toRadians(stop.yaw());
+					double fx = -Math.sin(yaw);
+					double fz = Math.cos(yaw);
+					double rx = -fz;
+					double rz = fx;
+					int span = stop.span();
+					double cx = stop.x() + 0.5 + fx * (Tunables.SITE_GAP + span / 2.0);
+					double cz = stop.z() + 0.5 + fz * (Tunables.SITE_GAP + span / 2.0);
+					// The camera stands off by the build's size, but no farther than for a moderate one: past that it's fog.
+					int frame = Math.min(span, 72);
+					String look = String.format(Locale.ROOT, " facing %.1f %d %.1f", cx, stop.y() + Math.round(frame * 0.4), cz);
+					// {back, right, up}, as parts of the span: front-left, above, and walking up to it.
+					double[][] views = {{1.1, -0.6, 0.5}, {0.4, 0.95, 0.9}, {0.8, 0.15, 0.15}};
+					String[] names = {"front-left", "above", "walking-up"};
+					for (int i = 0; i < views.length; i++) {
+						double x = cx - fx * frame * views[i][0] + rx * frame * views[i][1];
+						double z = cz - fz * frame * views[i][0] + rz * frame * views[i][1];
+						server.runCommand(String.format(Locale.ROOT, "tp @a %.1f %d %.1f", x, stop.y() + Math.round(frame * views[i][2]), z) + look);
+						ctx.waitTicks(100);
+						// Ten chunks out take a while to load and draw, the first time at each build most of all; a picture
+						// with a few still drawing at the edge beats none.
+						try {
+							world.getConnection().waitForChunksRender(20 * 60);
+						} catch (AssertionError e) {
+							AiBuilderMod.LOG.warn("Showcase tour: chunks still drawing at the {} {}; taking the picture anyway", stop.name(), names[i]);
+						}
+						ctx.takeScreenshot("tour-" + stop.name() + "-" + names[i]);
+					}
+				}
+				ctx.runOnClient(mc -> {
+					if (mc.gui.hud.isHidden()) {
+						mc.gui.hud.toggle();
+					}
+				});
+			}
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}

@@ -134,3 +134,14 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   at Medium (15,374 blocks, 131 tool calls, 11 minutes) and then "add a moat around the castle, with a drawbridge at
   the gate" typed beside it (5,381 blocks, 35 calls, 2 minutes), came out well: Claude picked up its own castle and
   dug a lined moat with lily pads and a drawbridge.
+- **2026-10-22:** M6's final review (a fresh Opus 5.5 reviewer) found one critical problem and four important ones,
+  all fixed test-first, plus one smaller one raised for what it does to a player: a refinement's grown box is now
+  read to its edge, so blocks you made stay protected and lava stays clear of the world's wood there too (a moat dug
+  around a castle reached past the old survey); a key pasted on its own line of the prompt is scrubbed from the
+  logs; a `banned_blocks` list with no valid id keeps the defaults; a build's refine record survives quitting or a
+  crash mid-build; a build whose Claude Code conversation is gone says so once, and the next prompt builds new; and
+  long build titles are cut. Ten smaller findings are in the M6 ledger.
+- **2026-10-22:** The showcase world, built live by Claude on real terrain (README, "The showcase world"): a Large
+  castle (48,394 blocks) and its moat with a drawbridge (21,349), a temple in a cherry grove (16,990), a lighthouse on
+  the rocks (4,294), a desert bazaar (10,507) and a wizard's tower in the dark forest (4,982), in 70 minutes. All six
+  milestones are built; Frankie's play-test comes next, then the pull request to `main`.
