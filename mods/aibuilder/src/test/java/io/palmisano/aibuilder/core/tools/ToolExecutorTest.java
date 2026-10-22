@@ -16,17 +16,22 @@ import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.Placement;
+import io.palmisano.aibuilder.core.place.ProtectionMask;
+import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
 import org.junit.jupiter.api.Test;
 
 class ToolExecutorTest {
 	static final String BRIEF = "{\"title\":\"test house\",\"style\":\"plain\"}";
 
+	static final Box ALLOWED = Box.of(-8, -2, 0, 7, 15, 15);
+
 	private final RecordingSink sink = new RecordingSink();
+	private final FakeWorld world = new FakeWorld();
 
 	private ToolExecutor executor(int budget, long maxChangedBlocks) {
 		return new ToolExecutor(new Validator(FakeCatalog.standard(), Validator.DEFAULT_BANNED),
-				new LocalFrame(new Pos(0, 64, 0), Facing.SOUTH), Box.of(-8, -2, 0, 7, 15, 15), maxChangedBlocks, sink, new Budget(budget));
+				new LocalFrame(new Pos(0, 64, 0), Facing.SOUTH), ALLOWED, SizeTier.SMALL, maxChangedBlocks, sink, new Budget(budget), world);
 	}
 
 	private ToolExecutor briefed() {
@@ -80,6 +85,40 @@ class ToolExecutorTest {
 		assertTrue(result.isError(), result.text());
 		assertTrue(result.text().startsWith("Queued 0 blocks.") && result.text().contains("out_of_bounds"), result.text());
 		assertEquals(0, sink.queuedCount());
+	}
+
+	/** A player's own blocks inside the box stay; the rest of the call goes through (spec §11). */
+	@Test
+	void protectedCellsAreRejected() {
+		world.protection = new ProtectionMask(ALLOWED);
+		world.protection.protect(new Pos(0, 0, 1));
+		ToolResult result = briefed().call("fill", json("{\"box\":[0,0,0,0,0,2],\"block\":\"stone\"}"));
+		assertEquals(List.of(new Pos(0, 64, 0), new Pos(0, 64, 2)), sink.batches.getFirst().stream().map(Placement::pos).toList());
+		assertTrue(result.text().contains("1 block — protected"), result.text());
+	}
+
+	@Test
+	void clearCanIncludeProtectedButNeverUnbreakable() {
+		world.protection = new ProtectionMask(ALLOWED);
+		world.protection.protect(new Pos(0, 0, 1));
+		world.protection.unbreakable(new Pos(0, 0, 2));
+		ToolExecutor tools = briefed();
+		tools.call("clear", json("{\"box\":[0,0,0,0,0,2]}"));
+		assertEquals(1, sink.queuedCount());
+		ToolResult all = tools.call("clear", json("{\"box\":[0,0,0,0,0,2],\"include_protected\":true}"));
+		assertEquals(List.of(new Pos(0, 64, 0), new Pos(0, 64, 1)), sink.batches.get(1).stream().map(Placement::pos).toList());
+		assertTrue(all.text().contains("can't be broken"), all.text());
+	}
+
+	/** Once the build has cleared a protected block, the spot is the build's own: later calls may write there. */
+	@Test
+	void aBuildMayOverwriteItsOwnBlocks() {
+		world.protection = new ProtectionMask(ALLOWED);
+		world.protection.protect(new Pos(0, 0, 1));
+		ToolExecutor tools = briefed();
+		tools.call("clear", json("{\"box\":[0,0,1,0,0,1],\"include_protected\":true}"));
+		ToolResult fill = tools.call("fill", json("{\"box\":[0,0,1,0,0,1],\"block\":\"stone\"}"));
+		assertEquals("Queued 1 block.", fill.text());
 	}
 
 	@Test

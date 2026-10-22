@@ -18,6 +18,7 @@ import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.tools.Budget;
+import io.palmisano.aibuilder.core.tools.FakeWorld;
 import io.palmisano.aibuilder.core.tools.RecordingSink;
 import io.palmisano.aibuilder.core.tools.ToolExecutor;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,8 @@ class ScriptedBackendTest {
 
 	private static ToolExecutor tools(RecordingSink sink) {
 		return new ToolExecutor(new Validator(FakeCatalog.standard(), Validator.DEFAULT_BANNED),
-				new LocalFrame(new Pos(0, 0, 0), Facing.SOUTH), Box.of(-8, -2, 0, 7, 15, 15), 100_000, sink, new Budget(150));
+				new LocalFrame(new Pos(0, 0, 0), Facing.SOUTH), Box.of(-8, -2, 0, 7, 15, 15), SizeTier.SMALL, 100_000, sink, new Budget(150),
+				new FakeWorld());
 	}
 
 	private static String script(String... calls) {

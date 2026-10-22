@@ -18,6 +18,8 @@ import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.Placement;
+import io.palmisano.aibuilder.core.place.ProtectionMask;
+import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.ArchStyle;
 import io.palmisano.aibuilder.core.shapes.Axis;
 import io.palmisano.aibuilder.core.shapes.Box;
@@ -41,20 +43,26 @@ public final class ToolExecutor {
 	private final Validator validator;
 	private final LocalFrame frame;
 	private final Box allowed;
+	private final SizeTier tier;
 	private final long maxChangedBlocks;
 	private final BuildSink sink;
 	private final Budget budget;
+	private final WorldReader world;
+	private ProtectionMask protection;
 	private boolean briefed;
 	private volatile boolean finished;
 	private long queuedTotal;
 
-	public ToolExecutor(Validator validator, LocalFrame frame, Box allowed, long maxChangedBlocks, BuildSink sink, Budget budget) {
+	public ToolExecutor(Validator validator, LocalFrame frame, Box allowed, SizeTier tier, long maxChangedBlocks, BuildSink sink, Budget budget,
+			WorldReader world) {
 		this.validator = validator;
 		this.frame = frame;
 		this.allowed = allowed;
+		this.tier = tier;
 		this.maxChangedBlocks = maxChangedBlocks;
 		this.sink = sink;
 		this.budget = budget;
+		this.world = world;
 	}
 
 	public static Set<String> handledTools() {
@@ -155,7 +163,7 @@ public final class ToolExecutor {
 			case "staircase" -> staircase(a);
 			default -> throw new IllegalStateException(name);
 		};
-		return queue(blocks, false);
+		return queue(blocks, false, name.equals("clear") && a.optBool("include_protected", false));
 	}
 
 	/**
@@ -236,11 +244,15 @@ public final class ToolExecutor {
 			Args entry = new Args(e.isJsonObject() ? e.getAsJsonObject() : null);
 			blocks.add(new LocalBlock(entry.pos("pos"), entry.block("block")));
 		}
-		return queue(blocks, true);
+		return queue(blocks, true, false);
 	}
 
-	/** Validates, bounds-checks and queues; {@code perEntry} reports each rejected entry by its index. */
-	private ToolResult queue(List<LocalBlock> blocks, boolean perEntry) {
+	/**
+	 * Validates, bounds-checks, protection-checks and queues; {@code perEntry} reports each rejected entry by its
+	 * index; {@code includeProtected} (a clear that asked for it) may remove player-made blocks, never unbreakable ones.
+	 */
+	private ToolResult queue(List<LocalBlock> blocks, boolean perEntry, boolean includeProtected) {
+		ProtectionMask mask = protection();
 		Map<BlockSpec, Validation> checked = new HashMap<>();
 		List<Placement> batch = new ArrayList<>();
 		Map<String, Integer> grouped = new LinkedHashMap<>();
@@ -255,6 +267,10 @@ public final class ToolExecutor {
 			} else if (!allowed.contains(block.pos())) {
 				problem = RejectReason.OUT_OF_BOUNDS.wireName() + ": " + (perEntry ? describe(block.pos()) + " is " : "")
 						+ "outside the allowed box " + describe(allowed);
+			} else if (mask.isUnbreakable(block.pos())) {
+				problem = RejectReason.PROTECTED.wireName() + ": it can't be broken (bedrock, a barrier…), so it stays";
+			} else if (!includeProtected && mask.isProtected(block.pos())) {
+				problem = RejectReason.PROTECTED.wireName() + ": it looks player-made, so it stays (clear with include_protected removes it)";
 			} else if (queuedTotal >= maxChangedBlocks) {
 				problem = RejectReason.TOO_MANY.wireName() + ": this build has reached its limit of "
 						+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks";
@@ -269,6 +285,8 @@ public final class ToolExecutor {
 				continue;
 			}
 			queuedTotal++;
+			// The spot is the build's own from now on, even if it held a protected block it was allowed to clear.
+			mask.release(block.pos());
 			batch.add(new Placement(frame.toWorld(block.pos()), ((Validation.Valid) v).block(), block.onlyReplacing()));
 		}
 		grouped.forEach((problem, count) -> lines.add(blocks(count) + " — " + problem));
@@ -284,6 +302,14 @@ public final class ToolExecutor {
 			}
 		}
 		return new ToolResult(text.toString(), batch.isEmpty() && rejected > 0);
+	}
+
+	/** Read once, on the first write: waiting for it is the backend's thread's business, never the server's. */
+	private ProtectionMask protection() {
+		if (protection == null) {
+			protection = world.protection();
+		}
+		return protection;
 	}
 
 	private static Axis axis(String name) {

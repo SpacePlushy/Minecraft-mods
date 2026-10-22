@@ -198,11 +198,12 @@
 	},
 	{
 		"name": "clear",
-		"description": "Set a box [x1, y1, z1, x2, y2, z2] to air.",
+		"description": "Set a box [x1, y1, z1, x2, y2, z2] to air. Blocks that look player-made stay unless include_protected is true; blocks that can't be broken (bedrock) always stay.",
 		"input_schema": {
 			"type": "object",
 			"properties": {
-				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6}
+				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
+				"include_protected": {"type": "boolean", "description": "Also remove blocks that look player-made. Only when the player asked for it."}
 			},
 			"required": ["box"]
 		}

@@ -25,6 +25,7 @@ import io.palmisano.aibuilder.core.site.BuildBox;
 import io.palmisano.aibuilder.core.tools.Brief;
 import io.palmisano.aibuilder.core.tools.Budget;
 import io.palmisano.aibuilder.core.tools.ToolExecutor;
+import io.palmisano.aibuilder.core.tools.WorldReader;
 import io.palmisano.aibuilder.world.BuildTickets;
 import io.palmisano.aibuilder.world.JobScheduler;
 import io.palmisano.aibuilder.world.McBlockCatalog;
@@ -289,8 +290,8 @@ public final class BuildManager {
 			job.whenEnded().whenComplete(this::ended);
 			// The sink's callbacks come from the backend's thread.
 			sink = new McBuildSink(job, brief -> server.execute(() -> briefed(brief)), summary -> job.finish());
-			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, allowed,
-					request.size().maxChangedBlocks(), sink, budget);
+			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, allowed, request.size(),
+					request.size().maxChangedBlocks(), sink, budget, WorldReader.NONE);
 			handle = backend.start(request, tools);
 			handle.outcome().thenAccept(outcome -> server.execute(() -> backendEnded(outcome)));
 		}

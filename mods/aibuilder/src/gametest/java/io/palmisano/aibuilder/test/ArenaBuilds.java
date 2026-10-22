@@ -22,6 +22,7 @@ import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.tools.Budget;
 import io.palmisano.aibuilder.core.tools.ToolExecutor;
 import io.palmisano.aibuilder.core.tools.ToolResult;
+import io.palmisano.aibuilder.core.tools.WorldReader;
 import io.palmisano.aibuilder.world.BuildTickets;
 import io.palmisano.aibuilder.world.JobScheduler;
 import io.palmisano.aibuilder.world.McBlockCatalog;
@@ -74,8 +75,8 @@ final class ArenaBuilds {
 
 		McBuildSink sink = new McBuildSink(job, brief -> {
 		}, summary -> job.finish());
-		ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, ALLOWED,
-				SizeTier.SMALL.maxChangedBlocks(), sink, new Budget(Tunables.MAX_TOOL_CALLS));
+		ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, ALLOWED, SizeTier.SMALL,
+				SizeTier.SMALL.maxChangedBlocks(), sink, new Budget(Tunables.MAX_TOOL_CALLS), WorldReader.NONE);
 		Executor worker = task -> Thread.ofPlatform().daemon().name("aibuilder-arena-build").start(task);
 		ScriptedBackend backend = new ScriptedBackend(scriptJson, worker);
 		BuildHandle handle = backend.start(new BuildRequest("arena test", SizeTier.SMALL), tools);
