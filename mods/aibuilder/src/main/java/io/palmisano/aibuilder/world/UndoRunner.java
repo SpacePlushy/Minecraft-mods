@@ -2,10 +2,14 @@ package io.palmisano.aibuilder.world;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+
+import io.palmisano.aibuilder.core.blocks.PlacementPass;
 
 import io.palmisano.aibuilder.AiBuilderMod;
 import io.palmisano.aibuilder.core.Tunables;
@@ -52,9 +56,10 @@ public final class UndoRunner implements Tickable {
 		this.level = level;
 		this.journal = journal;
 		this.blocksPerTick = blocksPerTick;
-		this.order = journal.positions().stream()
-				.sorted(Comparator.comparing((Pos p) -> McBlockCatalog.pass(journal.original(p).getBlock())).thenComparingInt(Pos::y))
-				.toList();
+		// Each position's pass worked out once: in the comparator it ran on every comparison (seconds for a 350k undo).
+		Map<Pos, PlacementPass> passes = new HashMap<>();
+		journal.positions().forEach(p -> passes.put(p, McBlockCatalog.pass(journal.original(p).getBlock())));
+		this.order = journal.positions().stream().sorted(Comparator.comparing((Pos p) -> passes.get(p)).thenComparingInt(Pos::y)).toList();
 		Set<ChunkPos> touched = new LinkedHashSet<>();
 		order.forEach(p -> touched.add(ChunkPos.containing(Positions.toBlockPos(p))));
 		this.chunks = touched;

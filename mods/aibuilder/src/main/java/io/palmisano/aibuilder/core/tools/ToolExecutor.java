@@ -58,7 +58,6 @@ public final class ToolExecutor {
 	private ProtectionMask protection;
 	private boolean briefed;
 	private volatile boolean finished;
-	private long queuedTotal;
 
 	public ToolExecutor(Validator validator, LocalFrame frame, Box allowed, SizeTier tier, long maxChangedBlocks, BuildSink sink, Budget budget,
 			WorldReader world) {
@@ -78,6 +77,11 @@ public final class ToolExecutor {
 
 	public boolean finished() {
 		return finished;
+	}
+
+	/** The build's caps; the Claude Code backend adds output tokens to it as they stream in. */
+	public Budget budget() {
+		return budget;
 	}
 
 	public synchronized ToolResult call(String name, JsonObject args) {
@@ -237,7 +241,10 @@ public final class ToolExecutor {
 	private ToolResult checkpoint(Args a) {
 		String phase = a.string("phase");
 		int placed = sink.checkpoint(phase);
-		return ToolResult.ok("Checkpoint " + phase + ": " + blocks(placed) + " placed so far.");
+		long waiting = sink.pending();
+		// The checkpoint answers within the MCP timeout even when placement is behind.
+		return ToolResult.ok("Checkpoint " + phase + ": " + blocks(placed) + " placed so far."
+				+ (waiting > 0 ? " " + String.format(Locale.ROOT, "%,d", waiting) + " blocks are still going in; call checkpoint again to wait for them." : ""));
 	}
 
 	private ToolResult finish(Args a) {
@@ -374,9 +381,14 @@ public final class ToolExecutor {
 	 * index; {@code includeProtected} (a clear that asked for it) may remove player-made blocks, never unbreakable ones.
 	 */
 	private ToolResult queue(List<LocalBlock> blocks, boolean perEntry, boolean includeProtected) {
+		if (sink.capReached()) {
+			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": this build has reached its limit of "
+					+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks; call finish");
+		}
 		ProtectionMask mask = protection();
 		Map<BlockSpec, Validation> checked = new HashMap<>();
 		List<Placement> batch = new ArrayList<>();
+		List<Pos> claimed = new ArrayList<>();
 		Map<String, Integer> grouped = new LinkedHashMap<>();
 		List<String> lines = new ArrayList<>();
 		int rejected = 0;
@@ -394,9 +406,6 @@ public final class ToolExecutor {
 			} else if (!includeProtected && mask.isProtected(block.pos())) {
 				problem = RejectReason.PROTECTED.wireName()
 						+ ": it looks player-made, so it stays: build around it (include_protected is only for when the player asked to remove it)";
-			} else if (queuedTotal >= maxChangedBlocks) {
-				problem = RejectReason.TOO_MANY.wireName() + ": this build has reached its limit of "
-						+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks";
 			}
 			if (problem != null) {
 				rejected++;
@@ -407,11 +416,17 @@ public final class ToolExecutor {
 				}
 				continue;
 			}
-			queuedTotal++;
-			// The spot is the build's own from now on, even if it held a protected block it was allowed to clear.
-			mask.release(block.pos());
+			claimed.add(block.pos());
 			batch.add(new Placement(frame.toWorld(block.pos()), ((Validation.Valid) v).block(), block.onlyReplacing()));
 		}
+		// Far ahead of placement, the queue itself would fill the game's memory: refuse the call whole.
+		long waiting = sink.pending();
+		if (!batch.isEmpty() && waiting + batch.size() > Tunables.PENDING_MAX) {
+			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": " + String.format(Locale.ROOT, "%,d", waiting)
+					+ " blocks are still waiting to be placed; call checkpoint, then go on; nothing was queued");
+		}
+		// Those spots are the build's own from now on, even where it may clear a protected block.
+		claimed.forEach(mask::release);
 		grouped.forEach((problem, count) -> lines.add(blocks(count) + " — " + problem));
 		if (!batch.isEmpty()) {
 			sink.queue(batch);

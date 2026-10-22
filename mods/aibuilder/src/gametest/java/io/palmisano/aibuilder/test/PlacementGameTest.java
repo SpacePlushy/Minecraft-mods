@@ -136,6 +136,32 @@ public class PlacementGameTest {
 	}
 
 	/**
+	 * The changed-blocks cap counts what a build really changes (spec §5.4): 2,400 blocks of air over air change
+	 * nothing; then one batch of six stones meets a cap of 3, and the job itself drops the upper three, since the
+	 * tools couldn't know when they queued them (M2 review).
+	 */
+	@GameTest(structure = ARENA, maxTicks = 600)
+	public void capCountsRealChangesOnly(GameTestHelper helper) {
+		ArenaBuild build = ArenaBuilds.start(helper, Facing.SOUTH, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "cap", "style": "test"}},
+				  {"tool": "fill", "args": {"box": [-7, 1, 0, 7, 10, 15], "block": "air"}},
+				  {"tool": "checkpoint", "args": {"phase": "air"}},
+				  {"tool": "fill", "args": {"box": [-1, 1, 4, 1, 2, 4], "block": "stone"}},
+				  {"tool": "finish", "args": {"summary": "three stones"}}
+				]}""", Occupancy.players(helper.getLevel()), Tunables.BLOCKS_PER_TICK, 3);
+		helper.succeedWhen(() -> {
+			helper.assertTrue(build.done(), "the build hasn't finished");
+			for (int x = -1; x <= 1; x++) {
+				helper.assertTrue(build.state(x, 1, 4).is(Blocks.STONE), "under the cap but not placed: " + x);
+				helper.assertTrue(build.state(x, 2, 4).isAir(), "placed over the cap: " + x);
+			}
+			helper.assertTrue(build.job().capReached(), "the job doesn't know it reached its cap");
+			helper.assertValueEqual(build.journal().size(), 3, "positions the build changed");
+		});
+	}
+
+	/**
 	 * A spectator has no body to trap, so a block goes in where one floats (M2 review). The helper's in-level mock
 	 * player always reports creative, so this checks the rule on mocks made in each game mode.
 	 */

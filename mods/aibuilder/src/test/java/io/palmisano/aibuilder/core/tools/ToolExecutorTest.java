@@ -10,6 +10,7 @@ import java.util.stream.IntStream;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.blocks.FakeCatalog;
 import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.Facing;
@@ -162,13 +163,50 @@ class ToolExecutorTest {
 		assertEquals(0, sink.queuedCount());
 	}
 
+	/** The cap counts real changes, which only the placement job sees; once it's reached, writes are refused. */
 	@Test
-	void changedBlockCapCutsOffTheRest() {
-		ToolExecutor tools = executor(150, 5);
-		tools.call("submit_brief", json(BRIEF));
-		ToolResult result = tools.call("fill", json("{\"box\":[0,0,0,7,0,0],\"block\":\"stone\"}"));
-		assertEquals(5, sink.queuedCount());
-		assertTrue(result.text().contains("too_many"), result.text());
+	void capReachedRejectsWrites() {
+		ToolExecutor tools = briefed();
+		sink.capReached = true;
+		ToolResult result = tools.call("fill", json("{\"box\":[0,0,0,1,0,0],\"block\":\"stone\"}"));
+		assertTrue(result.isError(), result.text());
+		assertTrue(result.text().contains("too_many: this build has reached its limit of 100,000 changed blocks; call finish"), result.text());
+		assertEquals(0, sink.queuedCount());
+	}
+
+	/** A queue far ahead of placement is refused whole, before it fills the game's memory. */
+	@Test
+	void pendingGuardRefusesAHugeQueue() {
+		ToolExecutor tools = briefed();
+		sink.pending = Tunables.PENDING_MAX - 1;
+		ToolResult refused = tools.call("fill", json("{\"box\":[0,0,0,1,0,0],\"block\":\"stone\"}"));
+		assertTrue(refused.isError() && refused.text().contains("still waiting to be placed; call checkpoint, then go on"), refused.text());
+		assertEquals(0, sink.queuedCount());
+		sink.pending = Tunables.PENDING_MAX - 2;
+		assertFalse(tools.call("fill", json("{\"box\":[0,0,0,1,0,0],\"block\":\"stone\"}")).isError());
+		assertEquals(2, sink.queuedCount());
+	}
+
+	/** Positions refused by the pending guard stay protected: nothing was placed there. */
+	@Test
+	void aRefusedQueueReleasesNothing() {
+		world.protection = new ProtectionMask(ALLOWED);
+		world.protection.protect(new Pos(0, 0, 1));
+		ToolExecutor tools = briefed();
+		sink.pending = Tunables.PENDING_MAX;
+		tools.call("clear", json("{\"box\":[0,0,1,0,0,1],\"include_protected\":true}"));
+		sink.pending = 0;
+		ToolResult fill = tools.call("fill", json("{\"box\":[0,0,1,0,0,1],\"block\":\"stone\"}"));
+		assertTrue(fill.text().contains("protected"), fill.text());
+	}
+
+	/** A checkpoint answers within the MCP timeout even when placement is behind, and says so. */
+	@Test
+	void checkpointSaysWhatsStillGoingIn() {
+		ToolExecutor tools = briefed();
+		sink.pending = 1500;
+		ToolResult result = tools.call("checkpoint", json("{\"phase\":\"walls\"}"));
+		assertTrue(result.text().contains("1,500 blocks are still going in; call checkpoint again to wait for them"), result.text());
 	}
 
 	@Test

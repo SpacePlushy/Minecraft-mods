@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.world;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +49,12 @@ public final class PlacementJob implements Tickable {
 	private final Occupancy occupancy;
 	private final int blocksPerTick;
 	private final long nanosPerTick;
+	/** Positions the build may change (spec §5.4); a new one past that is dropped. */
+	private final long maxChanged;
+	private volatile boolean capReached;
+	private long overCap;
+	/** One id string per block, shared by every journal entry (a 350k build would otherwise hold 350k copies). */
+	private final Map<Block, String> ids = new IdentityHashMap<>();
 
 	private final Object lock = new Object();
 	private final ArrayDeque<Placement> queue = new ArrayDeque<>(); // guarded by lock
@@ -67,13 +74,26 @@ public final class PlacementJob implements Tickable {
 	private volatile int placed;
 
 	public PlacementJob(ServerLevel level, Rotation rotation, UndoJournal<BlockState, CompoundTag> journal, Occupancy occupancy,
-			int blocksPerTick, long nanosPerTick) {
+			int blocksPerTick, long nanosPerTick, long maxChanged) {
 		this.level = level;
 		this.rotation = rotation;
 		this.journal = journal;
 		this.occupancy = occupancy;
 		this.blocksPerTick = blocksPerTick;
 		this.nanosPerTick = nanosPerTick;
+		this.maxChanged = maxChanged;
+	}
+
+	/** The build has changed {@code maxChanged} positions: what's queued for new ones goes nowhere. Any thread. */
+	public boolean capReached() {
+		return capReached;
+	}
+
+	/** Placements queued and not yet placed, those waiting for a player included. Any thread. */
+	public long pending() {
+		synchronized (lock) {
+			return queue.size() + waitingCount;
+		}
 	}
 
 	/** Queues one write call's blocks, supports first. Dropped once the job is ending. */
@@ -181,6 +201,9 @@ public final class PlacementJob implements Tickable {
 		if (failures > 0) {
 			AiBuilderMod.LOG.warn("{} placements failed in one build; the first was logged", failures);
 		}
+		if (overCap > 0) {
+			AiBuilderMod.LOG.info("{} placements went past the build's cap of {} changed blocks and were dropped", overCap, maxChanged);
+		}
 		ended.complete(skipped);
 		return true;
 	}
@@ -261,19 +284,27 @@ public final class PlacementJob implements Tickable {
 		return wrote;
 	}
 
-	/** Journals what's there, then writes; false when that state is already there. */
+	/** Journals what's there, then writes; false when that state is already there, or the build is at its cap. */
 	private boolean write(BlockPos pos, BlockState state) {
 		BlockState old = level.getBlockState(pos);
 		if (old == state) {
 			return false;
 		}
 		Pos at = Positions.toPos(pos);
+		if (!journal.has(at) && journal.size() >= maxChanged) {
+			capReached = true;
+			overCap++;
+			return false;
+		}
 		BlockEntity before = level.getBlockEntity(pos);
 		journal.beforeWrite(at, old, before == null ? null : before.saveWithFullMetadata(level.registryAccess()));
 		level.setBlock(pos, state, FLAGS);
 		BlockState now = level.getBlockState(pos);
 		BlockEntity after = level.getBlockEntity(pos);
-		journal.afterWrite(at, BuiltInRegistries.BLOCK.getKey(now.getBlock()).toString(), BlockEntityHash.of(after, level.registryAccess()));
+		journal.afterWrite(at, id(now.getBlock()), BlockEntityHash.of(after, level.registryAccess()));
+		if (journal.size() >= maxChanged) {
+			capReached = true;
+		}
 		if (after != null) {
 			settling.add(new Settling(pos, level.getGameTime() + Tunables.BLOCK_ENTITY_SETTLE_TICKS));
 		}
@@ -296,6 +327,10 @@ public final class PlacementJob implements Tickable {
 				journal.afterWrite(at, written, BlockEntityHash.of(entity, level.registryAccess()));
 			}
 		}
+	}
+
+	private String id(Block block) {
+		return ids.computeIfAbsent(block, b -> BuiltInRegistries.BLOCK.getKey(b).toString());
 	}
 
 	/** Whether {@code current} is the block id, or carries the {@code #tag}, that a replace-fill asked for. */

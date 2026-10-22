@@ -345,7 +345,7 @@ public final class BuildManager {
 			stored = new StoredBuild(level.dimension(), "", journal);
 			store.push(owner, stored);
 			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level), blocksPerTick,
-					Tunables.TICK_BUDGET_NANOS);
+					Tunables.TICK_BUDGET_NANOS, request.size().maxChangedBlocks());
 			chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(allowed.min())), Positions.toBlockPos(frame.toWorld(allowed.max())));
 			BuildTickets.hold(level, chunks);
 			JobScheduler.add(job);

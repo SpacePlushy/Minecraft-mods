@@ -22,8 +22,14 @@ public final class Tunables {
 	public static final int GROUND_SEARCH_DOWN = 64;
 	/** Ticks between action-bar status updates. */
 	public static final int STATUS_INTERVAL_TICKS = 20;
-	/** How long a checkpoint waits for its blocks to be placed. */
-	public static final int CHECKPOINT_TIMEOUT_SECONDS = 120;
+	/** How long a checkpoint waits for its blocks to be placed: well inside Claude Code's 120 s MCP timeout. */
+	public static final int CHECKPOINT_TIMEOUT_SECONDS = 90;
+	/** Output tokens one build may use (spec §12.2's max_tokens_per_build). */
+	public static final long MAX_OUTPUT_TOKENS = 500_000;
+	/** Minutes one build may take (spec §12.2's max_build_minutes). */
+	public static final int MAX_BUILD_MINUTES = 45;
+	/** Placements queued and not yet placed, at most: beyond it a write call is refused until placement catches up. */
+	public static final long PENDING_MAX = 2_000_000;
 	/**
 	 * The largest number a tool argument may hold, either sign. Coordinates and sizes beyond it are mistakes, and the
 	 * limit keeps every shape's loops far from int overflow.

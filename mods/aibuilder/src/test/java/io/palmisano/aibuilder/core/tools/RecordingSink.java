@@ -15,6 +15,18 @@ public class RecordingSink implements BuildSink {
 	/** Runs when a tool waits for everything queued to be placed. */
 	public volatile Runnable onAwait = () -> {
 	};
+	public volatile boolean capReached;
+	public volatile long pending;
+
+	@Override
+	public boolean capReached() {
+		return capReached;
+	}
+
+	@Override
+	public long pending() {
+		return pending;
+	}
 
 	@Override
 	public void brief(Brief brief) {

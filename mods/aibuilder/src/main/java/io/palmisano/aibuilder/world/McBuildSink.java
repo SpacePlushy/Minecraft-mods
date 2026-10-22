@@ -68,6 +68,16 @@ public final class McBuildSink implements BuildSink {
 	}
 
 	@Override
+	public boolean capReached() {
+		return job.capReached();
+	}
+
+	@Override
+	public long pending() {
+		return job.pending();
+	}
+
+	@Override
 	public void finish(String summary) {
 		onFinish.accept(summary);
 	}

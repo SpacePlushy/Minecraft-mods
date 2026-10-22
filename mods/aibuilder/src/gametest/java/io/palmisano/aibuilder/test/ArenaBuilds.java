@@ -62,11 +62,15 @@ final class ArenaBuilds {
 	}
 
 	static ArenaBuild start(GameTestHelper helper, Facing facing, String scriptJson, Occupancy occupancy, int blocksPerTick) {
+		return start(helper, facing, scriptJson, occupancy, blocksPerTick, SizeTier.SMALL.maxChangedBlocks());
+	}
+
+	static ArenaBuild start(GameTestHelper helper, Facing facing, String scriptJson, Occupancy occupancy, int blocksPerTick, long maxChanged) {
 		ServerLevel level = helper.getLevel();
 		LocalFrame frame = frame(helper, facing);
 		UndoJournal<BlockState, CompoundTag> journal = new UndoJournal<>();
 		PlacementJob job = new PlacementJob(level, StateFactory.rotation(facing), journal, occupancy, blocksPerTick,
-				Tunables.TICK_BUDGET_NANOS);
+				Tunables.TICK_BUDGET_NANOS, maxChanged);
 		Set<ChunkPos> chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(ALLOWED.min())),
 				Positions.toBlockPos(frame.toWorld(ALLOWED.max())));
 		BuildTickets.hold(level, chunks);
