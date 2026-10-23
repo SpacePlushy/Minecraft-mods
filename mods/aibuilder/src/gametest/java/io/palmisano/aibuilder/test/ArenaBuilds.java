@@ -73,24 +73,31 @@ final class ArenaBuilds {
 
 	static ArenaBuild start(GameTestHelper helper, Facing facing, String scriptJson, Occupancy occupancy, int blocksPerTick, long maxChanged) {
 		// Each test build's own store, never the world's: the game's own engine moves only what's in the world's.
-		return run(helper, frame(helper, facing), scriptJson, occupancy, blocksPerTick, maxChanged, new AnimationStore(), null, List.of());
+		return run(helper, frame(helper, facing), ALLOWED, scriptJson, occupancy, blocksPerTick, maxChanged, new AnimationStore(), null, List.of());
+	}
+
+	/** A build in {@code frame} with its own allowed box, as a gadget's test needs. */
+	static ArenaBuild start(GameTestHelper helper, LocalFrame frame, Box allowed, String scriptJson) {
+		return run(helper, frame, allowed, scriptJson, Occupancy.players(helper.getLevel()), Tunables.BLOCKS_PER_TICK, SizeTier.EPIC.maxChangedBlocks(),
+				new AnimationStore(), null, List.of());
 	}
 
 	/** A refinement of {@code earlier} (spec v2 §4.4): its frame and store, joining its moving build, its parts known to the tools. */
 	static ArenaBuild refine(GameTestHelper helper, ArenaBuild earlier, String scriptJson) {
-		return run(helper, earlier.frame(), scriptJson, Occupancy.players(helper.getLevel()), Tunables.BLOCKS_PER_TICK,
+		return run(helper, earlier.frame(), ALLOWED, scriptJson, Occupancy.players(helper.getLevel()), Tunables.BLOCKS_PER_TICK,
 				SizeTier.SMALL.maxChangedBlocks(), earlier.animations(), earlier.moving().key().id(), List.of(earlier.journal()));
 	}
 
-	private static ArenaBuild run(GameTestHelper helper, LocalFrame frame, String scriptJson, Occupancy occupancy, int blocksPerTick, long maxChanged,
+	private static ArenaBuild run(GameTestHelper helper, LocalFrame frame, Box allowed, String scriptJson, Occupancy occupancy, int blocksPerTick,
+			long maxChanged,
 			AnimationStore animations, UUID refining, List<UndoJournal<BlockState, CompoundTag>> earlier) {
 		ServerLevel level = helper.getLevel();
 		UndoJournal<BlockState, CompoundTag> journal = new UndoJournal<>();
 		PlacementJob job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, occupancy, blocksPerTick,
 				Tunables.TICK_BUDGET_NANOS, maxChanged);
-		job.machine(new MachineRules(level, frame, ALLOWED, journal, earlier));
-		Set<ChunkPos> chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(ALLOWED.min())),
-				Positions.toBlockPos(frame.toWorld(ALLOWED.max())));
+		job.machine(new MachineRules(level, frame, allowed, journal, earlier));
+		Set<ChunkPos> chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(allowed.min())),
+				Positions.toBlockPos(frame.toWorld(allowed.max())));
 		BuildTickets.hold(level, chunks);
 		job.whenEnded().whenComplete((skipped, error) -> BuildTickets.release(level, chunks));
 		JobScheduler.add(job);
@@ -99,10 +106,10 @@ final class ArenaBuilds {
 				: MovingParts.refining(level, frame, animations, job, journal, refining);
 		McBuildSink sink = new McBuildSink(job, brief -> {
 		}, summary -> job.finish(), moving::animate);
-		McWorldReader world = new McWorldReader(level, frame, ALLOWED, SizeTier.SMALL, () -> null, earlier, journal, AiBuilderConfig.DEFAULT);
+		McWorldReader world = new McWorldReader(level, frame, allowed, SizeTier.SMALL, () -> null, earlier, journal, AiBuilderConfig.DEFAULT);
 		world.machine(job);
-		ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, ALLOWED, SizeTier.SMALL,
-				SizeTier.SMALL.maxChangedBlocks(), sink, new Budget(Tunables.MAX_TOOL_CALLS), world);
+		ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, allowed, SizeTier.SMALL,
+				maxChanged, sink, new Budget(Tunables.MAX_TOOL_CALLS), world);
 		tools.refiningParts(moving.earlierParts());
 		Executor worker = task -> Thread.ofPlatform().daemon().name("aibuilder-arena-build").start(task);
 		ScriptedBackend backend = new ScriptedBackend(scriptJson, worker);
