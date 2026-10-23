@@ -69,6 +69,14 @@ public final class Poses {
 		return ticks;
 	}
 
+	/** The block a block's centre goes to under the pose, in local positions: where check_motion says it is. */
+	public static Pos moved(Rigid pose, Pos localBlock, Facing facing) {
+		Vec3 centre = aligned(new Vec3(localBlock.x(), localBlock.y(), localBlock.z()), facing).plus(HALF);
+		// A is its own inverse: in every facing it swaps or flips the two level axes.
+		Vec3 local = aligned(pose.apply(centre).minus(HALF), facing);
+		return new Pos((int) Math.round(local.x()), (int) Math.round(local.y()), (int) Math.round(local.z()));
+	}
+
 	/** The most a motion turns between two poses (one every {@link Tunables#ANIMATION_STEP_TICKS}). */
 	public static double stepDegrees(Motion motion) {
 		return switch (motion) {

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Set;
 
 import io.palmisano.aibuilder.core.anim.Motion;
 import io.palmisano.aibuilder.core.blocks.FakeCatalog;
@@ -123,6 +124,22 @@ class MovingPartsTest {
 		sink.capReached = true;
 		assertTrue(tools.call("fill", json("{\"box\":[0,0,2,0,0,2],\"block\":\"stone\"}")).isError());
 		assertFalse(tools.call("fill", json(WING)).isError(), "a part changes no block");
+	}
+
+	/** check_motion looks over the parts as the tools know them, and the world's solid blocks once they're placed. */
+	@Test
+	void checkMotionLooksOverTheParts() {
+		world.solid = Set.of(new Pos(0, 1, 2), new Pos(9, 9, 9));
+		ToolExecutor tools = tools();
+		assertTrue(tools.call("check_motion", json("{}")).text().contains("no moving parts"));
+		tools.call("fill", json(WING));
+		tools.call("animate", json("{\"part\":\"wing\",\"pivot\":[-0.5,1,2.5],\"motions\":[{\"spin\":{\"axis\":\"up\",\"period\":40}}]}"));
+		ToolResult result = tools.call("check_motion", json("{}"));
+		assertFalse(result.isError(), result.text());
+		assertTrue(result.text().contains("wing (6 blocks):") && result.text().contains("as built [0, 1, 2] to [2, 1, 3]"), result.text());
+		assertTrue(result.text().contains("passes through 1 solid block: [0, 1, 2]"), result.text());
+		sink.pending = 500;
+		assertTrue(tools.call("check_motion", json("{}")).text().contains("500 blocks are still going in"));
 	}
 
 	@Test

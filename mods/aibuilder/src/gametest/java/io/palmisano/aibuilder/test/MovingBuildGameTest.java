@@ -314,6 +314,27 @@ public class MovingBuildGameTest {
 		helper.succeed();
 	}
 
+	/** check_motion reads the world: a wing that swings down through its post is told so, at the post's blocks. */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void checkMotionReadsTheWorld(GameTestHelper helper) {
+		ArenaBuild build = start(helper, Facing.NORTH, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "a wing that hits its post", "style": "test"}},
+				  {"tool": "fill", "args": {"box": [0, 1, 4, 0, 3, 4], "block": "stone"}},
+				  {"tool": "fill", "args": {"box": [1, 3, 4, 3, 3, 4], "block": "gray_wool", "part": "wing"}},
+				  {"tool": "animate", "args": {"part": "wing", "pivot": [0.5, 3.5, 4],
+				    "motions": [{"swing": {"axis": "forward", "from": 0, "to": 90, "period": 40}}]}},
+				  {"tool": "check_motion", "args": {}},
+				  {"tool": "finish", "args": {"summary": "a wing through its post"}}
+				]}""");
+		helper.succeedWhen(() -> {
+			ArenaBuilds.assertDone(helper, build);
+			String reply = build.reply("check_motion");
+			helper.assertTrue(reply.contains("at 20 ticks [0, 1, 4] to [0, 3, 4]"), reply);
+			helper.assertTrue(reply.contains("passes through 3 solid blocks: [0, 1, 4], [0, 2, 4], [0, 3, 4]."), reply);
+		});
+	}
+
 	/** Passes once the build is done and its wing (or deck) has its motion in the build's store. */
 	private static void moving(GameTestHelper helper, ArenaBuild build) {
 		ArenaBuilds.assertDone(helper, build);

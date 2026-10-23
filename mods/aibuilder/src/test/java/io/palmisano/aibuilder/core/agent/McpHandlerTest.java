@@ -97,7 +97,7 @@ class McpHandlerTest {
 	void toolsListHasEveryCatalogTool() {
 		McpResponse response = post("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}");
 		JsonArray tools = json(response).getAsJsonObject("result").getAsJsonArray("tools");
-		assertEquals(22, tools.size());
+		assertEquals(23, tools.size());
 		for (var tool : tools) {
 			JsonObject t = tool.getAsJsonObject();
 			assertFalse(t.get("name").getAsString().isEmpty());

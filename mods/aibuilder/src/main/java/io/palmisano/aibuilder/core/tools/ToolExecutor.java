@@ -14,6 +14,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.anim.Motion;
+import io.palmisano.aibuilder.core.anim.MotionCheck;
 import io.palmisano.aibuilder.core.anim.MovingPart;
 import io.palmisano.aibuilder.core.anim.Vec3;
 import io.palmisano.aibuilder.core.blocks.BlockEntityData;
@@ -55,7 +56,7 @@ import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 public final class ToolExecutor {
 	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
 			"set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof", "staircase", "clear", "terraform",
-			"place_block_entity", "checkpoint", "check_build", "animate", "finish");
+			"place_block_entity", "checkpoint", "check_build", "animate", "check_motion", "finish");
 	/** The write tools that can make a moving part (spec v2 §4.1). */
 	private static final Set<String> MOVABLE = Set.of("set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof",
 			"staircase");
@@ -183,6 +184,7 @@ public final class ToolExecutor {
 				case "search_blocks" -> search(a);
 				case "checkpoint" -> checkpoint(a);
 				case "check_build" -> checkBuild();
+				case "check_motion" -> checkMotion();
 				case "terraform" -> terraform(a);
 				default -> locked(name, a);
 			};
@@ -409,14 +411,38 @@ public final class ToolExecutor {
 				return ToolResult.error(BRIEF_FIRST);
 			}
 		}
+		ToolResult waiting = placedFirst("check_build");
+		return waiting != null ? waiting : ToolResult.ok(BuildProblems.encode(world.check(), Tunables.CHECK_BUILD_LISTED));
+	}
+
+	/**
+	 * Waits for what's queued, then looks over the moving parts (spec v2 §4.5): where each goes over its cycle, and
+	 * the solid blocks, the build's or the world's, it would pass through. The waits are outside the lock.
+	 */
+	private ToolResult checkMotion() {
+		Map<String, List<Pos>> blocks = new LinkedHashMap<>();
+		Map<String, MovingPart> motions = new HashMap<>();
+		synchronized (this) {
+			parts.forEach((name, state) -> {
+				blocks.put(name, List.copyOf(state.blocks));
+				if (state.motion != null) {
+					motions.put(name, state.motion);
+				}
+			});
+		}
+		if (blocks.isEmpty()) {
+			return ToolResult.ok(MotionCheck.report(blocks, motions, frame.facing(), asked -> Set.of()));
+		}
+		ToolResult waiting = placedFirst("check_motion");
+		return waiting != null ? waiting : ToolResult.ok(MotionCheck.report(blocks, motions, frame.facing(), world::solid));
+	}
+
+	/** Waits for what's queued; null once it's all in, else the answer that blocks are still going in (half a build looks half right). */
+	private ToolResult placedFirst(String tool) {
 		sink.awaitPlaced();
 		long waiting = sink.pending();
-		if (waiting > 0) {
-			// Half a build would show half its problems.
-			return ToolResult.ok(String.format(Locale.ROOT, "%,d", waiting)
-					+ " blocks are still going in; call checkpoint to wait for them, then check_build again.");
-		}
-		return ToolResult.ok(BuildProblems.encode(world.check(), Tunables.CHECK_BUILD_LISTED));
+		return waiting == 0 ? null : ToolResult.ok(String.format(Locale.ROOT, "%,d", waiting) + " blocks are still going in; call checkpoint to"
+				+ " wait for them, then " + tool + " again.");
 	}
 
 	private ToolResult finish(Args a) {

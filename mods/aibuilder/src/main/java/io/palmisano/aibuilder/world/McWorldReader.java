@@ -1,6 +1,7 @@
 package io.palmisano.aibuilder.world;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -144,6 +145,22 @@ public final class McWorldReader implements WorldReader {
 						LevelChunk chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
 						out.add(chunk == null ? "not_loaded" : describe(chunk.getBlockState(pos).rotate(back)));
 					}
+				}
+			}
+			return out;
+		});
+	}
+
+	/** Only loaded chunks: a position in another reads as not solid. Something you'd walk into is solid. */
+	@Override
+	public Set<Pos> solid(Set<Pos> local) {
+		return onServer(() -> {
+			Set<Pos> out = new HashSet<>();
+			for (Pos at : local) {
+				BlockPos pos = Positions.toBlockPos(frame.toWorld(at));
+				LevelChunk chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
+				if (chunk != null && !chunk.getBlockState(pos).getCollisionShape(level, pos).isEmpty()) {
+					out.add(at);
 				}
 			}
 			return out;

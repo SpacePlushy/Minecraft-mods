@@ -1,5 +1,7 @@
 package io.palmisano.aibuilder.core.tools;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiFunction;
@@ -88,6 +90,17 @@ public final class FakeWorld implements WorldReader {
 	@Override
 	public ItemCatalog items() {
 		return items;
+	}
+
+	/** The solid blocks check_motion finds. */
+	public Set<Pos> solid = Set.of();
+
+	@Override
+	public Set<Pos> solid(Set<Pos> local) {
+		requests.add("solid " + local.size());
+		Set<Pos> out = new HashSet<>(local);
+		out.retainAll(solid);
+		return out;
 	}
 
 	/** What check_build finds. */

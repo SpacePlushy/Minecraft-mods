@@ -369,6 +369,14 @@
 		}
 	},
 	{
+		"name": "check_motion",
+		"description": "Look over the moving parts after animating them, as check_build looks over the blocks: for each part, the box it fills as built and at the start, a quarter, half and three quarters of its longest cycle (so you see where a wing goes as it flaps), and the solid blocks, the build's or the world's, it passes through over a cycle (a wing through the body, a blade through the ground), the lowest few listed. Fix what's wrong (the pivot, smaller angles, the part a block further out) and look again. It waits for what's queued first.",
+		"input_schema": {
+			"type": "object",
+			"properties": {}
+		}
+	},
+	{
 		"name": "finish",
 		"description": "End the build. The summary is shown to the player.",
 		"input_schema": {

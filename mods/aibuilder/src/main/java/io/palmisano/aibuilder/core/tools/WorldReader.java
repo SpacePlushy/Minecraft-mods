@@ -1,8 +1,10 @@
 package io.palmisano.aibuilder.core.tools;
 
 import java.util.List;
+import java.util.Set;
 
 import io.palmisano.aibuilder.core.blocks.ItemCatalog;
+import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.shapes.Box;
@@ -37,6 +39,9 @@ public interface WorldReader {
 
 	/** Lava and flammable blocks in the allowed box, read when the build started (spec §9). */
 	FireMask fire();
+
+	/** Which of these local positions hold a solid block now (check_motion: what a moving part would pass through). */
+	Set<Pos> solid(Set<Pos> local);
 
 	/** The build looked over as it stands now (spec §8): its problems, at local positions. */
 	List<BuildProblems.Problem> check();

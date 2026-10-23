@@ -110,6 +110,9 @@ public final class Tunables {
 	public static final int SEARCH_LIMIT_MAX = 50;
 	/** check_build: problems listed by position at most (spec §8); the rest are counted. */
 	public static final int CHECK_BUILD_LISTED = 60;
+	/** check_motion's look at each part over its longest cycle: this many poses, and this many solid blocks listed. */
+	public static final int CHECK_MOTION_SAMPLES = 32;
+	public static final int CHECK_MOTION_LISTED = 8;
 	/** check_build's look over the build (read over ticks), after terraform's wait for placement: inside the MCP timeout. */
 	public static final int CHECK_BUILD_TIMEOUT_SECONDS = 60;
 	/** How long check_build waits for the light engine to catch up with what was placed before it reads light. */
