@@ -43,8 +43,8 @@ public final class BuildCheck implements Tickable {
 	private static final Direction[] SIDES = {Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
 	/** How high a player steps up without jumping: a carpet, a bottom slab or a closed trapdoor is no higher. */
 	private static final double STEP = Attributes.STEP_HEIGHT.value().getDefaultValue();
-	/** How high a player may stand and still fit under a block two up: 2 less their height (a bottom slab is higher). */
-	private static final double RAISE = 2 - EntityTypes.PLAYER.getHeight();
+	/** How tall a player stands: on a bottom slab, 2.3 blocks of room. */
+	private static final double PLAYER_HEIGHT = EntityTypes.PLAYER.getHeight();
 
 	private final ServerLevel level;
 	private final LocalFrame frame;
@@ -107,9 +107,8 @@ public final class BuildCheck implements Tickable {
 			return false;
 		}
 		// What the build placed while this read (a retry joins a read a timeout left running): read too, its light first.
-		List<Pos> now = journal.positions();
-		if (now.size() > positions.size()) {
-			positions = now;
+		if (journal.size() > positions.size()) {
+			positions = journal.positions();
 			light = lightCaughtUp();
 			lightDeadline = System.nanoTime() + Tunables.CHECK_BUILD_LIGHT_WAIT_SECONDS * 1_000_000_000L;
 			return false;
@@ -164,7 +163,7 @@ public final class BuildCheck implements Tickable {
 
 	/**
 	 * A door's lower half with something solid at head height on either side of it, at the feet higher than a step, or
-	 * at the feet raising a player into a block two above (a slab step under a low ceiling).
+	 * at the feet raising a player into the door's lintel or a block two above them (a bottom slab beside a door).
 	 */
 	private void door(BlockPos pos, BlockState state) {
 		if (!(state.getBlock() instanceof DoorBlock) || state.getValue(DoorBlock.HALF) != DoubleBlockHalf.LOWER) {
@@ -173,7 +172,7 @@ public final class BuildCheck implements Tickable {
 		Direction facing = state.getValue(DoorBlock.FACING);
 		for (Direction side : new Direction[] {facing, facing.getOpposite()}) {
 			BlockPos feet = pos.relative(side);
-			if (aboveAStep(feet) || solid(feet.above()) || higherThan(feet, RAISE) && solid(feet.above(2))) {
+			if (aboveAStep(feet) || solid(feet.above()) || top(feet) + PLAYER_HEIGHT > Math.min(room(feet.above(2)), room(pos.above(2)))) {
 				report(Kind.DOOR, pos, "");
 				return;
 			}
@@ -247,17 +246,21 @@ public final class BuildCheck implements Tickable {
 
 	/** Solid higher than a step: walking into it stops a player. */
 	private boolean aboveAStep(BlockPos pos) {
-		return higherThan(pos, STEP);
+		return top(pos) > STEP;
 	}
 
-	/** Whether what's at {@code pos} stands higher than {@code height} within its block (the top of its collision shape). */
-	private boolean higherThan(BlockPos pos, double height) {
+	/** How high a player stands on what's at {@code pos}, within its block: the top of its collision shape (0 for none). */
+	private double top(BlockPos pos) {
 		BlockState state = loaded(pos);
-		if (state == null) {
-			return false;
-		}
-		VoxelShape shape = state.getCollisionShape(level, pos);
-		return !shape.isEmpty() && shape.max(Direction.Axis.Y) > height;
+		VoxelShape shape = state == null ? null : state.getCollisionShape(level, pos);
+		return shape == null || shape.isEmpty() ? 0 : shape.max(Direction.Axis.Y);
+	}
+
+	/** The room under the block at {@code pos}, from the floor two below: 2 and the bottom of its collision shape (a top slab leaves 2.5). */
+	private double room(BlockPos pos) {
+		BlockState state = loaded(pos);
+		VoxelShape shape = state == null ? null : state.getCollisionShape(level, pos);
+		return shape == null || shape.isEmpty() ? Double.MAX_VALUE : 2 + shape.min(Direction.Axis.Y);
 	}
 
 	/** Ground a monster can spawn on, by vanilla's own rule (for a zombie): not glass, leaves or a bottom slab. */

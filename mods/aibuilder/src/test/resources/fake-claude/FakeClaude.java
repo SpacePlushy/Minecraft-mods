@@ -171,7 +171,7 @@ public class FakeClaude {
 				call("finish", "{\"summary\":" + quote("Nothing built; the token was " + token + " and a key " + FAKE_KEY) + "}");
 				result(false, "success", "Done with " + token, "completed", 0);
 			}
-			case "leak-stop" -> {
+			case "leak_stop" -> {
 				// A failure line that quotes Claude Code (spec §16): the token and a key in its text never reach chat.
 				String tokenFile = System.getenv("FAKE_CLAUDE_TOKEN_FILE");
 				if (tokenFile != null) {

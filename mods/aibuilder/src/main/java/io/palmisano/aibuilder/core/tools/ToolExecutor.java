@@ -656,7 +656,7 @@ public final class ToolExecutor {
 		StringBuilder text = new StringBuilder("Queued ").append(blocks(batch.size())).append('.');
 		if (supersededCount > 0) {
 			text.append(' ').append(supersededCount == 1 ? "1 entry was replaced by a later one for the same spot."
-					: String.format(Locale.ROOT, "%,d", supersededCount) + " entries were replaced by later ones for the same spots.");
+					: String.format(Locale.ROOT, "%,d", supersededCount) + " entries were replaced by later ones for their spots.");
 		}
 		if (rejected > 0) {
 			text.append(" Rejected ").append(String.format(Locale.ROOT, "%,d", rejected)).append(':');

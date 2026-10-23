@@ -101,8 +101,8 @@ public class CheckBuildGameTest {
 	}
 
 	/**
-	 * Something no higher than a step at the feet (a carpet, a bottom slab, a closed trapdoor) is walked over: those
-	 * doors are fine. A full block there isn't.
+	 * What leaves a player room under the lintel at the feet (a carpet, a closed trapdoor), or a bottom slab one lower as
+	 * a step up to the door, is walked over: those doors are fine. A full block there isn't.
 	 */
 	@GameTest(structure = ARENA, maxTicks = 1200, skyAccess = true)
 	public void aCarpetDoesntBlockADoor(GameTestHelper helper) {
@@ -111,7 +111,7 @@ public class CheckBuildGameTest {
 				{"tool": "set_blocks", "args": {"blocks": [
 				  {"pos": [-4, 1, 4], "block": "oak_door", "state": {"facing": "forward"}}, {"pos": [-4, 1, 5], "block": "white_carpet"},
 				  {"pos": [-1, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
-				  {"pos": [-1, 1, 5], "block": "oak_slab", "state": {"type": "bottom"}},
+				  {"pos": [-1, 0, 5], "block": "oak_slab", "state": {"type": "bottom"}},
 				  {"pos": [2, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
 				  {"pos": [2, 1, 3], "block": "oak_trapdoor", "state": {"half": "bottom", "open": "false"}},
 				  {"pos": [5, 1, 4], "block": "oak_door", "state": {"facing": "forward"}}, {"pos": [5, 1, 5], "block": "stone"}]}}""");
@@ -122,24 +122,32 @@ public class CheckBuildGameTest {
 	}
 
 	/**
-	 * A slab step at the feet with a block two above: standing on the slab takes 2.3 blocks of room, so that door can't
-	 * be walked through. A slab with nothing over it is fine, and so is a carpet under a block (the minors' review).
+	 * A bottom slab beside a door raises a player 0.5, and 0.5 + 1.8 is more than the 2 blocks under the door's lintel,
+	 * or under a block two above the slab: those doors are walked through only sneaking. A top slab as the lintel leaves
+	 * 2.5, and a carpet, or a slab one lower as a step, leaves room (the minors' review, twice).
 	 */
 	@GameTest(structure = ARENA, maxTicks = 1200, skyAccess = true)
-	public void aSlabStepUnderALowCeilingBlocksADoor(GameTestHelper helper) {
+	public void aSlabBesideADoorLeavesNoRoomUnderItsLintel(GameTestHelper helper) {
 		ArenaBuild build = start(helper, """
-				{"tool": "fill", "args": {"box": [-6, 1, 4, 6, 3, 4], "block": "stone"}},
+				{"tool": "fill", "args": {"box": [-7, 1, 4, 7, 3, 4], "block": "stone"}},
 				{"tool": "set_blocks", "args": {"blocks": [
-				  {"pos": [-4, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
-				  {"pos": [-4, 1, 5], "block": "oak_slab", "state": {"type": "bottom"}}, {"pos": [-4, 3, 5], "block": "stone"},
-				  {"pos": [-1, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
-				  {"pos": [-1, 1, 5], "block": "oak_slab", "state": {"type": "bottom"}},
-				  {"pos": [2, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
-				  {"pos": [2, 1, 5], "block": "white_carpet"}, {"pos": [2, 3, 5], "block": "stone"}]}}""");
+				  {"pos": [-6, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
+				  {"pos": [-6, 1, 5], "block": "oak_slab", "state": {"type": "bottom"}},
+				  {"pos": [-3, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
+				  {"pos": [-3, 0, 5], "block": "oak_slab", "state": {"type": "bottom"}},
+				  {"pos": [0, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
+				  {"pos": [0, 1, 5], "block": "white_carpet"},
+				  {"pos": [3, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
+				  {"pos": [3, 1, 5], "block": "oak_slab", "state": {"type": "bottom"}}, {"pos": [3, 3, 4], "block": "oak_slab", "state": {"type": "top"}},
+				  {"pos": [6, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
+				  {"pos": [6, 1, 5], "block": "oak_slab", "state": {"type": "bottom"}}, {"pos": [6, 3, 4], "block": "air"},
+				  {"pos": [6, 3, 5], "block": "stone"}]}}""");
 		helper.succeedWhen(() -> {
 			String report = report(helper, build);
-			helper.assertTrue(report.contains("door (1)") && report.contains("(-4, 1, 4)"), "the door behind the slab step under a block: " + report);
-			helper.assertFalse(report.contains("(-1, 1, 4)") || report.contains("(2, 1, 4)"), "a door that can be walked through: " + report);
+			helper.assertTrue(report.contains("door (2)") && report.contains("(-6, 1, 4)") && report.contains("(6, 1, 4)"),
+					"the doors a slab beside them leaves no room under a block: " + report);
+			helper.assertFalse(report.contains("(-3, 1, 4)") || report.contains("(0, 1, 4)") || report.contains("(3, 1, 4)"),
+					"a door that can be walked through: " + report);
 		});
 	}
 

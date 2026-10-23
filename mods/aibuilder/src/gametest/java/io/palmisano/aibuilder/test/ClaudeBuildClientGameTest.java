@@ -251,10 +251,6 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 	}
 
 	/**
-	 * The Wi-Fi goes off mid-build (spec §18's M6 check): the action bar shows Claude Code's retries, then chat says the
-	 * connection went, with [Undo], and what went in before it went comes off again.
-	 */
-	/**
 	 * A failure line that quotes Claude Code holds neither the build's token nor a key (spec §16; the minors' review):
 	 * the fake stops with both in its error text, and chat shows it scrubbed. Nothing was placed, so nothing to undo.
 	 */
@@ -265,7 +261,7 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}
-		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "leak-stop", "FAKE_CLAUDE_TOKEN_FILE", tokenFile.toString());
+		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "leak_stop", "FAKE_CLAUDE_TOKEN_FILE", tokenFile.toString());
 		int stopped = GameTestSupport.count("Claude Code stopped: ");
 		GameTestSupport.runPlayerCommand(ctx, "aibuild new a stopped hut");
 		GameTestSupport.awaitChatCount(ctx, "Claude Code stopped: ", stopped + 1, 600);
@@ -276,6 +272,10 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 		server.waitFor(s -> !BuildManager.of(s).lastProcessRunning());
 	}
 
+	/**
+	 * The Wi-Fi goes off mid-build (spec §18's M6 check): the action bar shows Claude Code's retries, then chat says the
+	 * connection went, with [Undo], and what went in before it went comes off again.
+	 */
 	private static void offlineMidBuildEndsCleanly(ClientGameTestContext ctx) {
 		// The hut refined above still stands where this one goes: taken back first (after its refinements, too).
 		int undone = GameTestSupport.count("Undone: ");
