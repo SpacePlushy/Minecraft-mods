@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.core.tools;
 
 import java.util.List;
 
+import io.palmisano.aibuilder.core.anim.MovingPart;
 import io.palmisano.aibuilder.core.place.Placement;
 
 /** Where the tools send a build: the placement engine in the game, a recorder in tests. */
@@ -22,6 +23,17 @@ public interface BuildSink {
 
 	/** Blocks queued and not yet placed. */
 	long pending();
+
+	/** A moving part's motion, as animate gave it (replacing any it had). */
+	void animate(MovingPart part);
+
+	/** A gadget the build placed (spec v2 §5.3), for its session to keep. */
+	default void gadget(io.palmisano.aibuilder.core.gadgets.GadgetUse use) {
+	}
+
+	/** A gadget of the session cleared away (its whole box), for its session to forget. */
+	default void gadgetGone(io.palmisano.aibuilder.core.gadgets.GadgetUse use) {
+	}
 
 	void finish(String summary);
 }

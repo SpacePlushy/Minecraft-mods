@@ -4,18 +4,24 @@ import java.util.Optional;
 import java.util.Set;
 
 import io.palmisano.aibuilder.core.blocks.ItemCatalog;
+import io.palmisano.aibuilder.mixin.DispenserBlockInvoker;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.dispenser.DefaultDispenseItemBehavior;
+import net.minecraft.core.dispenser.DispenseItemBehavior;
+import net.minecraft.core.dispenser.SulfurCubeBlockDispenseItemBehavior;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.BundleItem;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.SpawnEggItem;
 import net.minecraft.world.level.EmptyBlockGetter;
+import net.minecraft.world.level.block.DispenserBlock;
 import net.minecraft.world.level.block.ShulkerBoxBlock;
 import net.minecraft.world.level.block.entity.BannerPattern;
 
@@ -39,6 +45,22 @@ public final class McItemCatalog implements ItemCatalog {
 	@Override
 	public int maxStack(String id) {
 		return item(id).map(Item::getDefaultMaxStackSize).orElse(0);
+	}
+
+	/**
+	 * The dispenser's registry names it (buckets, fire charges, arrows, bone meal, minecarts…), or its default use
+	 * isn't a drop (armour put on, a spawn egg hatched). A block a sulfur cube may swallow is fed to one standing in
+	 * front, and otherwise dropped: that's a drop.
+	 */
+	@Override
+	public boolean dispenses(String id) {
+		return item(id).map(item -> {
+			if (DispenserBlock.DISPENSER_REGISTRY.containsKey(item)) {
+				return true;
+			}
+			DispenseItemBehavior use = DispenserBlockInvoker.aibuilder$defaultDispenseMethod(new ItemStack(item));
+			return use.getClass() != DefaultDispenseItemBehavior.class && !(use instanceof SulfurCubeBlockDispenseItemBehavior);
+		}).orElse(false);
 	}
 
 	@Override

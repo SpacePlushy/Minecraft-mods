@@ -115,6 +115,24 @@ final class Args {
 		return out;
 	}
 
+	/** A list of {@code length} numbers, fractions allowed, each within ±{@link Tunables#ARGUMENT_LIMIT}. */
+	double[] numbers(String name, int length) {
+		JsonArray a = array(name);
+		if (a.size() != length) {
+			throw new BadArgument(name + " must be a list of " + length + " numbers");
+		}
+		double[] out = new double[length];
+		for (int i = 0; i < length; i++) {
+			JsonElement e = a.get(i);
+			if (!e.isJsonPrimitive() || !e.getAsJsonPrimitive().isNumber() || !Double.isFinite(e.getAsDouble())
+					|| Math.abs(e.getAsDouble()) > Tunables.ARGUMENT_LIMIT) {
+				throw new BadArgument(name + " must be a list of " + length + " numbers");
+			}
+			out[i] = e.getAsDouble();
+		}
+		return out;
+	}
+
 	Pos pos(String name) {
 		int[] p = ints(name, 3);
 		return new Pos(p[0], p[1], p[2]);
@@ -123,6 +141,23 @@ final class Args {
 	Box box(String name) {
 		int[] b = ints(name, 6);
 		return Box.of(b[0], b[1], b[2], b[3], b[4], b[5]);
+	}
+
+	/** A list of {@code [x, y, z]} positions, or one alone. */
+	List<Pos> positions(String name) {
+		JsonArray list = array(name);
+		if (!list.isEmpty() && list.get(0).isJsonPrimitive()) {
+			return List.of(pos(name));
+		}
+		List<Pos> out = new ArrayList<>();
+		for (JsonElement e : list) {
+			if (!e.isJsonArray() || e.getAsJsonArray().size() != 3) {
+				throw new BadArgument(name + " must be a list of [x, y, z] positions");
+			}
+			JsonArray p = e.getAsJsonArray();
+			out.add(new Pos(asInt(p.get(0), name), asInt(p.get(1), name), asInt(p.get(2), name)));
+		}
+		return out;
 	}
 
 	/** A list of {@code [x, z]} points. */

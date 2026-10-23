@@ -126,6 +126,73 @@ public class FakeClaude {
 				call("finish", "{\"summary\":\"A tiny oak hut.\"}");
 				result(false, "success", "Built a tiny oak hut.", "completed", 0);
 			}
+			case "flap" -> {
+				// A stone post with a wing either side, hinged at its top edges, flapping together: down at the start of
+				// each 40-tick flap, up half-way (MovingBuildClientGameTest).
+				rateLimit("allowed", false);
+				call("get_context", "{}");
+				call("submit_brief", "{\"title\":\"Test flapper\",\"style\":\"plain\",\"size\":{\"w\":9,\"h\":4,\"d\":1},"
+						+ "\"palette\":[{\"role\":\"primary\",\"block\":\"stone\"},{\"role\":\"wings\",\"block\":\"white_wool\"}],"
+						+ "\"phases\":[\"body\",\"wings\"]}");
+				call("fill", "{\"box\":[0,0,4,0,3,4],\"block\":\"stone\"}");
+				call("checkpoint", "{\"phase\":\"body\"}");
+				call("fill", "{\"box\":[1,3,4,4,3,4],\"block\":\"white_wool\",\"part\":\"right_wing\"}");
+				call("fill", "{\"box\":[-4,3,4,-1,3,4],\"block\":\"white_wool\",\"part\":\"left_wing\"}");
+				call("animate", "{\"part\":\"right_wing\",\"pivot\":[0.5,3.5,4],\"motions\":[{\"swing\":{\"axis\":\"forward\",\"from\":35,"
+						+ "\"to\":-45,\"period\":40}}]}");
+				call("animate", "{\"part\":\"left_wing\",\"pivot\":[-0.5,3.5,4],\"motions\":[{\"swing\":{\"axis\":\"forward\",\"from\":-35,"
+						+ "\"to\":45,\"period\":40}}]}");
+				call("check_motion", "{}");
+				call("checkpoint", "{\"phase\":\"wings\"}");
+				call("finish", "{\"summary\":\"A stone post with flapping wings.\"}");
+				result(false, "success", "Built a post with flapping wings.", "completed", 0);
+			}
+			case "door" -> {
+				// A lever that opens a piston door (MachineClientGameTest): a stone wall whose doorway a cobblestone block
+				// closes, held up by a sticky piston under it that a torch powers; the lever, on the torch's block, turns the
+				// torch off, and the piston pulls the block down into the ground.
+				rateLimit("allowed", false);
+				call("get_context", "{}");
+				call("submit_brief", "{\"title\":\"Test door\",\"style\":\"plain\",\"size\":{\"w\":5,\"h\":3,\"d\":1},"
+						+ "\"palette\":[{\"role\":\"primary\",\"block\":\"stone\"},{\"role\":\"door\",\"block\":\"cobblestone\"}],"
+						+ "\"phases\":[\"wall\",\"door\"]}");
+				call("fill", "{\"box\":[-2,1,5,2,2,5],\"block\":\"stone\"}");
+				call("set_blocks", "{\"blocks\":[{\"pos\":[0,1,5],\"block\":\"air\"}]}");
+				call("checkpoint", "{\"phase\":\"wall\"}");
+				call("set_blocks", "{\"blocks\":[{\"pos\":[0,-1,5],\"block\":\"sticky_piston\",\"state\":{\"facing\":\"up\"}},"
+						+ "{\"pos\":[0,0,5],\"block\":\"cobblestone\"},{\"pos\":[2,-1,5],\"block\":\"stone\"},"
+						+ "{\"pos\":[1,-1,5],\"block\":\"redstone_wall_torch\",\"state\":{\"facing\":\"left\"}},"
+						+ "{\"pos\":[2,0,5],\"block\":\"lever\",\"state\":{\"face\":\"floor\",\"facing\":\"forward\"}}]}");
+				call("checkpoint", "{\"phase\":\"door\"}");
+				call("test_redstone", "{\"steps\":[{\"wait\":6},{\"read\":[[0,1,5]]},{\"set\":[2,0,5],\"on\":true},{\"wait\":8},"
+						+ "{\"read\":[[0,1,5]]},{\"set\":[2,0,5],\"on\":false},{\"wait\":8},{\"read\":[[0,1,5]]}]}");
+				call("finish", "{\"summary\":\"A piston door on a lever.\"}");
+				result(false, "success", "Built a piston door.", "completed", 0);
+			}
+			case "calculator" -> {
+				// The calculator from gadgets (CalculatorClientGameTest; the server gametests' Calculator places the same): lever row b
+				// in front, lever row a behind it, a 4-bit adder, a 5-bit number; row a's wires low, row b's over them, the sums into
+				// the number; then 9 + 7 and 15 + 15 tried, each read with show.
+				rateLimit("allowed", false);
+				call("get_context", "{}");
+				call("submit_brief", "{\"title\":\"Test calculator\",\"style\":\"plain\",\"size\":{\"w\":54,\"h\":12,\"d\":124},"
+						+ "\"palette\":[{\"role\":\"primary\",\"block\":\"stone\"}],\"phases\":[\"gadgets\",\"wires\"]}");
+				call("place_gadget", "{\"kind\":\"lever_row\",\"at\":[-9,1,0],\"facing\":\"forward\",\"options\":{\"bits\":4,\"label\":\"b\"}}");
+				call("place_gadget", "{\"kind\":\"lever_row\",\"at\":[-23,1,6],\"facing\":\"forward\",\"options\":{\"bits\":4,\"label\":\"a\"}}");
+				call("place_gadget", "{\"kind\":\"adder\",\"at\":[-27,1,20],\"facing\":\"forward\",\"options\":{\"bits\":4}}");
+				call("place_gadget", "{\"kind\":\"number\",\"at\":[-25,1,52],\"facing\":\"forward\",\"options\":{\"bits\":5}}");
+				call("checkpoint", "{\"phase\":\"gadgets\"}");
+				call("wire", "{\"from\":[[-23,2,9],[-19,2,9],[-15,2,9],[-11,2,9]],\"to\":[[-23,6,19],[-9,6,19],[5,6,19],[19,6,19]],\"level\":2}");
+				call("wire", "{\"from\":[[-9,2,3],[-5,2,3],[-1,2,3],[3,2,3]],\"to\":[[-19,6,19],[-5,6,19],[9,6,19],[23,6,19]],\"level\":8}");
+				call("wire", "{\"from\":[[-25,2,41],[-11,2,41],[3,2,41],[17,2,41],[25,2,41]],\"to\":[[-25,6,51],[-23,6,51],[-19,6,51],[-15,6,51],"
+						+ "[-11,6,51]]}");
+				call("checkpoint", "{\"phase\":\"wires\"}");
+				call("test_redstone", "{\"steps\":[{\"set\":[-23,2,7],\"on\":true},{\"set\":[-11,2,7],\"on\":true},{\"set\":[-9,2,1],\"on\":true},"
+						+ "{\"set\":[-5,2,1],\"on\":true},{\"set\":[-1,2,1],\"on\":true},{\"wait\":168},{\"show\":true},{\"set\":[-19,2,7],\"on\":true},"
+						+ "{\"set\":[-15,2,7],\"on\":true},{\"set\":[3,2,1],\"on\":true},{\"wait\":168},{\"show\":true}]}");
+				call("finish", "{\"summary\":\"A calculator: 9 + 7 shows 16 and 15 + 15 shows 30.\"}");
+				result(false, "success", "Built a calculator.", "completed", 0);
+			}
 			case "echo" -> result(false, "success", prompt, "completed", 0);
 			case "slow_build" -> {
 				// The walls go in (stone, so they change what an earlier test hut left), then Claude takes its time: a build

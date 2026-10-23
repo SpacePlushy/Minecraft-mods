@@ -10,10 +10,8 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
 
-import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
-import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import io.palmisano.aibuilder.AiBuilderMod;
 import io.palmisano.aibuilder.core.Tunables;
@@ -45,21 +43,45 @@ public final class UndoStore extends SavedData {
 				CompoundTag.CODEC.fieldOf("tag").forGetter(DataEntry::tag)).apply(i, DataEntry::new));
 	}
 
-	/** An entity the build spawned (an item frame), its position packed. */
+	/** An entity the build spawned, its position packed; a save from before moving parts has no kind: they are all frames. */
 	private static final Codec<UndoJournal.Spawned> SPAWNED_CODEC = RecordCodecBuilder.create(i -> i.group(
 			UUIDUtil.CODEC.fieldOf("id").forGetter(UndoJournal.Spawned::id),
 			Codec.LONG.fieldOf("pos").forGetter(s -> BlockPos.asLong(s.pos().x(), s.pos().y(), s.pos().z())),
-			Codec.STRING.fieldOf("item").forGetter(UndoJournal.Spawned::item)).apply(i, (id, pos, item) -> {
+			Codec.STRING.fieldOf("item").forGetter(UndoJournal.Spawned::item),
+			Codec.STRING.optionalFieldOf("kind", UndoJournal.Spawned.FRAME).forGetter(UndoJournal.Spawned::kind)).apply(i, (id, pos, item, kind) -> {
 				BlockPos at = BlockPos.of(pos);
-				return new UndoJournal.Spawned(id, new Pos(at.getX(), at.getY(), at.getZ()), item);
+				return new UndoJournal.Spawned(id, new Pos(at.getX(), at.getY(), at.getZ()), item, kind);
 			}));
 
+	/** An earlier build's display a refinement showed another block on, and the block it showed before. */
+	private static final Codec<UndoJournal.Reshown<BlockState>> RESHOWN_CODEC = RecordCodecBuilder.create(i -> i.group(
+			UUIDUtil.CODEC.fieldOf("display").forGetter(r -> r.display()),
+			Codec.LONG.fieldOf("pos").forGetter(r -> BlockPos.asLong(r.pos().x(), r.pos().y(), r.pos().z())),
+			BlockState.CODEC.fieldOf("before").forGetter(r -> r.before())).apply(i, (display, pos, before) -> {
+				BlockPos at = BlockPos.of(pos);
+				return new UndoJournal.Reshown<>(display, new Pos(at.getX(), at.getY(), at.getZ()), before);
+			}));
+
+	/** A lever the build placed, and whether it was placed on. */
+	private record SavedLever(long pos, boolean on) {
+		static final Codec<SavedLever> CODEC = RecordCodecBuilder.create(i -> i.group(
+				Codec.LONG.fieldOf("pos").forGetter(SavedLever::pos),
+				Codec.BOOL.fieldOf("on").forGetter(SavedLever::on)).apply(i, SavedLever::new));
+	}
+
+	/** An earlier build's part a refinement gave another motion, and the motion it had. */
+	private static final Codec<UndoJournal.Reanimated> REANIMATED_CODEC = RecordCodecBuilder.create(i -> i.group(
+			UUIDUtil.CODEC.fieldOf("build").forGetter(UndoJournal.Reanimated::build),
+			AnimationStore.MOVING_PART.fieldOf("before").forGetter(UndoJournal.Reanimated::before)).apply(i, UndoJournal.Reanimated::new));
+
 	/**
-	 * A journal as palettes and arrays, one slot per position in the order they were first changed, and the entities
-	 * it spawned (none in a journal saved before M5).
+	 * A journal as palettes and arrays, one slot per position in the order they were first changed, the entities it
+	 * spawned (none in a journal saved before M5), and what it changed of earlier builds' moving parts (none before
+	 * moving parts).
 	 */
 	private record PackedJournal(long[] positions, List<BlockState> states, int[] stateIndex, List<String> written,
-			int[] writtenIndex, int[] hashes, List<DataEntry> data, List<UndoJournal.Spawned> entities) {
+			int[] writtenIndex, int[] hashes, List<DataEntry> data, List<UndoJournal.Spawned> entities, List<UndoJournal.Reshown<BlockState>> reshown,
+			List<UndoJournal.Reanimated> reanimated, List<SavedLever> levers) {
 		static final Codec<long[]> LONGS = Codec.LONG_STREAM.xmap(LongStream::toArray, LongStream::of);
 		static final Codec<int[]> INTS = Codec.INT_STREAM.xmap(IntStream::toArray, IntStream::of);
 		static final Codec<PackedJournal> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -70,7 +92,10 @@ public final class UndoStore extends SavedData {
 				INTS.fieldOf("written_index").forGetter(PackedJournal::writtenIndex),
 				INTS.fieldOf("hashes").forGetter(PackedJournal::hashes),
 				DataEntry.CODEC.listOf().fieldOf("data").forGetter(PackedJournal::data),
-				SPAWNED_CODEC.listOf().optionalFieldOf("entities", List.of()).forGetter(PackedJournal::entities)).apply(i, PackedJournal::new));
+				SPAWNED_CODEC.listOf().optionalFieldOf("entities", List.of()).forGetter(PackedJournal::entities),
+				RESHOWN_CODEC.listOf().optionalFieldOf("reshown", List.of()).forGetter(PackedJournal::reshown),
+				REANIMATED_CODEC.listOf().optionalFieldOf("reanimated", List.of()).forGetter(PackedJournal::reanimated),
+				SavedLever.CODEC.listOf().optionalFieldOf("levers", List.of()).forGetter(PackedJournal::levers)).apply(i, PackedJournal::new));
 
 		static PackedJournal pack(UndoJournal<BlockState, CompoundTag> journal) {
 			List<UndoJournal.Entry<BlockState, CompoundTag>> entries = journal.entries();
@@ -94,7 +119,8 @@ public final class UndoStore extends SavedData {
 				}
 			}
 			return new PackedJournal(positions, List.copyOf(states.keySet()), stateIndex, List.copyOf(written.keySet()), writtenIndex,
-					hashes, data, journal.spawned());
+					hashes, data, journal.spawned(), journal.reshown(), journal.reanimated(), journal.levers().entrySet().stream()
+					.map(e -> new SavedLever(BlockPos.asLong(e.getKey().x(), e.getKey().y(), e.getKey().z()), e.getValue())).toList());
 		}
 
 		/** The journal, or an error when the arrays don't add up (a palette read in part lacks the block it couldn't read). */
@@ -117,7 +143,12 @@ public final class UndoStore extends SavedData {
 				entries.add(new UndoJournal.Entry<>(new Pos(pos.getX(), pos.getY(), pos.getZ()), states.get(stateIndex[k]),
 						dataByIndex.get(k), block.isEmpty() ? null : block, hashes[k]));
 			}
-			return DataResult.success(UndoJournal.of(entries, entities));
+			UndoJournal<BlockState, CompoundTag> journal = UndoJournal.of(entries, entities, reshown, reanimated);
+			for (SavedLever lever : levers) {
+				BlockPos at = BlockPos.of(lever.pos());
+				journal.lever(new Pos(at.getX(), at.getY(), at.getZ()), lever.on());
+			}
+			return DataResult.success(journal);
 		}
 	}
 
@@ -133,11 +164,12 @@ public final class UndoStore extends SavedData {
 	private record PlayerBuilds(UUID player, List<StoredBuild> builds) {
 		static final Codec<PlayerBuilds> CODEC = RecordCodecBuilder.create(i -> i.group(
 				UUIDUtil.CODEC.fieldOf("player").forGetter(PlayerBuilds::player),
-				skipping(BUILD_CODEC, "build").fieldOf("builds").forGetter(PlayerBuilds::builds)).apply(i, PlayerBuilds::new));
+				SavedLists.skipping(BUILD_CODEC, "build", "it can't be undone").fieldOf("builds").forGetter(PlayerBuilds::builds))
+				.apply(i, PlayerBuilds::new));
 	}
 
-	public static final Codec<UndoStore> CODEC = skipping(PlayerBuilds.CODEC, "player's builds").fieldOf("players").codec()
-			.xmap(UndoStore::fromPlayers, UndoStore::toPlayers);
+	public static final Codec<UndoStore> CODEC = SavedLists.skipping(PlayerBuilds.CODEC, "player's builds", "they can't be undone")
+			.fieldOf("players").codec().xmap(UndoStore::fromPlayers, UndoStore::toPlayers);
 
 	public static final SavedDataType<UndoStore> TYPE = new SavedDataType<>(AiBuilderMod.id("undo"), UndoStore::new, CODEC, null);
 
@@ -189,34 +221,6 @@ public final class UndoStore extends SavedData {
 	public void replace(UUID player, StoredBuild build, StoredBuild replacement) {
 		history.replace(player, build, replacement);
 		setDirty();
-	}
-
-	/**
-	 * A list read one item at a time: an item that can't be read (a build naming a block the game no longer has, a
-	 * mod's removed since) is left out with a warning, so it costs only itself. Read whole, it would fail the store, and
-	 * the game would start an empty one and save it over the file.
-	 */
-	private static <T> Codec<List<T>> skipping(Codec<T> item, String what) {
-		Codec<List<T>> whole = item.listOf();
-		return new Codec<>() {
-			@Override
-			public <O> DataResult<Pair<List<T>, O>> decode(DynamicOps<O> ops, O input) {
-				return ops.getList(input).map(items -> {
-					List<T> read = new ArrayList<>();
-					items.accept(element -> {
-						DataResult<T> one = item.parse(ops, element);
-						one.result().ifPresentOrElse(read::add, () -> AiBuilderMod.LOG.warn("Left out a saved {} that can't be read (it can't be"
-								+ " undone): {}", what, one.error().map(DataResult.Error::message).orElse("")));
-					});
-					return Pair.of(read, ops.empty());
-				});
-			}
-
-			@Override
-			public <O> DataResult<O> encode(List<T> input, DynamicOps<O> ops, O prefix) {
-				return whole.encode(input, ops, prefix);
-			}
-		};
 	}
 
 	private static UndoStore fromPlayers(List<PlayerBuilds> players) {

@@ -2,10 +2,15 @@ package io.palmisano.aibuilder.world;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import io.palmisano.aibuilder.AiBuilderMod;
@@ -23,8 +28,10 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -46,6 +53,11 @@ public final class PlacementJob implements Tickable {
 	private record Settling(BlockPos pos, long readyAt) {
 	}
 
+	/** Hears of each display the job makes for a moving part: the part, the display, the block it stands at. */
+	public interface DisplayListener {
+		void shown(String part, UUID display, BlockPos at);
+	}
+
 	/** A block held back because a player stood there, with its block entity's data (place_block_entity) if any. */
 	private record Held(BlockPos pos, BlockState state, BlockEntityData data) {
 	}
@@ -60,8 +72,23 @@ public final class PlacementJob implements Tickable {
 	private final long maxChanged;
 	private volatile boolean capReached;
 	private long overCap;
+	private volatile MachineRules machines;
+	private PowerUp powerUp;
+	/** Components the power-up pass has started (spec v2 §5.1): never twice, until a tool writes there again. */
+	private final Set<BlockPos> powered = new HashSet<>();
+	/** Levers a test had to leave flipped (a player stood in a piston's way), with how they go back once the way is clear. */
+	private final Map<BlockPos, Boolean> leverRestores = new LinkedHashMap<>();
+	/** A piston a running test waits on while a player stands in its way; null when none. */
+	private volatile BlockPos testWaitingFor;
+	private final List<BlockPos> takenOut = new ArrayList<>();
 	/** One id string per block, shared by every journal entry (a 350k build would otherwise hold 350k copies). */
 	private final Map<Block, String> ids = new IdentityHashMap<>();
+	/** Each moving part's displays by the block they stand at, so a spot given again shows the later block. */
+	private final Map<String, Map<BlockPos, UUID>> shown = new HashMap<>();
+	/** The displays this job made; the others in {@link #shown} are an earlier build's (a refinement's parts). */
+	private final Set<UUID> made = new HashSet<>();
+	private volatile DisplayListener onDisplay = (part, display, at) -> {
+	};
 
 	private final Object lock = new Object();
 	private final ArrayDeque<Placement> queue = new ArrayDeque<>(); // guarded by lock
@@ -114,6 +141,81 @@ public final class PlacementJob implements Tickable {
 				queue.addAll(sorted);
 			}
 		}
+	}
+
+	/**
+	 * An earlier build's displays by part and block (a refinement's, spec v2 §4.4): a spot one stands at shows the later
+	 * block, as one of this job's would, and the journal keeps what it showed before. Server thread, before the job starts.
+	 */
+	public void knownDisplays(Map<String, Map<BlockPos, UUID>> earlier) {
+		earlier.forEach((part, displays) -> shown.computeIfAbsent(part, p -> new HashMap<>()).putAll(displays));
+	}
+
+	/**
+	 * The build's redstone starts once everything is in (spec v2 §5.1): first what breaks the machine rules (spec v2
+	 * §5.5) is put back as it was, then the power-up pass. Without rules (a test's bare job) there's neither. Any
+	 * thread, before the job starts.
+	 */
+	public void machine(MachineRules rules) {
+		rules.started(powered);
+		this.machines = rules;
+	}
+
+	/** What the power-up pass has started, for check_build's rules. Server thread. */
+	Set<BlockPos> started() {
+		return powered;
+	}
+
+	/** The piston a running test waits on while a player stands in its way, or null. Server thread. */
+	void testWaiting(BlockPos piston) {
+		testWaitingFor = piston;
+	}
+
+	/** Levers a test had to leave flipped: the next power-up pass puts them back once no player is in the way. Server thread. */
+	void putBackLater(Map<BlockPos, Boolean> levers) {
+		leverRestores.putAll(levers);
+	}
+
+	/** The build was cancelled. Any thread. */
+	boolean cancelled() {
+		synchronized (lock) {
+			return cancelled;
+		}
+	}
+
+	/** The machine rules it was given; null for a bare job. */
+	MachineRules machines() {
+		return machines;
+	}
+
+	Occupancy occupancy() {
+		return occupancy;
+	}
+
+	/** A power-up pass over what isn't started yet (a test's, before it runs): it shares the job's record of what is. */
+	PowerUp newPass() {
+		return new PowerUp(level, machines, occupancy, powered, leverRestores, journal.positions());
+	}
+
+	/** A piston of the build that waits to start while a player stands in its way; null when none does. Server thread. */
+	public BlockPos waitingForPlayer() {
+		BlockPos test = testWaitingFor;
+		return test != null ? test : powerUp == null ? null : powerUp.waitingFor();
+	}
+
+	/** What broke the machine rules and was put back as it was before the build. Server thread. */
+	public List<BlockPos> takenOut() {
+		return List.copyOf(takenOut);
+	}
+
+	/** False when the power-up pass gave up waiting for a player, and the machine stays as placed. Server thread. */
+	public boolean machineStarted() {
+		return powerUp == null || !powerUp.gaveUp();
+	}
+
+	/** Who hears of the displays it makes. Any thread, before the job starts. */
+	public void onDisplay(DisplayListener listener) {
+		this.onDisplay = listener;
 	}
 
 	/** What placing sounds and looks like; tests listen in. Any thread, before the job starts. */
@@ -207,6 +309,15 @@ public final class PlacementJob implements Tickable {
 			// The last block entities settle before the build counts as done.
 			return false;
 		}
+		if (machines != null) {
+			if (powerUp == null) {
+				takeOutRuleBreakers();
+				powerUp = new PowerUp(level, machines, occupancy, powered, leverRestores, journal.positions());
+			}
+			if (!powerUp.run(deadline)) {
+				return false;
+			}
+		}
 		if (failures > 0) {
 			AiBuilderMod.LOG.warn("{} placements failed in one build; the first was logged", failures);
 		}
@@ -263,12 +374,16 @@ public final class PlacementJob implements Tickable {
 	}
 
 	/**
-	 * Writes one placement, both halves of a two-block block, then its block entity's data; or hangs an item frame.
-	 * Returns how much of the tick's budget it used.
+	 * Writes one placement, both halves of a two-block block, then its block entity's data; or hangs an item frame; or
+	 * shows a moving part's block. Returns how much of the tick's budget it used.
 	 */
 	private int place(Placement placement) {
 		try {
 			BlockPos pos = Positions.toBlockPos(placement.pos());
+			if (!placement.part().isEmpty()) {
+				show(placement, pos);
+				return 1;
+			}
 			if (placement.block() == null) {
 				if (placement.data() instanceof BlockEntityData.ItemFrame frame) {
 					hang(pos, frame);
@@ -327,6 +442,43 @@ public final class PlacementJob implements Tickable {
 		settling.add(new Settling(pos, level.getGameTime() + Tunables.BLOCK_ENTITY_SETTLE_TICKS));
 	}
 
+	/**
+	 * A moving part's block (spec v2 §4.1): a display at the block's corner with the state the block would have, so
+	 * facings turn as blocks do, journaled by its id. No block changes and nothing waits for a player (a display has
+	 * no collision). A spot the part already shows takes the later block, as a block would.
+	 */
+	private void show(Placement placement, BlockPos pos) {
+		Map<BlockPos, UUID> part = shown.computeIfAbsent(placement.part(), p -> new HashMap<>());
+		for (Map.Entry<BlockPos, BlockState> entry : StateFactory.states(placement.block(), rotation, pos)) {
+			UUID shown = part.get(entry.getKey());
+			BlockState before = shown == null ? null : Displays.show(level, shown, entry.getValue());
+			if (before != null && !made.contains(shown) && before != entry.getValue()) {
+				journal.reshown(shown, Positions.toPos(entry.getKey()), before);
+			}
+			if (before == null) {
+				if (entry.getValue().isAir()) {
+					// Nothing of the part's here to take out, and a display of air would be nothing to see.
+					continue;
+				}
+				Display.BlockDisplay display = Displays.spawn(level, entry.getKey(), entry.getValue());
+				if (display == null) {
+					if (failures++ == 0) {
+						AiBuilderMod.LOG.warn("Couldn't show {} at {} in a moving part", placement.block().info().id(), entry.getKey());
+					}
+					continue;
+				}
+				part.put(entry.getKey(), display.getUUID());
+				made.add(display.getUUID());
+				journal.addSpawned(new UndoJournal.Spawned(display.getUUID(), Positions.toPos(entry.getKey()), "", UndoJournal.Spawned.DISPLAY));
+				onDisplay.shown(placement.part(), display.getUUID(), entry.getKey());
+			}
+			if (felt < Tunables.FEEL_PER_TICK && !entry.getValue().isAir()) {
+				felt++;
+				feel.placed(level, entry.getKey(), entry.getValue());
+			}
+		}
+	}
+
 	/** An item frame (spec §10): journaled by its id, so undo takes it down before the blocks it hangs on. */
 	private void hang(BlockPos pos, BlockEntityData.ItemFrame data) {
 		Direction facing = rotation.rotate(Direction.byName(data.facing()));
@@ -337,7 +489,7 @@ public final class PlacementJob implements Tickable {
 			}
 			return;
 		}
-		journal.addSpawned(new UndoJournal.Spawned(frame.getUUID(), Positions.toPos(pos), data.item()));
+		journal.addSpawned(new UndoJournal.Spawned(frame.getUUID(), Positions.toPos(pos), data.item(), UndoJournal.Spawned.FRAME));
 	}
 
 	/**
@@ -347,6 +499,10 @@ public final class PlacementJob implements Tickable {
 	private boolean placeBlock(BlockPos pos, BlockState state) {
 		int known = journal.size();
 		boolean wrote = write(pos, state);
+		if (wrote) {
+			// What's written now is started afresh, whatever was here before (M8 review).
+			powered.remove(pos);
+		}
 		if (journal.size() > known) {
 			placed++;
 		}
@@ -375,6 +531,9 @@ public final class PlacementJob implements Tickable {
 		BlockState now = level.getBlockState(pos);
 		BlockEntity after = level.getBlockEntity(pos);
 		journal.afterWrite(at, id(now.getBlock()), BlockEntityHash.of(after, level.registryAccess()));
+		if (now.getBlock() instanceof LeverBlock) {
+			journal.lever(at, now.getValue(LeverBlock.POWERED));
+		}
 		if (journal.size() >= maxChanged) {
 			capReached = true;
 		}
@@ -382,6 +541,16 @@ public final class PlacementJob implements Tickable {
 			settling.add(new Settling(pos, level.getGameTime() + Tunables.BLOCK_ENTITY_SETTLE_TICKS));
 		}
 		return true;
+	}
+
+	/** What would move or power something that isn't the build's, put back as it was before the build, as undo would. */
+	private void takeOutRuleBreakers() {
+		for (MachineRules.Breaker breaker : machines.breakers()) {
+			Pos at = Positions.toPos(breaker.pos());
+			UndoRunner.putBack(level, breaker.pos(), journal.original(at), journal.originalData(at));
+			takenOut.add(breaker.pos());
+			AiBuilderMod.LOG.info("Took out {} at {}: {}", breaker.kind(), breaker.pos(), breaker.detail());
+		}
 	}
 
 	/**

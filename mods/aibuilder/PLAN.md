@@ -45,6 +45,8 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 | M4 Claude | ✅ done, play-tested | Real builds from your prompts | "small cabin", then "castle"; cancel one; undo; log out of Claude Code and read the message |
 | M5 Quality | ✅ done, play-tested | Better builds: phases, self-check, the HUD, signs, chests, books, banners and item frames; lava kept clear of wood | Builds have depth, lit interiors, working doors; the panel top left; a sign or a chest in a build reads right |
 | M6 Polish | ✅ done, play-tested | Config, refinement ("add a moat"), logs, error handling, permissions | "a stone castle", then "add a moat" next to it; edit `config/aibuilder.json`; turn the Wi-Fi off mid-build; a LAN friend is refused |
+| M7 Builds that move | ✅ done: reviewed, fixed, live dragon passed | Moving parts: "a dragon with flapping wings", "a windmill", "a flag on a pole" | Ask for a dragon with flapping wings; then "make the wings flap faster" next to it; undo; `moving_parts: false` in the config |
+| M8 Redstone that works | ✅ done: reviewed, fixed, live door passed | Machines that work when the build ends, tested by Claude: "a lever that opens a piston door", "lamps that light on a button" | Ask for a lever that opens a piston door; flip it; stand in the doorway as the build ends; undo it while it's open |
 
 ## Good to know
 
@@ -161,3 +163,44 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   waiting on Claude Code's process itself, a build that only its owner stops or follows, and no key in an echo or a
   log's name. A fresh Opus 5.5 review found two more, both fixed: B while sprinting on a Mac, and another player
   reading a build's status. Pull request #2.
+- **2026-10-22:** AI Builder v2 begun (spec `docs/superpowers/specs/2026-10-22-aibuilder-v2-design.md`): builds that move
+  (M7), builds that work (M8, M9). M7 is built from `docs/superpowers/plans/2026-10-22-aibuilder-m7-plan.md`, test-first:
+  a `part` on the write tools makes block displays, `animate` gives a part its motion (swing, spin, bob, riding
+  another part), the game moves them on its own and keeps them in step after a restart, `check_motion` tells Claude
+  where each part goes and what it passes through, a follow-up next to a moving build changes its parts, and undo
+  takes them away (undoing a follow-up gives the old motion back).
+- **2026-10-22:** M7's live run, "a dragon with flapping wings" on Frankie's login, passed first time: a crimson dragon
+  on a hoard rock whose wings flap and tail sways, with Claude checking the motion before it finished. A fresh Opus 5.5
+  review found three important gaps, all fixed test-first: a big part spread over ticks now holds together, blocks can
+  be taken out of a moving part (air with its name, or clear with its name), and undo reaches displays wherever they
+  are. Its ledger is `docs/superpowers/plans/2026-10-22-aibuilder-m7-progress.md`. Also fixed: weathered copper now
+  undoes. M8 (redstone that works) is under way.
+- **2026-10-22:** M8 built from `docs/superpowers/plans/2026-10-22-aibuilder-m8-plan.md`, test-first: a build's
+  redstone starts when the build ends, as if placed by hand (sand and water still stay put); a machine may move and
+  power only the build's own blocks (check_build's piston and powers_outside, and what's left at the end is taken out);
+  a player in a piston's way is waited for; `test_redstone` lets Claude flip levers, press buttons and read lamps and
+  pistons; undo switches the levers back and pulls the pistons in first; a dispenser holds only what it would drop.
+  Reviewed by a fresh Opus 5.5 reviewer and fixed test-first: doors, lamps and buttons beside the player's things are
+  no longer taken out (only what gives power counts); a sticky piston's pull is checked; a player is never pushed by a
+  test or by undo; redstone written after a test still starts; observers aren't fired by tests; a machine that moved
+  its own blocks passes its checks; undo takes back comparators and dispensers the machine changed; no hopper or
+  dropper may feed a dispenser; one test at a time, stopped with its build. The live door passed first try. Its ledger
+  is `docs/superpowers/plans/2026-10-22-aibuilder-m8-progress.md`. M9 (gadgets, wiring, the calculator) is next.
+- **2026-10-23:** M9 built from `docs/superpowers/plans/2026-10-22-aibuilder-m9-plan.md`, test-first: `place_gadget`
+  places a ready-made part whole (lever and lamp rows, an adder, a digit, a two-digit number, a clock, a pulse maker, a
+  toggle, a latch, a counter, a 2 × 2 piston door), each tested in the game in all four facings; the combinational ones
+  come from one logic-array generator (Quine-McCluskey, taps that are right by construction). `wire` lays dust between
+  ports, a row at once (each on a turning row of its own, a level to cross another row) or one wire through via
+  points, and refuses whole, saying where, a wire that would touch other redstone. `test_redstone` gains `show`, which
+  reads each digit and number. A calculator from gadgets and wires adds in the game (9 + 7 = 16, 15 + 15 = 30).
+  Found on the way: a logic array's OR taps must sit within 14 blocks of every AND tap (the digit's first slot was a
+  block too far); arrays now keep to that and can be laid in sections. The final review (a fresh Opus 5.5 reviewer)
+  found five things to fix, each fixed test-first: the adder's inputs had a dust where every other port has a buffer
+  repeater, so a wire arriving at strength 1 went unseen; `place_gadget` now refuses a box over or beside the build's
+  redstone; clearing a gadget's whole box forgets it, so it can go elsewhere; `wire` refuses redstone beside a block
+  next to its dust (a lever's post powers the dust beside it); the calculator recipe gives its spots, levels the site
+  first, decorates before testing and tests in two calls. Its minors are deferred in the ledger,
+  `docs/superpowers/plans/2026-10-22-aibuilder-m9-progress.md`. Greptile's review of the v2 pull request found four
+  more, each fixed test-first: a part spread over ticks still came apart mid-glide (each display now aims a round on
+  from its own turn); a part an undo made still again stayed where it had moved to; a big latch's settle was too short
+  for hold to reach its first bit; and a dispenser of the build could be fed by someone else's dropper.

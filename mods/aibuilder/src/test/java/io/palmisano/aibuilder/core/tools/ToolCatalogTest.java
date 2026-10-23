@@ -8,12 +8,25 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.gson.JsonElement;
+import io.palmisano.aibuilder.core.gadgets.Gadgets;
 import org.junit.jupiter.api.Test;
 
 class ToolCatalogTest {
 	@Test
 	void everyCatalogToolHasAHandlerAndBack() {
 		assertEquals(ToolExecutor.handledTools(), ToolCatalog.load().names());
+	}
+
+	/** place_gadget offers each kind the library makes and says what each is (M9 Task 4: the digit never reached it). */
+	@Test
+	void placeGadgetOffersEveryKind() {
+		ToolDef place = ToolCatalog.load().tools().stream().filter(t -> t.name().equals("place_gadget")).findFirst().orElseThrow();
+		List<String> offered = new ArrayList<>();
+		place.inputSchema().getAsJsonObject("properties").getAsJsonObject("kind").getAsJsonArray("enum").forEach(e -> offered.add(e.getAsString()));
+		assertEquals(Gadgets.KINDS, offered);
+		for (String kind : Gadgets.KINDS) {
+			assertTrue(place.description().contains(kind + " {") || place.description().contains(kind + ":"), kind + " isn't described");
+		}
 	}
 
 	/** Claude Code refuses a tool list that breaks these (spec §8), so a bad entry would fail every build. */

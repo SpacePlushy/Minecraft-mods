@@ -12,4 +12,7 @@ public interface ItemCatalog {
 	boolean banned(String id);
 
 	boolean isBannerPattern(String id);
+
+	/** A dispenser does something of its own with it (pours, shoots, places, uses, equips) instead of dropping it (spec v2 §5.5). */
+	boolean dispenses(String id);
 }

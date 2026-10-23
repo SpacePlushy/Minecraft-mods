@@ -110,6 +110,23 @@ public final class Tunables {
 	public static final int SEARCH_LIMIT_MAX = 50;
 	/** check_build: problems listed by position at most (spec §8); the rest are counted. */
 	public static final int CHECK_BUILD_LISTED = 60;
+	/** check_motion's look at each part over its longest cycle: this many poses, and this many solid blocks listed. */
+	public static final int CHECK_MOTION_SAMPLES = 32;
+	public static final int CHECK_MOTION_LISTED = 8;
+	/** A build's redstone may be no nearer than this to something that reacts to power and isn't the build's (spec v2 §5.5). */
+	public static final int MACHINE_POWER_REACH = 2;
+	/** A piston's push reads up to 12 blocks out and a sticky block's neighbours: the chunks this far round it must be loaded. */
+	public static final int PISTON_READ_REACH = 14;
+	/** How long a build's machine waits to start while a player stands where one of its pistons would push (30 s). */
+	public static final int MACHINE_PLAYER_WAIT_TICKS = 600;
+	/** How long undo lets a build's machine settle after putting its levers back, before taking the blocks back. */
+	public static final int UNDO_SETTLE_TICKS = 40;
+	/** test_redstone's limits (spec v2 §5.2), the time a machine gets to settle after it, and how long its call may take. */
+	public static final int TEST_STEPS_MAX = 64;
+	public static final int TEST_WAIT_MAX = 400;
+	public static final int TEST_READ_MAX = 32;
+	public static final int TEST_SETTLE_TICKS = 20;
+	public static final int TEST_REDSTONE_TIMEOUT_SECONDS = 90;
 	/** check_build's look over the build (read over ticks), after terraform's wait for placement: inside the MCP timeout. */
 	public static final int CHECK_BUILD_TIMEOUT_SECONDS = 60;
 	/** How long check_build waits for the light engine to catch up with what was placed before it reads light. */
@@ -124,6 +141,39 @@ public final class Tunables {
 	public static final int FEEL_PER_TICK = 2;
 	public static final float FEEL_VOLUME = 0.5f;
 	public static final int FEEL_PARTICLES = 4;
+
+	/** Moving parts (spec v2 §4): a new pose every this many ticks, which the game glides over in as many. */
+	public static final int ANIMATION_STEP_TICKS = 4;
+	/** A motion's cycle, in ticks (a spin may be negative to turn the other way). */
+	public static final int MOTION_PERIOD_MIN = 10;
+	public static final int MOTION_PERIOD_MAX = 2400;
+	/** A swing's angles, in degrees either way. */
+	public static final double MOTION_ANGLE_MAX = 180;
+	/** How far a bob goes, in blocks. */
+	public static final double MOTION_DISTANCE_MAX = 16;
+	/** The game glides the short way between two poses: a motion must turn less than this between them. */
+	public static final double STEP_DEGREES_MAX = 180;
+	/**
+	 * A part turning more than this in a step is posed more often (every 2 ticks, or every tick): between poses a
+	 * display's corner glides straight, so a part turning further would draw in visibly (by 3% at 30°).
+	 */
+	public static final double SMOOTH_TURN_DEGREES = 30;
+	public static final int MOTIONS_PER_PART_MAX = 8;
+	public static final int PARTS_PER_BUILD_MAX = 32;
+	/** How many parts deep a part may ride (a wing on a body on a ship). */
+	public static final int PART_DEPTH_MAX = 4;
+	/** A part's pivot may be this far outside the allowed box (a dragon circling a tower beside it). */
+	public static final int PIVOT_REACH = 16;
+	/** Displays one build may make by default (max_moving_blocks), and at most: each is an entity, drawn and sent. */
+	public static final int MAX_MOVING_BLOCKS = 2000;
+	public static final int MAX_MOVING_BLOCKS_CEILING = 10_000;
+	/** How far a moving part's displays are drawn, in units of 64 blocks: about 256, past most render distances. */
+	public static final float DISPLAY_VIEW_RANGE = 4;
+
+	// wire (spec v2 §5.4): a wire's dust end to end, the wires one call lays as a row, and one wire's via points.
+	public static final int WIRE_LENGTH_MAX = 512;
+	public static final int WIRE_ROW_MAX = 8;
+	public static final int WIRE_VIA_MAX = 8;
 
 	private Tunables() {
 	}

@@ -58,6 +58,21 @@ class AiBuilderConfigTest {
 		assertEquals(7, loaded.warnings().size(), loaded.warnings().toString());
 	}
 
+	/** Moving parts (spec v2 §3): how many displays a build may make, and a switch that freezes them all. */
+	@Test
+	void movingPartsSettings() {
+		assertEquals(2000, AiBuilderConfig.DEFAULT.maxMovingBlocks());
+		assertTrue(AiBuilderConfig.DEFAULT.movingParts());
+		AiBuilderConfig.Loaded set = AiBuilderConfig.load("{\"max_moving_blocks\": 5000, \"moving_parts\": false}");
+		assertEquals(List.of(), set.warnings());
+		assertEquals(5000, set.config().maxMovingBlocks());
+		assertTrue(!set.config().movingParts());
+		AiBuilderConfig.Loaded tooMany = AiBuilderConfig.load("{\"max_moving_blocks\": 20000}");
+		assertEquals(2000, tooMany.config().maxMovingBlocks());
+		assertEquals(1, tooMany.warnings().size());
+		assertTrue(AiBuilderConfig.DEFAULT.toJson().contains("\"max_moving_blocks\": 2000"), AiBuilderConfig.DEFAULT.toJson());
+	}
+
 	/** A name can change hands (and an offline-mode server takes any): the file says to list players by UUID. */
 	@Test
 	void theFileSaysToListPlayersByUuid() {

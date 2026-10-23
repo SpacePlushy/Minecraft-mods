@@ -73,11 +73,15 @@ import io.palmisano.aibuilder.core.tools.PhaseProgress;
 import io.palmisano.aibuilder.core.tools.ToolCatalog;
 import io.palmisano.aibuilder.core.tools.ToolExecutor;
 import io.palmisano.aibuilder.net.BuildStatusPayload;
+import io.palmisano.aibuilder.world.AnimationEngine;
+import io.palmisano.aibuilder.world.AnimationStore;
 import io.palmisano.aibuilder.world.BuildTickets;
 import io.palmisano.aibuilder.world.JobScheduler;
+import io.palmisano.aibuilder.world.MachineRules;
 import io.palmisano.aibuilder.world.McBlockCatalog;
 import io.palmisano.aibuilder.world.McBuildSink;
 import io.palmisano.aibuilder.world.McWorldReader;
+import io.palmisano.aibuilder.world.MovingParts;
 import io.palmisano.aibuilder.world.Occupancy;
 import io.palmisano.aibuilder.world.PlacementJob;
 import io.palmisano.aibuilder.world.Positions;
@@ -98,6 +102,7 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -137,9 +142,19 @@ public final class BuildManager {
 	private CompletableFuture<?> lastBackend = CompletableFuture.completedFuture(null);
 	/** Ticks until the running build's session record is brought up to date. */
 	private int ticksToRemember = Tunables.SESSION_REFRESH_TICKS;
+	/** Moves the world's moving parts (spec v2 §4.3); made on the first tick, once the overworld is there. */
+	private AnimationEngine animations;
 
 	private BuildManager(MinecraftServer server) {
 		this.server = server;
+	}
+
+	/** The world's moving parts move while the config's moving_parts is true (spec v2 §4.3). */
+	private AnimationEngine animations() {
+		if (animations == null) {
+			animations = new AnimationEngine(server, AnimationStore.get(server), () -> config().movingParts(), Tunables.TICK_BUDGET_NANOS);
+		}
+		return animations;
 	}
 
 	/**
@@ -634,6 +649,8 @@ public final class BuildManager {
 	}
 
 	private void tick() {
+		// The world's moving parts, whether or not anything is being built.
+		animations().tick(server.overworld().getGameTime());
 		if (build == null) {
 			return;
 		}
@@ -652,7 +669,9 @@ public final class BuildManager {
 		if (player != null) {
 			// Before the brief (and during a retry) the backend's note; then the phase and the count.
 			String note = build.note;
-			player.sendOverlayMessage(Component.literal(note.isEmpty() ? Messages.progress(build.sink.phase(), build.job.placed()) : note));
+			BlockPos blocked = build.job.waitingForPlayer();
+			player.sendOverlayMessage(Component.literal(blocked != null ? Messages.stepAside(Positions.toPos(blocked))
+					: note.isEmpty() ? Messages.progress(build.sink.phase(), build.job.placed()) : note));
 			build.hud(player);
 		}
 	}
@@ -730,6 +749,8 @@ public final class BuildManager {
 		final Budget budget;
 		final PlacementJob job;
 		final McBuildSink sink;
+		/** Its moving parts into the world's AnimationStore; a refinement's join its session's moving build. */
+		final MovingParts moving;
 		final Set<ChunkPos> chunks;
 		final BuildHandle handle;
 		StoredBuild stored;
@@ -781,20 +802,28 @@ public final class BuildManager {
 			long cap = cfg.sizeLimit(request.size());
 			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level), blocksPerTick,
 					Tunables.TICK_BUDGET_NANOS, cap);
+			job.machine(new MachineRules(level, frame, allowed, journal, earlier));
+			world.machine(job);
 			chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(allowed.min())), Positions.toBlockPos(frame.toWorld(allowed.max())));
 			BuildTickets.hold(level, chunks);
 			JobScheduler.add(job);
 			job.whenEnded().whenComplete(this::ended);
 			// The sink's callbacks come from the backend's thread.
+			AnimationStore animations = AnimationStore.get(server);
+			moving = refines == null || refines.movingBuild().isEmpty() ? new MovingParts(level, frame, animations, job, journal)
+					: MovingParts.refining(level, frame, animations, job, journal, UUID.fromString(refines.movingBuild()));
 			sink = new McBuildSink(job, brief -> server.execute(() -> briefed(brief)), finished -> {
 				summary = finished == null ? "" : finished;
 				job.finish();
-			});
+			}, moving::animate);
 			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Set.copyOf(cfg.bannedBlocks())), frame, allowed, request.size(),
 					cap, sink, budget, world);
 			tools.siteGap(cfg.siteGap());
+			tools.movingBudget(cfg.maxMovingBlocks());
 			if (refines != null) {
 				tools.refining(refines.title().isBlank() ? Messages.untitledBuild() : refines.title(), refines.changed());
+				tools.refiningParts(moving.earlierParts());
+				tools.refiningGadgets(refines.gadgets(), refines.builds() + 1);
 			}
 			if (logging != null) {
 				logging.log().request(playerPrompt, request.size().label(), refines != null, refines == null ? "" : refines.title(), cfg.model(),
@@ -901,14 +930,20 @@ public final class BuildManager {
 			if (journal.isEmpty()) {
 				return;
 			}
+			// A refinement that only changed a motion changed no position: the box stays as it was.
 			Box changes = changedBox();
+			if (changes == null && refines == null) {
+				return;
+			}
 			String session = handle.sessionId().isBlank() ? request.session().toString() : handle.sessionId();
-			sessions.put(owner, refines != null ? refines.refined(playerPrompt, changes, session, title)
+			String movingBuild = moving.inStore() ? moving.key().id().toString() : refines != null ? refines.movingBuild() : "";
+			sessions.put(owner, (refines != null ? refines.refined(playerPrompt, changes == null ? refines.changed() : changes, session, title)
 					: new BuildSession(level.dimension().identifier().toString(), title, frame.origin(), frame.facing(), request.size(), changes,
-							session, List.of(playerPrompt), 1, false));
+							session, List.of(playerPrompt), 1, false, "")).withMovingBuild(movingBuild).withGadgets(sink.gadgets())
+					.withoutGadgets(sink.gone()));
 		}
 
-		/** What this build changed (its frames included), as a local box. */
+		/** What this build changed (its frames and displays included), as a local box; null when it changed no position. */
 		private Box changedBox() {
 			int minX = Integer.MAX_VALUE;
 			int minY = Integer.MAX_VALUE;
@@ -918,6 +953,9 @@ public final class BuildManager {
 			int maxZ = Integer.MIN_VALUE;
 			List<Pos> all = new ArrayList<>(journal.positions());
 			journal.spawned().forEach(s -> all.add(s.pos()));
+			if (all.isEmpty()) {
+				return null;
+			}
 			for (Pos world : all) {
 				Pos p = frame.toLocal(world);
 				minX = Math.min(minX, p.x());
@@ -998,6 +1036,12 @@ public final class BuildManager {
 				tell(owner, Component.literal(Messages.summary(logging == null ? summary : logging.scrub().apply(summary))));
 			}
 			tell(owner, undoable ? withUndo(line) : Component.literal(line));
+			if (!job.takenOut().isEmpty()) {
+				tell(owner, Component.literal(Messages.takenOut(job.takenOut().stream().map(Positions::toPos).toList())));
+			}
+			if (!job.machineStarted()) {
+				tell(owner, Component.literal(Messages.machineNotStarted()));
+			}
 			if (build == this) {
 				build = null;
 			}
@@ -1019,6 +1063,9 @@ public final class BuildManager {
 				if (error != null) {
 					// The build stays in the history, so the player can try again.
 					tell(owner, Component.literal(Messages.failed(reason(error))));
+				} else if (result.unreached() > 0) {
+					// Some of its moving blocks were where the world didn't load in time: it stays, to undo again.
+					tell(owner, Component.literal(Messages.undoneButUnreached(result.restored(), result.kept(), result.unreached())));
 				} else {
 					UndoStore.get(server).remove(owner, stored);
 					// The player's newest build is the session's newest (every build updates or ends it).

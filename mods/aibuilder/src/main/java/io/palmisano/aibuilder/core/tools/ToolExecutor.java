@@ -1,16 +1,29 @@
 package io.palmisano.aibuilder.core.tools;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import io.palmisano.aibuilder.core.gadgets.Gadget;
+import io.palmisano.aibuilder.core.gadgets.GadgetPlacement;
+import io.palmisano.aibuilder.core.gadgets.GadgetUse;
+import io.palmisano.aibuilder.core.gadgets.Gadgets;
+import io.palmisano.aibuilder.core.gadgets.Port;
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.anim.Motion;
+import io.palmisano.aibuilder.core.anim.MotionCheck;
+import io.palmisano.aibuilder.core.anim.MovingPart;
+import io.palmisano.aibuilder.core.anim.Vec3;
 import io.palmisano.aibuilder.core.blocks.BlockEntityData;
 import io.palmisano.aibuilder.core.blocks.Footprint;
 import io.palmisano.aibuilder.core.blocks.BlockInfo;
@@ -41,6 +54,10 @@ import io.palmisano.aibuilder.core.survey.Column;
 import io.palmisano.aibuilder.core.survey.RegionEncoder;
 import io.palmisano.aibuilder.core.survey.SurveyEncoder;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
+import io.palmisano.aibuilder.core.wire.Cell;
+import io.palmisano.aibuilder.core.wire.WirePath;
+import io.palmisano.aibuilder.core.wire.WireRows;
+import io.palmisano.aibuilder.core.wire.WireRules;
 
 /**
  * Runs Claude's tools (spec §8). The read tools look through the {@link WorldReader}; the write tools expand each
@@ -50,7 +67,11 @@ import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 public final class ToolExecutor {
 	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
 			"set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof", "staircase", "clear", "terraform",
-			"place_block_entity", "checkpoint", "check_build", "finish");
+			"place_block_entity", "checkpoint", "check_build", "animate", "check_motion", "test_redstone", "place_gadget", "wire",
+			"finish");
+	/** The write tools that can make a moving part (spec v2 §4.1), and clear, which takes a part's blocks out. */
+	private static final Set<String> MOVABLE = Set.of("set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof",
+			"staircase", "clear");
 	private static final int REJECTION_LINES = 10;
 	private static final BlockSpec AIR = BlockSpec.of("minecraft:air");
 	private static final String BRIEF_FIRST = "Call submit_brief first: title, style, size, palette and phases, before placing any block.";
@@ -69,10 +90,18 @@ public final class ToolExecutor {
 	private final long maxChangedBlocks;
 	private final BuildSink sink;
 	private final Budget budget;
+	/** The gadgets this build placed (spec v2 §5.3), and the session's earlier builds' ones. Guarded by the executor. */
+	private final List<GadgetUse> gadgets = new ArrayList<>();
+	private final List<GadgetUse> earlierGadgets = new ArrayList<>();
+	/** Which of its session's builds this is: 1 for a new build. */
+	private int build = 1;
 	private final WorldReader world;
 	private ProtectionMask protection;
 	private FireRule fire;
 	private boolean briefed;
+	private int movingBudget = Tunables.MAX_MOVING_BLOCKS;
+	/** The build's moving parts, by name, in the order they were begun. */
+	private final Map<String, PartState> parts = new LinkedHashMap<>();
 	/** Set (under the lock) before the backend starts, read by get_context outside it: volatile, so it's seen. */
 	private volatile int siteGap = Tunables.SITE_GAP;
 	/** The build a refinement changes, and its changes so far; "" and null for a new build. Set as siteGap is. */
@@ -112,6 +141,39 @@ public final class ToolExecutor {
 	/** The build's caps; the Claude Code backend adds output tokens to it as they stream in. */
 	public Budget budget() {
 		return budget;
+	}
+
+	/** The displays this build may make (the config's max_moving_blocks). */
+	public synchronized void movingBudget(int blocks) {
+		movingBudget = blocks;
+	}
+
+	/**
+	 * A refinement's earlier moving parts (spec v2 §4.4): get_context lists them, animate may give one another motion,
+	 * and a write naming one adds to it (its blocks count against max_moving_blocks).
+	 */
+	/**
+	 * A refinement's session: the gadgets its earlier builds placed (a new one keeps a block from them), and which of the
+	 * session's builds this one is (the gadgets it places are kept as that build's).
+	 */
+	public synchronized void refiningGadgets(List<GadgetUse> earlier, int build) {
+		earlierGadgets.addAll(earlier);
+		this.build = build;
+	}
+
+	public synchronized void refiningParts(Map<String, PartInfo> earlier) {
+		earlier.forEach((name, info) -> {
+			PartState state = parts.computeIfAbsent(name, n -> new PartState());
+			state.blocks.addAll(info.blocks());
+			state.motion = info.motion();
+		});
+	}
+
+	/** The build's moving parts: each one's displays (local positions) and its motion (null until animated). */
+	public synchronized Map<String, PartInfo> parts() {
+		Map<String, PartInfo> out = new LinkedHashMap<>();
+		parts.forEach((name, state) -> out.put(name, new PartInfo(List.copyOf(state.blocks), state.motion)));
+		return out;
 	}
 
 	/** How far in front of the player a new build's origin is (the config's site_gap), for get_context. */
@@ -161,7 +223,11 @@ public final class ToolExecutor {
 				case "search_blocks" -> search(a);
 				case "checkpoint" -> checkpoint(a);
 				case "check_build" -> checkBuild();
+				case "check_motion" -> checkMotion();
+				case "test_redstone" -> testRedstone(a);
 				case "terraform" -> terraform(a);
+				case "wire" -> wire(a);
+				case "place_gadget" -> placeGadget(a);
 				default -> locked(name, a);
 			};
 		} catch (IllegalArgumentException e) {
@@ -221,6 +287,13 @@ public final class ToolExecutor {
 		if (!refining.isEmpty()) {
 			lines.add("Refining: " + refining + ", the build this session made: its blocks fill " + describe(changes) + "; the allowed box"
 					+ " reaches past them, and they're yours to change.");
+		}
+		Map<String, PartInfo> moving = parts();
+		if (!moving.isEmpty()) {
+			List<String> each = new ArrayList<>();
+			moving.forEach((name, part) -> each.add(name + " (" + blocks(part.blocks().size()) + ") "
+					+ (part.motion() == null ? "stands still" : motion(part.motion()))));
+			lines.add("Moving parts: " + String.join("; ", each) + ". Use animate to give one another motion; a write naming one adds to it.");
 		}
 		lines.addAll(List.of(
 				"World: " + facts.dimension() + ", biome " + facts.biome() + ", " + facts.time() + ", " + facts.weather()
@@ -320,7 +393,7 @@ public final class ToolExecutor {
 		}
 		List<LocalBlock> blocks = terraform(a, target);
 		synchronized (this) {
-			return queue(blocks, false, false);
+			return queue(blocks, false, false, "");
 		}
 	}
 
@@ -398,14 +471,60 @@ public final class ToolExecutor {
 				return ToolResult.error(BRIEF_FIRST);
 			}
 		}
+		ToolResult waiting = placedFirst("check_build");
+		return waiting != null ? waiting : ToolResult.ok(BuildProblems.encode(world.check(), Tunables.CHECK_BUILD_LISTED));
+	}
+
+	/**
+	 * Waits for what's queued, then looks over the moving parts (spec v2 §4.5): where each goes over its cycle, and
+	 * the solid blocks, the build's or the world's, it would pass through. The waits are outside the lock.
+	 */
+	private ToolResult checkMotion() {
+		Map<String, List<Pos>> blocks = new LinkedHashMap<>();
+		Map<String, MovingPart> motions = new HashMap<>();
+		synchronized (this) {
+			parts.forEach((name, state) -> {
+				blocks.put(name, List.copyOf(state.blocks));
+				if (state.motion != null) {
+					motions.put(name, state.motion);
+				}
+			});
+		}
+		if (blocks.isEmpty()) {
+			return ToolResult.ok(MotionCheck.report(blocks, motions, frame.facing(), asked -> Set.of()));
+		}
+		ToolResult waiting = placedFirst("check_motion");
+		return waiting != null ? waiting : ToolResult.ok(MotionCheck.report(blocks, motions, frame.facing(), world::solid));
+	}
+
+	/** Tries the build's machine in the world (spec v2 §5.2), once what's queued is in. */
+	private ToolResult testRedstone(Args a) {
+		List<RedstoneSteps.Shown> displays = displays();
+		List<RedstoneSteps.Step> steps = RedstoneSteps.parse(a.array("steps"), allowed).stream()
+				.map(step -> step instanceof RedstoneSteps.Show ? new RedstoneSteps.Show(displays) : step).toList();
+		ToolResult waiting = placedFirst("test_redstone");
+		return waiting != null ? waiting : ToolResult.ok(world.testRedstone(steps));
+	}
+
+	/** The session's digits and numbers (the earlier builds' here too), for a show step to read. */
+	private synchronized List<RedstoneSteps.Shown> displays() {
+		List<RedstoneSteps.Shown> out = new ArrayList<>();
+		List<GadgetUse> all = new ArrayList<>(earlierGadgets);
+		all.addAll(gadgets);
+		for (GadgetUse use : all) {
+			if (use.kind().equals("digit") || use.kind().equals("number")) {
+				out.add(new RedstoneSteps.Shown(use.kind(), use.at(), use.placed().marks()));
+			}
+		}
+		return out;
+	}
+
+	/** Waits for what's queued; null once it's all in, else the answer that blocks are still going in (half a build looks half right). */
+	private ToolResult placedFirst(String tool) {
 		sink.awaitPlaced();
 		long waiting = sink.pending();
-		if (waiting > 0) {
-			// Half a build would show half its problems.
-			return ToolResult.ok(String.format(Locale.ROOT, "%,d", waiting)
-					+ " blocks are still going in; call checkpoint to wait for them, then check_build again.");
-		}
-		return ToolResult.ok(BuildProblems.encode(world.check(), Tunables.CHECK_BUILD_LISTED));
+		return waiting == 0 ? null : ToolResult.ok(String.format(Locale.ROOT, "%,d", waiting) + " blocks are still going in; call checkpoint to"
+				+ " wait for them, then " + tool + " again.");
 	}
 
 	private ToolResult finish(Args a) {
@@ -415,8 +534,22 @@ public final class ToolExecutor {
 	}
 
 	private ToolResult write(String name, Args a) {
+		if (name.equals("animate")) {
+			return animate(a);
+		}
+		String part = a.has("part") ? partName(a.string("part")) : "";
+		if (!part.isEmpty() && !MOVABLE.contains(name)) {
+			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + name + " can't make a moving part");
+		}
+		if (!part.isEmpty() && name.equals("fill") && a.optString("mode", "solid").equalsIgnoreCase("replace")) {
+			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": a moving part can't be a replace fill: it changes no block, so"
+					+ " there's nothing for it to replace");
+		}
+		if (!part.isEmpty() && !parts.containsKey(part) && parts.size() >= Tunables.PARTS_PER_BUILD_MAX) {
+			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": a build has at most " + Tunables.PARTS_PER_BUILD_MAX + " moving parts");
+		}
 		if (name.equals("set_blocks")) {
-			return setBlocks(a);
+			return setBlocks(a, part);
 		}
 		if (name.equals("place_block_entity")) {
 			return placeBlockEntity(a);
@@ -446,7 +579,417 @@ public final class ToolExecutor {
 			case "staircase" -> staircase(a);
 			default -> throw new IllegalStateException(name);
 		};
-		return queue(blocks, false, name.equals("clear") && a.optBool("include_protected", false));
+		ToolResult queued = queue(blocks, false, name.equals("clear") && a.optBool("include_protected", false), part);
+		if (name.equals("clear") && part.isEmpty() && !queued.isError()) {
+			String gone = forgetCleared(a.box("box"));
+			if (!gone.isEmpty()) {
+				return new ToolResult(queued.text() + "\n" + gone, false, queued.rejections());
+			}
+		}
+		return queued;
+	}
+
+	/** Forgets the session's gadgets whose whole box {@code cleared} takes in (they may be placed again); says which. */
+	private String forgetCleared(Box cleared) {
+		List<String> gone = new ArrayList<>();
+		for (List<GadgetUse> list : List.of(gadgets, earlierGadgets)) {
+			for (GadgetUse use : List.copyOf(list)) {
+				Box box = use.placed().box();
+				if (cleared.contains(box.min()) && cleared.contains(box.max())) {
+					list.remove(use);
+					sink.gadgetGone(use);
+					gone.add(Gadgets.describe(use.kind(), JsonParser.parseString(use.options()).getAsJsonObject()) + " at " + spot(use.at()) + " is gone");
+				}
+			}
+		}
+		return gone.isEmpty() ? "" : String.join("; ", gone) + ": a gadget may go there again.";
+	}
+
+	/**
+	 * Places a gadget from the library (spec v2 §5.3), whole or not at all: its box must be inside the allowed box, hold
+	 * nothing player-made or unbreakable, and keep a block from every other gadget of the session (their redstone mustn't
+	 * touch); its ports' spots must be inside the box too. It writes its blocks and air in the rest of its box (what
+	 * stood there could touch its redstone), through the queue as any write.
+	 */
+	private ToolResult placeGadget(Args a) {
+		String kind = a.string("kind");
+		Pos at = a.pos("at");
+		String facing = a.optString("facing", "forward");
+		JsonObject options = a.has("options") ? a.object("options") : new JsonObject();
+		Gadget gadget = Gadgets.make(kind, options);
+		GadgetPlacement.Placed placed = GadgetPlacement.place(gadget, at, facing);
+		Box box = placed.box();
+		String what = Gadgets.describe(kind, options);
+		synchronized (this) {
+			if (!briefed) {
+				return ToolResult.error(BRIEF_FIRST);
+			}
+			ToolResult refused = gadgetRefused(placed, what);
+			if (refused != null) {
+				return refused;
+			}
+		}
+		// What the build has placed so far, in the box and a block round it: its redstone would be erased, or join the gadget's.
+		ToolResult waiting = placedFirst("place_gadget");
+		if (waiting != null) {
+			return waiting;
+		}
+		Set<Pos> around = new LinkedHashSet<>();
+		for (int x = box.min().x() - 1; x <= box.max().x() + 1; x++) {
+			for (int y = box.min().y() - 1; y <= box.max().y() + 1; y++) {
+				for (int z = box.min().z() - 1; z <= box.max().z() + 1; z++) {
+					around.add(new Pos(x, y, z));
+				}
+			}
+		}
+		Map<Pos, Cell> cells = world.cells(around);
+		for (Pos p : around) {
+			Cell c = cells.getOrDefault(p, Cell.FREE);
+			if (c == Cell.DUST || c == Cell.COMPONENT) {
+				boolean inside = box.contains(p);
+				return ToolResult.error("touches_redstone: " + spot(p) + " is " + (c == Cell.DUST ? "dust" : "redstone") + (inside ? ", inside where " : ", beside where ")
+						+ what + " would go" + (inside ? ": placing it would clear that away" : ": a gadget keeps a block from other redstone")
+						+ "; place it elsewhere, or clear that first; nothing was placed");
+			}
+		}
+		synchronized (this) {
+			// Another gadget may have gone in while this one waited.
+			ToolResult refused = gadgetRefused(placed, what);
+			return refused != null ? refused : placeGadget(gadget, placed, kind, options, at, facing, what);
+		}
+	}
+
+	/** Why the gadget {@code placed} can't go where it would, or null: past the box, a port past it, too close to another, or over the player's blocks. */
+	private ToolResult gadgetRefused(GadgetPlacement.Placed placed, String what) {
+		Box box = placed.box();
+		if (!allowed.contains(box.min()) || !allowed.contains(box.max())) {
+			return ToolResult.error(RejectReason.OUT_OF_BOUNDS.wireName() + ": " + what + " there would fill " + describe(box) + ", past the allowed box "
+					+ describe(allowed) + "; nothing was placed");
+		}
+		for (Port port : placed.ports()) {
+			if (!allowed.contains(port.at())) {
+				return ToolResult.error(RejectReason.OUT_OF_BOUNDS.wireName() + ": " + what + "'s port " + port.name() + " would be at " + spot(port.at())
+						+ ", past the allowed box " + describe(allowed) + ", where no wire can reach it; nothing was placed");
+			}
+		}
+		List<GadgetUse> others = new ArrayList<>(earlierGadgets);
+		others.addAll(gadgets);
+		for (GadgetUse other : others) {
+			Box near = other.placed().box();
+			if (box.max().x() >= near.min().x() - 1 && box.min().x() <= near.max().x() + 1 && box.max().y() >= near.min().y() - 1
+					&& box.min().y() <= near.max().y() + 1 && box.max().z() >= near.min().z() - 1 && box.min().z() <= near.max().z() + 1) {
+				return ToolResult.error("too_close: " + what + " there would fill " + describe(box) + ", touching the " + other.kind() + " at "
+						+ describe(near) + ": leave a block between gadgets (their redstone mustn't touch); nothing was placed");
+			}
+		}
+		ProtectionMask mask = protection();
+		for (int x = box.min().x(); x <= box.max().x(); x++) {
+			for (int y = box.min().y(); y <= box.max().y(); y++) {
+				for (int z = box.min().z(); z <= box.max().z(); z++) {
+					Pos p = new Pos(x, y, z);
+					if (mask.isProtected(p) || mask.isUnbreakable(p)) {
+						return ToolResult.error(RejectReason.PROTECTED.wireName() + ": something player-made (or unbreakable) is at " + spot(p) + ", inside where "
+								+ what + " would go; place it elsewhere; nothing was placed");
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	/** Places the checked gadget: its blocks and air in the rest of its box, through the queue; the answer lists its ports and marks. */
+	private ToolResult placeGadget(Gadget gadget, GadgetPlacement.Placed placed, String kind, JsonObject options, Pos at, String facing, String what) {
+		Box box = placed.box();
+		Set<Pos> filled = new HashSet<>();
+		placed.blocks().forEach(b -> filled.add(b.pos()));
+		List<LocalBlock> blocks = new ArrayList<>(placed.blocks());
+		for (int x = box.min().x(); x <= box.max().x(); x++) {
+			for (int y = box.min().y(); y <= box.max().y(); y++) {
+				for (int z = box.min().z(); z <= box.max().z(); z++) {
+					Pos p = new Pos(x, y, z);
+					if (!filled.contains(p)) {
+						blocks.add(new LocalBlock(p, AIR));
+					}
+				}
+			}
+		}
+		ToolResult queued = queue(blocks, false, false, "");
+		if (queued.isError()) {
+			return queued;
+		}
+		GadgetUse use = new GadgetUse(kind, options.toString(), at, facing.toLowerCase(Locale.ROOT), build);
+		gadgets.add(use);
+		sink.gadget(use);
+		StringBuilder answer = new StringBuilder("Placed ").append(what).append(" facing ").append(use.facing()).append(", its front-left-bottom block at ")
+				.append(spot(at)).append(": it fills ").append(describe(box)).append(", ").append(String.format(Locale.ROOT, "%,d", placed.blocks().size()))
+				.append(" blocks.");
+		List<String> in = placed.ports().stream().filter(Port::input).map(p -> p.name() + " " + spot(p.at())).toList();
+		List<String> out = placed.ports().stream().filter(p -> !p.input()).map(p -> p.name() + " " + spot(p.at())).toList();
+		if (!in.isEmpty()) {
+			answer.append("\nInputs (a wire's last dust goes on the spot): ").append(String.join(", ", in)).append('.');
+		}
+		if (!out.isEmpty()) {
+			answer.append("\nOutputs (a wire's first dust goes on the spot): ").append(String.join(", ", out)).append('.');
+		}
+		if (!placed.marks().isEmpty()) {
+			List<String> marks = new ArrayList<>();
+			placed.marks().forEach((name, p) -> marks.add(name + " " + spot(p)));
+			answer.append("\nTo test it: ").append(String.join(", ", marks)).append('.');
+		}
+		answer.append("\nIt settles within ").append(gadget.settleTicks()).append(" ticks of a change at its inputs.");
+		return ToolResult.ok(answer.toString());
+	}
+
+	private static String spot(Pos p) {
+		return "(" + p.x() + ", " + p.y() + ", " + p.z() + ")";
+	}
+
+	/** A port of one of the session's gadgets, the buffer repeater inside it, and the gadget in words. */
+	private record End(Port port, Pos buffer, String gadget) {
+	}
+
+	/**
+	 * Lays redstone from gadgets' output ports to their input ports (spec v2 §5.4), whole or not at all: a row at once
+	 * ({@link WireRows}) or one wire through via points ({@link WirePath}). Once what's queued is in, it reads what's
+	 * around the way and refuses it, saying where, if it would touch anything but its two ports ({@link WireRules}), the
+	 * other wires it lays with it included. It waits outside the lock, as terraform does.
+	 */
+	private ToolResult wire(Args a) {
+		List<Pos> from = a.positions("from");
+		List<Pos> to = a.positions("to");
+		List<Pos> via = a.has("via") ? a.positions("via") : List.of();
+		Integer level = a.has("level") ? a.integer("level") : null;
+		if (level != null && !via.isEmpty()) {
+			throw new IllegalArgumentException("level is for a row of wires; with via points, the points give the heights");
+		}
+		Map<Pos, End> ends;
+		ProtectionMask mask;
+		synchronized (this) {
+			if (!briefed) {
+				return ToolResult.error(BRIEF_FIRST);
+			}
+			ends = ends();
+			mask = protection();
+		}
+		List<End> outs = new ArrayList<>();
+		List<End> ins = new ArrayList<>();
+		from.forEach(p -> outs.add(end(ends, p, "from", false)));
+		to.forEach(p -> ins.add(end(ends, p, "to", true)));
+		if (via.size() > Tunables.WIRE_VIA_MAX) {
+			throw new IllegalArgumentException("a wire takes at most " + Tunables.WIRE_VIA_MAX + " via points, not " + via.size());
+		}
+		List<List<Pos>> ways = new ArrayList<>();
+		if (via.isEmpty()) {
+			ways.addAll(WireRows.trace(from, to, level));
+		} else {
+			if (from.size() != 1 || to.size() != 1) {
+				throw new IllegalArgumentException("via points shape one wire: give one port in from and one in to");
+			}
+			List<Pos> points = new ArrayList<>(from);
+			points.addAll(via);
+			points.addAll(to);
+			ways.add(WirePath.trace(points));
+		}
+		List<Set<Integer>> repeaters = new ArrayList<>();
+		ways.forEach(way -> repeaters.add(WirePath.repeaters(way)));
+		ToolResult waiting = placedFirst("wire");
+		if (waiting != null) {
+			return waiting;
+		}
+		Set<Pos> needed = new HashSet<>();
+		ways.forEach(way -> needed.addAll(WireRules.needed(way)));
+		Map<Pos, Cell> cells = world.cells(needed);
+		List<Set<Pos>> supports = new ArrayList<>();
+		try {
+			for (int i = 0; i < ways.size(); i++) {
+				supports.add(WireRules.supports(ways.get(i), cells, Set.of(outs.get(i).buffer(), ins.get(i).buffer()), allowed, mask));
+			}
+			// Then each against the others as they'll stand, their dust and their stone.
+			for (int i = 0; i < ways.size(); i++) {
+				Map<Pos, Cell> around = new HashMap<>(cells);
+				for (int j = 0; j < ways.size(); j++) {
+					if (j != i) {
+						ways.get(j).forEach(p -> around.put(p, Cell.DUST));
+						supports.get(j).forEach(p -> around.put(p, Cell.SOLID));
+					}
+				}
+				WireRules.supports(ways.get(i), around, Set.of(outs.get(i).buffer(), ins.get(i).buffer()), allowed, mask);
+			}
+		} catch (WireRules.Refused e) {
+			return ToolResult.error(e.code() + ": " + e.getMessage() + (e.code().equals(RejectReason.OUT_OF_BOUNDS.wireName()) ? " (" + describe(allowed)
+					+ ")" : "") + "; nothing was placed");
+		}
+		List<LocalBlock> blocks = new ArrayList<>();
+		for (int i = 0; i < ways.size(); i++) {
+			blocks.addAll(WirePath.blocks(ways.get(i), repeaters.get(i), supports.get(i)));
+		}
+		synchronized (this) {
+			ToolResult queued = queue(blocks, false, false, "");
+			if (queued.isError()) {
+				return queued;
+			}
+		}
+		StringBuilder answer = new StringBuilder(ways.size() == 1 ? "Wired " : "Wired " + ways.size() + ":\n");
+		for (int i = 0; i < ways.size(); i++) {
+			int r = repeaters.get(i).size();
+			int s = supports.get(i).size();
+			answer.append(i == 0 ? "" : "\n").append(outs.get(i).port().name()).append(' ').append(spot(from.get(i))).append(" to ")
+					.append(ins.get(i).port().name()).append(' ').append(spot(to.get(i))).append(": ").append(ways.get(i).size() - r).append(" dust");
+			if (r > 0) {
+				answer.append(", ").append(r).append(r == 1 ? " repeater" : " repeaters").append(" (").append(2 * r).append(" ticks)");
+			}
+			if (s > 0) {
+				answer.append(", ").append(s).append(" stone under it");
+			}
+			answer.append('.');
+		}
+		return ToolResult.ok(answer.toString());
+	}
+
+	/** Every port of the session's gadgets (the earlier builds' here too), by its spot. */
+	private Map<Pos, End> ends() {
+		Map<Pos, End> out = new HashMap<>();
+		List<GadgetUse> all = new ArrayList<>(earlierGadgets);
+		all.addAll(gadgets);
+		for (GadgetUse use : all) {
+			GadgetPlacement.Placed placed = use.placed();
+			String what = Gadgets.describe(use.kind(), JsonParser.parseString(use.options()).getAsJsonObject());
+			for (Port port : placed.ports()) {
+				Pos p = port.at();
+				Pos buffer = p;
+				for (Pos in : List.of(new Pos(p.x() + 1, p.y(), p.z()), new Pos(p.x() - 1, p.y(), p.z()), new Pos(p.x(), p.y(), p.z() + 1),
+						new Pos(p.x(), p.y(), p.z() - 1))) {
+					if (placed.box().contains(in)) {
+						buffer = in;
+					}
+				}
+				out.put(p, new End(port, buffer, what));
+			}
+		}
+		return out;
+	}
+
+	/** The port at {@code at}, an input or an output as {@code input} says. */
+	private static End end(Map<Pos, End> ends, Pos at, String name, boolean input) {
+		End end = ends.get(at);
+		if (end == null) {
+			throw new IllegalArgumentException(name + " " + spot(at) + " isn't a port of a gadget this build placed (place_gadget's answer lists each port's spot)");
+		}
+		if (end.port().input() != input) {
+			throw new IllegalArgumentException(name + " " + spot(at) + " is the " + (input ? "output " : "input ") + end.port().name() + " of " + end.gadget()
+					+ ": a wire runs from an output port to an input port");
+		}
+		return end;
+	}
+
+	/** A part's name: a short word, as Claude will use it again in animate and in later builds. */
+	private static String partName(String name) {
+		if (!name.matches("[a-z][a-z0-9_]{0,31}")) {
+			throw new IllegalArgumentException("part must be a short name in lowercase letters, digits and _ (like left_wing), not \"" + name + "\"");
+		}
+		return name;
+	}
+
+	/**
+	 * Gives a moving part its motion, replacing any it had (spec v2 §4.2): about a pivot within reach of the box,
+	 * 1 to 8 motions, riding with a parent part if one is named (never itself, at most 4 deep).
+	 */
+	private ToolResult animate(Args a) {
+		String name = a.string("part");
+		PartState state = parts.get(name);
+		if (state == null) {
+			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + noPart(name));
+		}
+		double[] p = a.numbers("pivot", 3);
+		Vec3 pivot = new Vec3(p[0], p[1], p[2]);
+		int reach = Tunables.PIVOT_REACH;
+		if (p[0] < allowed.min().x() - reach || p[0] > allowed.max().x() + reach || p[1] < allowed.min().y() - reach
+				|| p[1] > allowed.max().y() + reach || p[2] < allowed.min().z() - reach || p[2] > allowed.max().z() + reach) {
+			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": the pivot " + describe(pivot) + " is too far from the build: keep it"
+					+ " within " + reach + " blocks of the allowed box " + describe(allowed));
+		}
+		JsonArray given = a.array("motions");
+		if (given.isEmpty() || given.size() > Tunables.MOTIONS_PER_PART_MAX) {
+			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": motions must be a list of 1 to " + Tunables.MOTIONS_PER_PART_MAX
+					+ " motions");
+		}
+		List<Motion> motions = new ArrayList<>();
+		for (JsonElement e : given) {
+			motions.add(Motion.parse(e.isJsonObject() ? e.getAsJsonObject() : null));
+		}
+		String parent = a.optString("parent", "");
+		if (!parent.isEmpty()) {
+			if (!parts.containsKey(parent)) {
+				return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + noPart(parent));
+			}
+			// Up the chain from the parent: never back to this part, and at most PART_DEPTH_MAX parts in all.
+			int depth = 1;
+			for (String at = parent; !at.isEmpty(); at = parts.containsKey(at) && parts.get(at).motion != null ? parts.get(at).motion.parent() : "") {
+				if (at.equals(name)) {
+					return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + name + " can't ride " + parent + ", which rides " + name
+							+ ": a part can't ride itself");
+				}
+				if (++depth > Tunables.PART_DEPTH_MAX) {
+					return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": parts ride at most " + Tunables.PART_DEPTH_MAX + " deep");
+				}
+			}
+		}
+		MovingPart part = new MovingPart(name, pivot, motions, parent);
+		state.motion = part;
+		sink.animate(part);
+		return ToolResult.ok(describe(part));
+	}
+
+	private static String noPart(String name) {
+		return "there's no part called \"" + name + "\": build it first, with \"part\": \"" + name + "\" on a write tool";
+	}
+
+	/** A part's motion in words, as animate answers it. */
+	static String describe(MovingPart part) {
+		return part.name() + " " + motion(part) + ".";
+	}
+
+	/** "moves about the pivot …: swings about …", as animate answers and get_context lists it. */
+	private static String motion(MovingPart part) {
+		StringBuilder out = new StringBuilder("moves about the pivot ").append(describe(part.pivot())).append(": ");
+		List<String> each = new ArrayList<>();
+		for (Motion m : part.motions()) {
+			each.add(switch (m) {
+				case Motion.Swing s -> "swings about " + s.axis() + " from " + number(s.from()) + "° to " + number(s.to()) + "° every "
+						+ s.period() + " ticks";
+				case Motion.Spin s -> "spins about " + s.axis() + (s.period() < 0 ? " the other way" : "") + " once every " + Math.abs(s.period())
+						+ " ticks";
+				case Motion.Bob b -> "bobs " + b.direction() + " by up to " + number(b.distance()) + " blocks every " + b.period() + " ticks";
+			} + (phaseOf(m) == 0 ? "" : " (phase " + number(phaseOf(m)) + ")"));
+		}
+		out.append(String.join(", then ", each));
+		if (!part.parent().isEmpty()) {
+			out.append("; it rides with ").append(part.parent());
+		}
+		return out.toString();
+	}
+
+	private static double phaseOf(Motion m) {
+		return switch (m) {
+			case Motion.Swing s -> s.phase();
+			case Motion.Spin s -> s.phase();
+			case Motion.Bob b -> b.phase();
+		};
+	}
+
+	private static String number(double n) {
+		return n == Math.rint(n) ? String.valueOf((long) n) : String.format(Locale.ROOT, "%.2f", n).replaceAll("0+$", "");
+	}
+
+	private static String describe(Vec3 p) {
+		return "[" + number(p.x()) + ", " + number(p.y()) + ", " + number(p.z()) + "]";
+	}
+
+	/** One part's state as the build goes: its displays so far, and its motion. Guarded by the executor. */
+	private static final class PartState {
+		/** A spot given again replaces its block, as a block would: one display a spot. */
+		final Set<Pos> blocks = new LinkedHashSet<>();
+		MovingPart motion;
 	}
 
 	/**
@@ -516,7 +1059,7 @@ public final class ToolExecutor {
 		};
 	}
 
-	private ToolResult setBlocks(Args a) {
+	private ToolResult setBlocks(Args a, String part) {
 		var entries = a.array("blocks");
 		if (entries.size() > Tunables.SET_BLOCKS_MAX) {
 			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": set_blocks takes at most "
@@ -528,7 +1071,7 @@ public final class ToolExecutor {
 			Args entry = new Args(e.isJsonObject() ? e.getAsJsonObject() : null);
 			blocks.add(new LocalBlock(entry.pos("pos"), entry.block("block")));
 		}
-		return queue(blocks, true, false);
+		return queue(blocks, true, false, part);
 	}
 
 	/**
@@ -542,7 +1085,19 @@ public final class ToolExecutor {
 			return queueFrame(pos, itemFrame);
 		}
 		BlockSpec spec = a.block("block");
-		if (validator.validate(spec) instanceof Validation.Valid valid && valid.block().info().entity() != data.kind()) {
+		Validation checked = validator.validate(spec);
+		if (checked instanceof Validation.Valid valid && valid.block().info().id().equals("minecraft:dispenser")
+				&& data instanceof BlockEntityData.Container container) {
+			// A machine moves and harms nothing that isn't the build's (spec v2 §5.5): a dispenser holds only what it drops.
+			for (BlockEntityData.Stack stack : container.items()) {
+				if (world.items().dispenses(stack.item())) {
+					return ToolResult.error(RejectReason.BAD_VALUE.wireName() + ": a dispenser holds only what it would simply drop, and it would use "
+							+ stack.item() + " (pour it, fire it, place it or put it on), which could reach what isn't the build's; a dropper may"
+							+ " hold it, as long as nothing of the build feeds a dispenser");
+				}
+			}
+		}
+		if (checked instanceof Validation.Valid valid && valid.block().info().entity() != data.kind()) {
 			return ToolResult.error(RejectReason.NOT_A_BLOCK_ENTITY.wireName() + ": " + valid.block().info().id() + " can't hold "
 					+ data.kind().name().toLowerCase(Locale.ROOT) + " data; use " + switch (data.kind()) {
 						case SIGN -> "a sign (oak_sign, oak_wall_sign, oak_hanging_sign…)";
@@ -551,7 +1106,7 @@ public final class ToolExecutor {
 						default -> "a banner (white_banner, red_wall_banner…)";
 					});
 		}
-		return queue(List.of(new LocalBlock(pos, spec, null, data)), true, false);
+		return queue(List.of(new LocalBlock(pos, spec, null, data)), true, false, "");
 	}
 
 	/** An entity, so no block changes: only the box, what's protected and the queue's limit apply. */
@@ -577,8 +1132,11 @@ public final class ToolExecutor {
 	 * reports each rejected entry by its index; {@code includeProtected} (a clear that asked for it) may remove
 	 * player-made blocks, never unbreakable ones.
 	 */
-	private ToolResult queue(List<LocalBlock> blocks, boolean perEntry, boolean includeProtected) {
-		if (sink.capReached()) {
+	private ToolResult queue(List<LocalBlock> blocks, boolean perEntry, boolean includeProtected, String part) {
+		// A moving part's displays change no block (spec v2 §4.1): not the changed-blocks cap, not the lava rule, no
+		// claims on protected spots; the moving budget instead.
+		boolean moving = !part.isEmpty();
+		if (!moving && sink.capReached()) {
 			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": this build has reached its limit of "
 					+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks; call finish");
 		}
@@ -611,7 +1169,10 @@ public final class ToolExecutor {
 				problem = RejectReason.PROTECTED.wireName()
 						+ ": it looks player-made, so it stays: build around it (include_protected is only for when the player asked to remove it)";
 			} else if (v instanceof Validation.Valid valid) {
-				problem = otherHalf(Footprint.others(valid.block(), block.pos()), mask, perEntry, includeProtected);
+				List<Pos> others = Footprint.others(valid.block(), block.pos());
+				problem = !moving ? otherHalf(others, mask, perEntry, includeProtected)
+						: others.isEmpty() ? null : RejectReason.BAD_ARGUMENT.wireName() + ": a door, bed or tall plant can't be in a moving part (it's two"
+								+ " blocks); build it as blocks";
 			}
 			if (problem != null) {
 				reject(lines, grouped, perEntry, i, problem);
@@ -626,12 +1187,44 @@ public final class ToolExecutor {
 			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": " + String.format(Locale.ROOT, "%,d", waiting)
 					+ " blocks are still waiting to be placed; call checkpoint, then go on; nothing was queued");
 		}
-		FireRule fire = fire();
+		if (moving) {
+			int have = movingBlocks();
+			Set<Pos> already = parts.containsKey(part) ? parts.get(part).blocks : Set.of();
+			int adding = 0;
+			for (int n = 0; n < fitCount; n++) {
+				LocalBlock block = blocks.get(fit[n]);
+				if (!air(((Validation.Valid) checked.get(block.block())).block()) && !already.contains(block.pos())) {
+					adding++;
+				}
+			}
+			if (have + adding > movingBudget) {
+				return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": this build may have " + String.format(Locale.ROOT, "%,d", movingBudget)
+						+ " moving blocks (max_moving_blocks) and has " + String.format(Locale.ROOT, "%,d", have) + ", so "
+						+ String.format(Locale.ROOT, "%,d", movingBudget - have) + " left; this would add " + String.format(Locale.ROOT, "%,d", adding)
+						+ ". Nothing was queued");
+			}
+		}
+		FireRule fire = moving ? null : fire();
 		List<Placement> batch = new ArrayList<>(fitCount);
 		List<Pos> claimed = new ArrayList<>(fitCount);
+		// Air in a part takes that spot out of it (its display hides); where the part has nothing, there's nothing to do.
+		int nothingToTakeOut = 0;
 		for (int n = 0; n < fitCount; n++) {
 			LocalBlock block = blocks.get(fit[n]);
 			ResolvedBlock resolved = ((Validation.Valid) checked.get(block.block())).block();
+			if (moving) {
+				if (air(resolved)) {
+					PartState state = parts.get(part);
+					if (state == null || !state.blocks.remove(block.pos())) {
+						nothingToTakeOut++;
+						continue;
+					}
+				} else {
+					parts.computeIfAbsent(part, p -> new PartState()).blocks.add(block.pos());
+				}
+				batch.add(new Placement(frame.toWorld(block.pos()), resolved, null, null, part));
+				continue;
+			}
 			FireRule.Kind kind = FireRule.Kind.of(resolved.info());
 			List<Pos> others = Footprint.others(resolved, block.pos());
 			// A block of two goes in whole or not at all: both halves pass before either is remembered.
@@ -646,14 +1239,19 @@ public final class ToolExecutor {
 			claimed.addAll(others);
 			batch.add(new Placement(frame.toWorld(block.pos()), resolved, block.onlyReplacing(), block.data()));
 		}
-		int rejected = blocks.size() - supersededCount - batch.size();
+		int rejected = blocks.size() - supersededCount - batch.size() - nothingToTakeOut;
 		// Those spots are the build's own from now on, even where it may clear a protected block.
 		claimed.forEach(mask::release);
 		grouped.forEach((problem, count) -> lines.add(blocks(count) + " — " + problem));
 		if (!batch.isEmpty()) {
 			sink.queue(batch);
 		}
-		StringBuilder text = new StringBuilder("Queued ").append(blocks(batch.size())).append('.');
+		StringBuilder text = new StringBuilder("Queued ").append(blocks(batch.size()));
+		if (moving) {
+			text.append(" into the moving part ").append(part).append(" (").append(String.format(Locale.ROOT, "%,d", movingBlocks()))
+					.append(" moving blocks in this build; ").append(String.format(Locale.ROOT, "%,d", movingBudget - movingBlocks())).append(" left)");
+		}
+		text.append('.');
 		if (supersededCount > 0) {
 			text.append(' ').append(supersededCount == 1 ? "1 entry was replaced by a later one for the same spot."
 					: String.format(Locale.ROOT, "%,d", supersededCount) + " entries were replaced by later ones for their spots.");
@@ -666,6 +1264,14 @@ public final class ToolExecutor {
 			}
 		}
 		return new ToolResult(text.toString(), batch.isEmpty() && rejected > 0, List.copyOf(lines));
+	}
+
+	private static boolean air(ResolvedBlock block) {
+		return block.info().id().equals("minecraft:air");
+	}
+
+	private int movingBlocks() {
+		return parts.values().stream().mapToInt(state -> state.blocks.size()).sum();
 	}
 
 	/** Which entries a later entry for the same spot replaces. */

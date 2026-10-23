@@ -1,12 +1,16 @@
 package io.palmisano.aibuilder.world;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -27,7 +31,10 @@ import io.palmisano.aibuilder.core.survey.Column;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 import io.palmisano.aibuilder.core.tools.ServerHop;
 import io.palmisano.aibuilder.core.tools.WorldFacts;
+import io.palmisano.aibuilder.core.tools.RedstoneSteps;
 import io.palmisano.aibuilder.core.tools.WorldReader;
+import io.palmisano.aibuilder.core.wire.Cell;
+import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -50,6 +57,8 @@ public final class McWorldReader implements WorldReader {
 	private final Supplier<ServerPlayer> player;
 	/** The check_build read under way, or the last one; guarded by this. */
 	private CompletableFuture<List<BuildProblems.Problem>> checking;
+	/** A test_redstone is running. */
+	private final AtomicBoolean testing = new AtomicBoolean();
 	private final int siteMinX;
 	private final int siteMinZ;
 	private final int siteSize;
@@ -61,6 +70,10 @@ public final class McWorldReader implements WorldReader {
 	 * Server thread. {@code player} gives the build's owner, or null when they're offline; {@code journal} is this
 	 * build's own, for check_build; {@code config} says whether player-made blocks are protected and what's banned.
 	 */
+	private volatile PlacementJob job;
+	/** The player's earlier builds here: theirs to change, and a machine's to move as its own. */
+	private final List<UndoJournal<BlockState, CompoundTag>> earlier;
+
 	public McWorldReader(ServerLevel level, LocalFrame frame, Box allowed, SizeTier tier, Supplier<ServerPlayer> player,
 			List<UndoJournal<BlockState, CompoundTag>> earlier, UndoJournal<BlockState, CompoundTag> journal, AiBuilderConfig config) {
 		this.level = level;
@@ -68,6 +81,7 @@ public final class McWorldReader implements WorldReader {
 		this.allowed = allowed;
 		this.player = player;
 		this.journal = journal;
+		this.earlier = List.copyOf(earlier);
 		this.items = new McItemCatalog(level.registryAccess(), Set.copyOf(config.bannedBlocks()));
 		// The whole allowed box and past it, a refinement's grown one too: protection and the lava rule hold to its edge.
 		SiteSquare square = SiteSquare.around(allowed, tier, Tunables.SITE_MARGIN);
@@ -150,6 +164,49 @@ public final class McWorldReader implements WorldReader {
 		});
 	}
 
+	/** Only loaded chunks: a position in another reads as not solid. Something you'd walk into is solid. */
+	@Override
+	public Set<Pos> solid(Set<Pos> local) {
+		return onServer(() -> {
+			Set<Pos> out = new HashSet<>();
+			for (Pos at : local) {
+				BlockPos pos = Positions.toBlockPos(frame.toWorld(at));
+				LevelChunk chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
+				if (chunk != null && !chunk.getBlockState(pos).getCollisionShape(level, pos).isEmpty()) {
+					out.add(at);
+				}
+			}
+			return out;
+		});
+	}
+
+	@Override
+	public Map<Pos, Cell> cells(Set<Pos> local) {
+		return onServer(() -> {
+			Map<Pos, Cell> out = new HashMap<>();
+			for (Pos at : local) {
+				BlockPos pos = Positions.toBlockPos(frame.toWorld(at));
+				LevelChunk chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
+				out.put(at, chunk == null ? Cell.OTHER : cell(chunk.getBlockState(pos), pos));
+			}
+			return out;
+		});
+	}
+
+	/** A block as a wire sees it: dust, other redstone, free (air or what a block takes the place of, but water), ground, or else. */
+	private Cell cell(BlockState state, BlockPos pos) {
+		if (state.is(net.minecraft.world.level.block.Blocks.REDSTONE_WIRE)) {
+			return Cell.DUST;
+		}
+		if (Redstone.component(state)) {
+			return Cell.COMPONENT;
+		}
+		if (state.isAir() || state.canBeReplaced() && state.getFluidState().isEmpty()) {
+			return Cell.FREE;
+		}
+		return state.isRedstoneConductor(level, pos) && state.isFaceSturdy(level, pos, Direction.UP) ? Cell.SOLID : Cell.OTHER;
+	}
+
 	@Override
 	public WorldFacts facts() {
 		return onServer(() -> {
@@ -192,7 +249,10 @@ public final class McWorldReader implements WorldReader {
 			if (checking == null || checking.isDone()) {
 				MinecraftServer server = level.getServer();
 				checking = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
-					BuildCheck reading = new BuildCheck(level, frame, allowed, journal, Tunables.TICK_BUDGET_NANOS);
+					BuildCheck reading = new BuildCheck(level, frame, allowed, journal, earlier, Tunables.TICK_BUDGET_NANOS);
+					if (job != null) {
+						reading.started(job.started());
+					}
 					JobScheduler.add(reading);
 					return reading;
 				}).thenCompose(BuildCheck::result);
@@ -200,6 +260,48 @@ public final class McWorldReader implements WorldReader {
 			check = checking;
 		}
 		return await(check, Tunables.CHECK_BUILD_TIMEOUT_SECONDS);
+	}
+
+	/** The build's job, whose machine test_redstone tries (spec v2 §5.2). Before the build starts. */
+	public void machine(PlacementJob job) {
+		this.job = job;
+	}
+
+	@Override
+	public String testRedstone(List<RedstoneSteps.Step> steps) {
+		if (job == null || job.machines() == null) {
+			throw new IllegalArgumentException("test_redstone has no machine to try here");
+		}
+		// One at a time (M8 review): two at once would each take the other's flips for how the levers were.
+		if (!testing.compareAndSet(false, true)) {
+			throw new IllegalArgumentException("test_redstone is already trying this build's machine: wait for that answer, then test again"
+					+ " (one test at a time)");
+		}
+		try {
+			MinecraftServer server = level.getServer();
+			PlacementJob machine = job;
+			CompletableFuture<RedstoneTest> started = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
+				RedstoneTest running = new RedstoneTest(level, frame, journal, machine, steps);
+				JobScheduler.add(running);
+				return running;
+			});
+			RedstoneTest.Outcome outcome;
+			try {
+				outcome = await(started.thenCompose(RedstoneTest::result), Tunables.TEST_REDSTONE_TIMEOUT_SECONDS);
+			} catch (Unreadable e) {
+				// No one reads its answer now: it stops, its levers back.
+				if (started.isDone() && !started.isCompletedExceptionally()) {
+					started.join().stop();
+				}
+				throw e;
+			}
+			if (outcome.refused()) {
+				throw new IllegalArgumentException(outcome.text());
+			}
+			return outcome.text();
+		} finally {
+			testing.set(false);
+		}
 	}
 
 	/** {@code id[prop=value,…]}, compass names and values as relative words; the state already turned back to the template. */
@@ -226,7 +328,7 @@ public final class McWorldReader implements WorldReader {
 		return ticks < 23_000 ? "night" : "sunrise";
 	}
 
-	private static Rotation inverse(Rotation rotation) {
+	static Rotation inverse(Rotation rotation) {
 		return switch (rotation) {
 			case CLOCKWISE_90 -> Rotation.COUNTERCLOCKWISE_90;
 			case COUNTERCLOCKWISE_90 -> Rotation.CLOCKWISE_90;

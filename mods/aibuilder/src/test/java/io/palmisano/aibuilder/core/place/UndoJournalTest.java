@@ -55,6 +55,18 @@ class UndoJournalTest {
 		assertEquals(RestoreDecision.RESTORE, wrote("minecraft:water", 0).decide(p, "minecraft:ice", 0));
 	}
 
+	/** Copper weathers by itself: a build's copper gone green is still the build's. Waxing it, or another block, is the player's. */
+	@Test
+	void weatheredCopperCountsAsTheSame() {
+		assertEquals(RestoreDecision.RESTORE, wrote("minecraft:copper_block", 0).decide(p, "minecraft:exposed_copper", 0));
+		assertEquals(RestoreDecision.RESTORE, wrote("minecraft:cut_copper_stairs", 0).decide(p, "minecraft:oxidized_cut_copper_stairs", 0));
+		assertEquals(RestoreDecision.RESTORE, wrote("minecraft:copper_golem_statue", 0).decide(p, "minecraft:exposed_copper_golem_statue", 0));
+		assertEquals(RestoreDecision.RESTORE, wrote("minecraft:exposed_copper_door", 0).decide(p, "minecraft:oxidized_copper_door", 0));
+		assertEquals(RestoreDecision.RESTORE, wrote("minecraft:lightning_rod", 0).decide(p, "minecraft:weathered_lightning_rod", 0));
+		assertEquals(RestoreDecision.KEEP, wrote("minecraft:copper_block", 0).decide(p, "minecraft:waxed_copper_block", 0), "waxed by the player");
+		assertEquals(RestoreDecision.KEEP, wrote("minecraft:copper_block", 0).decide(p, "minecraft:cut_copper", 0), "another block");
+	}
+
 	@Test
 	void changedContentsAreKept() {
 		assertEquals(RestoreDecision.KEEP, wrote("minecraft:chest", 11).decide(p, "minecraft:chest", 12));
@@ -75,7 +87,7 @@ class UndoJournalTest {
 	@Test
 	void aJournalWithOnlyFramesIsNotEmpty() {
 		assertTrue(journal.isEmpty());
-		journal.addSpawned(new UndoJournal.Spawned(UUID.randomUUID(), p, "minecraft:diamond"));
+		journal.addSpawned(new UndoJournal.Spawned(UUID.randomUUID(), p, "minecraft:diamond", UndoJournal.Spawned.FRAME));
 		assertFalse(journal.isEmpty());
 		assertFalse(wrote("minecraft:stone", 0).isEmpty());
 	}

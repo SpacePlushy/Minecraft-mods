@@ -41,6 +41,9 @@ final class ItemFrames {
 	static int takeDown(ServerLevel level, List<UndoJournal.Spawned> spawned) {
 		int stayed = 0;
 		for (UndoJournal.Spawned s : spawned) {
+			if (!s.kind().equals(UndoJournal.Spawned.FRAME)) {
+				continue;
+			}
 			Entity entity = level.getEntity(s.id());
 			if (!(entity instanceof ItemFrame frame) || frame.isRemoved()) {
 				continue;

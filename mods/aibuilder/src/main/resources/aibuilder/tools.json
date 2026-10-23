@@ -65,6 +65,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"blocks": {
 					"type": "array",
 					"items": {
@@ -87,6 +88,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
 				"block": {"type": "string"},
 				"state": {"type": "object"},
@@ -102,6 +104,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"from": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"to": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"block": {"type": "string"},
@@ -116,6 +119,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"points": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}},
 				"y": {"type": "integer"},
 				"height": {"type": "integer"},
@@ -132,6 +136,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"center": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"radius": {"type": "integer", "minimum": 0},
 				"height": {"type": "integer", "minimum": 1},
@@ -149,6 +154,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"center": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"radius": {"type": "integer", "minimum": 0},
 				"block": {"type": "string"},
@@ -165,6 +171,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"base_center": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"radius": {"type": "integer", "minimum": 0},
 				"height": {"type": "integer", "minimum": 1},
@@ -181,6 +188,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"from": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"to": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"rise": {"type": "integer", "minimum": 0},
@@ -198,6 +206,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
 				"style": {"type": "string", "enum": ["gable", "hip", "flat"]},
 				"stairs": {"type": "string", "description": "A stairs block id, e.g. spruce_stairs."},
@@ -215,6 +224,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"style": {"type": "string", "enum": ["straight", "spiral"]},
 				"block": {"type": "string", "description": "A stairs block id."},
 				"from": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
@@ -232,10 +242,11 @@
 	},
 	{
 		"name": "clear",
-		"description": "Set a box [x1, y1, z1, x2, y2, z2] to air. Blocks that look player-made stay unless include_protected is true; blocks that can't be broken (bedrock) always stay.",
+		"description": "Set a box [x1, y1, z1, x2, y2, z2] to air. Blocks that look player-made stay unless include_protected is true; blocks that can't be broken (bedrock) always stay. A gadget whose whole box it clears is gone (the answer says so): another may go there.",
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: take a moving part's blocks in the box out (its displays there go) and leave the world's blocks as they are. Without it, clear leaves moving parts alone."},
 				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
 				"include_protected": {"type": "boolean", "description": "Also remove blocks that look player-made. Only when the player asked for it."}
 			},
@@ -342,6 +353,67 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {}
+		}
+	},
+	{
+		"name": "animate",
+		"description": "Give a moving part its motion, replacing any it had; build the part first (part on a write tool). pivot: the point it turns about, in block units where a whole number is a block's centre and .5 the face between two (a wing's hinge at its shoulder, [0.5, 8, 4]); within 16 blocks of the allowed box. motions, 1 to 8, applied in order: {\"swing\": {\"axis\", \"from\", \"to\", \"period\", \"phase\"?}} turns back and forth between two angles in degrees (-180 to 180), from at the start and to half a period later; {\"spin\": {\"axis\", \"period\", \"phase\"?}} turns a full turn each period (a negative period turns the other way); {\"bob\": {\"direction\", \"distance\", \"period\", \"phase\"?}} moves back and forth up to distance blocks (at most 16). Axes and directions are forward, back, left, right, up or down. A positive angle turns clockwise as you look along the axis: about forward, the part's top moves to the right; about up, a part in front of the pivot moves to the left. period: ticks for one cycle (20 ticks a second), 10 to 2,400; phase: 0 to 1, to put parts out of step (a tail a little behind the wings). parent: another part this one rides with (at most 4 deep, never itself). A spin about a pivot outside the part carries it round in a circle. Examples: a right wing hinged on the body's top right edge, {\"swing\": {\"axis\": \"forward\", \"from\": 30, \"to\": -40, \"period\": 40}} (down at the start, up half-way; the left wing from -30 to 40); windmill sails as one part, {\"spin\": {\"axis\": \"forward\", \"period\": 160}} about the hub; a dragon circling a tower, its body a part spinning about up with the pivot at the tower's centre and its wings parts with parent body. Then call check_motion.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"part": {"type": "string"},
+				"pivot": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+				"motions": {"type": "array", "items": {"type": "object"}, "minItems": 1, "maxItems": 8},
+				"parent": {"type": "string"}
+			},
+			"required": ["part", "pivot", "motions"]
+		}
+	},
+	{
+		"name": "check_motion",
+		"description": "Look over the moving parts after animating them, as check_build looks over the blocks: for each part, the box it fills as built and at the start, a quarter, half and three quarters of its longest cycle (so you see where a wing goes as it flaps), and the solid blocks, the build's or the world's, it passes through over a cycle (a wing through the body, a blade through the ground), the lowest few listed. Fix what's wrong (the pivot, smaller angles, the part a block further out) and look again. It waits for what's queued first.",
+		"input_schema": {
+			"type": "object",
+			"properties": {}
+		}
+	},
+	{
+		"name": "test_redstone",
+		"description": "Try the build's machine in the world, over game ticks (20 a second): steps run in order. {\"set\": [x, y, z], \"on\": true} flips a lever the build placed on or off; {\"press\": [x, y, z]} presses a button it placed; {\"wait\": ticks} lets the machine run; {\"read\": [[x, y, z], …]} says what's at each spot and its state (a lamp lit, a dust's power, a repeater powered, a piston extended, a door open, a torch lit); {\"show\": true} says what each digit and number the build placed shows (\"the number at (x, y, z) shows 16\"; a face that makes no digit is \"?\"). At most 64 steps, 400 ticks of waiting in all and 32 spots a read, all inside the allowed box. It waits for what's queued, then gives the build's redstone its shape and starts it as if placed by hand (each piece once), and afterwards puts every lever it flipped back as it was. It refuses while check_build would list a piston, powers_outside or feeds_dispenser problem, and won't press a button within 2 blocks of something that reacts to power and isn't the build's. While a player stands where one of the build's pistons would push, the next change waits for them (at most 30 seconds), then the test stops. One test at a time. A machine isn't done until it's been tested for every case that matters: each input combination of a small one, the edge cases of a big one.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"steps": {"type": "array", "items": {"type": "object"}, "minItems": 1, "maxItems": 64}
+			},
+			"required": ["steps"]
+		}
+	},
+	{
+		"name": "place_gadget",
+		"description": "Place a ready-made, tested redstone part (a gadget) and join its ports with wire. Kinds and options: lever_row {bits 1-8 (default 4), label (a short lowercase word, default in)}: levers on posts, a sign on each saying the row and what the bit is worth, an output behind each; lamp_row {bits}: an input before each lamp; adder {bits 1-8}: adds a and b, inputs a0…, b0… and the carry in c0 on its front, the sum s0…s<bits> out its back; digit: shows the number 0 to 9 on its inputs d0…d3 (binary, d0 worth 1) on a 5 × 5 face of lamps at its front-left, gy 7 to 11; number {bits 1-5 (default 5)}: shows the binary number on its inputs n0… (n0 worth 1, left to right along its front at gy 5) in decimal, 0 to 31, on two faces side by side in its middle, gy 7 to 11, the tens dark under 10 (one face up to 3 bits); clock {period 12-64 ticks, a multiple of 4 (default 20)}: out turns on and off every period, hold stops it; pulse {length 2-8 ticks, even (default 4)}: a pulse that long out each time in turns on; toggle: each pulse at in flips out; latch {bits}: q0… follow d0… while hold is off and keep what they had while it's on; counter {bits}: counts pulses at count in binary on q0… (worth 1, 2, 4…), round to 0 after the last; piston_door: a 2 × 2 doorway in a 6-wide frame of stone bricks with sticky pistons each side, open while its input open (behind it, with its redstone) is on. at: the gadget's front-left-bottom block; facing: the way its outputs run (forward, right, back or left; default forward); its inputs are on the opposite side, its front (but a door's open). It's placed whole or not at all: its box must be inside the allowed box, hold nothing player-made, and keep a block from every other gadget, and the build's redstone may be neither in its box nor beside it; it clears its box first. To move a gadget, clear its whole box (clear), then place it again. The answer gives its box, each port's spot (a wire's end dust goes there), the spots to test (its levers, its lamps) and how many ticks it takes to settle after an input changes; wait at least that long in test_redstone.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"kind": {"type": "string", "enum": ["lever_row", "lamp_row", "adder", "digit", "number", "clock", "pulse", "toggle", "latch", "counter", "piston_door"]},
+				"at": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+				"facing": {"type": "string", "enum": ["forward", "right", "back", "left"]},
+				"options": {"type": "object"}
+			},
+			"required": ["kind", "at"]
+		}
+	},
+	{
+		"name": "wire",
+		"description": "Lay redstone from gadgets' output ports to their input ports: dust, stone under it where the ground is missing, and a repeater where the signal would run out. from: output ports' spots, one or a row (place_gadget's answer lists them); to: input ports' spots, as many, in the same order. One wire may take via points: from each point (from, each via point, to) to the next it runs along z, then along x, climbing or dropping a level a block from the start until it's at the next point's height. Without via (one wire is a row of one), each wire runs along z to a turning row of its own, along x, then along z into its port: the ports of each row share y and z, and the turning rows are 2 apart from 2 past the outputs, so the inputs must be 2 more blocks off along z than twice the wires that shift the same way. level (a row only): the y the wires run at between their ports (default the inputs' y); they change height a level a block to it from their start and back to the inputs' y on their last stretch, so to cross another row of wires, give this one a level 2 or more above that one's. It's laid whole or not at all: refused, saying where, if any of it would be past the allowed box, in anything but air (or grass and the like), on what dust can't stand on, or touch other redstone: dust beside it or a step from it, or any other redstone beside its dust or beside what it stands on (but its two ports' buffers). To cross another wire, go over it: via points 2 above it. Each repeater adds 2 ticks to the signal's way.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"from": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3}, "minItems": 1, "maxItems": 8},
+				"to": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3}, "minItems": 1, "maxItems": 8},
+				"via": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3}, "maxItems": 8},
+				"level": {"type": "integer"}
+			},
+			"required": ["from", "to"]
 		}
 	},
 	{

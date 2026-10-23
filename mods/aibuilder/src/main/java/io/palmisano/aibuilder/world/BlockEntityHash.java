@@ -1,6 +1,7 @@
 package io.palmisano.aibuilder.world;
 
 import java.util.List;
+import java.util.Set;
 
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -14,7 +15,13 @@ public final class BlockEntityHash {
 	/** Paths into the saved data that change on their own; a change there isn't the player's doing. */
 	private static final List<List<String>> CHANGES_BY_ITSELF = List.of(
 			// A vault's timer for its next look around for players.
-			List.of("server_data", "state_updating_resumes_at"));
+			List.of("server_data", "state_updating_resumes_at"),
+			// A comparator's output, a hopper's cooldown, a sculk sensor's last sound, a crafter's crafting: a machine runs them.
+			List.of("OutputSignal"), List.of("TransferCooldown"), List.of("last_vibration_frequency"), List.of("listener"),
+			List.of("crafting_ticks_remaining"), List.of("triggered"));
+	/** A machine's dispensers, droppers, hoppers and crafters fire, pass on and use what they hold by themselves. */
+	private static final Set<String> MACHINE_CONTAINERS = Set.of("minecraft:dispenser", "minecraft:dropper", "minecraft:hopper",
+			"minecraft:crafter");
 
 	private BlockEntityHash() {
 	}
@@ -35,6 +42,9 @@ public final class BlockEntityHash {
 			if (parent != null) {
 				parent.remove(path.getLast());
 			}
+		}
+		if (MACHINE_CONTAINERS.contains(kept.getStringOr("id", ""))) {
+			kept.remove("Items");
 		}
 		return kept.hashCode();
 	}

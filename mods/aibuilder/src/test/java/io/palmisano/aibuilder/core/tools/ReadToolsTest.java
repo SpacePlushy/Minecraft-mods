@@ -39,7 +39,7 @@ class ReadToolsTest {
 
 	@Test
 	void everyCatalogToolHasAHandlerAndBack() {
-		assertEquals(21, ToolExecutor.handledTools().size());
+		assertEquals(26, ToolExecutor.handledTools().size());
 		assertEquals(ToolExecutor.handledTools(), ToolCatalog.load().names());
 	}
 

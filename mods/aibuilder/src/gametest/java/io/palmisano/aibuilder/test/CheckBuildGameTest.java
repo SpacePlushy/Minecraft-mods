@@ -168,7 +168,7 @@ public class CheckBuildGameTest {
 		helper.startSequence()
 				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
 				.thenExecute(() -> {
-					check.set(new BuildCheck(helper.getLevel(), build.frame(), ArenaBuilds.ALLOWED, build.journal(), 1));
+					check.set(new BuildCheck(helper.getLevel(), build.frame(), ArenaBuilds.ALLOWED, build.journal(), List.of(), 1));
 					JobScheduler.add(check.get());
 				})
 				.thenIdle(5)
@@ -274,7 +274,7 @@ public class CheckBuildGameTest {
 		helper.startSequence()
 				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
 				.thenExecute(() -> {
-					check.set(new BuildCheck(helper.getLevel(), build.frame(), ArenaBuilds.ALLOWED, build.journal(), 1));
+					check.set(new BuildCheck(helper.getLevel(), build.frame(), ArenaBuilds.ALLOWED, build.journal(), List.of(), 1));
 					JobScheduler.add(check.get());
 				})
 				.thenWaitUntil(() -> helper.assertTrue(check.get().result().isDone(), "the check hasn't finished"))

@@ -13,6 +13,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.anim.Motion;
+import io.palmisano.aibuilder.core.anim.MovingPart;
+import io.palmisano.aibuilder.core.anim.Vec3;
 import io.palmisano.aibuilder.core.blocks.BlockSpec;
 import io.palmisano.aibuilder.core.blocks.Validation;
 import io.palmisano.aibuilder.core.blocks.Validator;
@@ -29,6 +32,7 @@ import io.palmisano.aibuilder.world.UndoStore;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
@@ -90,7 +94,7 @@ public class UndoGameTest {
 						BlockState now = level.getBlockState(Positions.toBlockPos(pos));
 						helper.assertTrue(now == build.journal().original(pos), "not restored at " + pos + ": " + now);
 					}
-					helper.assertValueEqual(undo.get().result().join(), new UndoRunner.UndoResult(build.journal().size(), 0), "undo result");
+					helper.assertValueEqual(undo.get().result().join(), new UndoRunner.UndoResult(build.journal().size(), 0, 0), "undo result");
 				})
 				.thenSucceed();
 	}
@@ -208,7 +212,7 @@ public class UndoGameTest {
 				})
 				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
 				.thenExecute(() -> {
-					helper.assertValueEqual(undo.get().result().join(), new UndoRunner.UndoResult(2, 0), "undo result");
+					helper.assertValueEqual(undo.get().result().join(), new UndoRunner.UndoResult(2, 0, 0), "undo result");
 					helper.assertTrue(build.state(1, 1, 4).isAir(), "not undone at (1, 1, 4): " + build.state(1, 1, 4));
 				})
 				.thenSucceed();
@@ -300,6 +304,41 @@ public class UndoGameTest {
 		});
 	}
 
+	/** A build's copper that weathered while it stood (a block, and a copper golem statue with its block entity) still undoes. */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void weatheredCopperStillUndoes(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		ArenaBuild build = start(helper, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "copper", "style": "test"}},
+				  {"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "copper_block"}, {"pos": [2, 1, 4], "block": "copper_golem_statue"}]}},
+				  {"tool": "finish", "args": {"summary": "copper"}}
+				]}""");
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenExecute(() -> {
+					// As random ticks would, a stage on.
+					weather(level, build.world(new Pos(0, 1, 4)), "minecraft:exposed_copper");
+					weather(level, build.world(new Pos(2, 1, 4)), "minecraft:exposed_copper_golem_statue");
+					undo.set(undo(level, build.journal()));
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> {
+					helper.assertTrue(build.state(0, 1, 4).isAir(), "the weathered copper block stayed: " + build.state(0, 1, 4));
+					helper.assertTrue(build.state(2, 1, 4).isAir(), "the weathered statue stayed: " + build.state(2, 1, 4));
+					helper.assertValueEqual(undo.get().result().join().kept(), 0, "kept");
+				})
+				.thenSucceed();
+	}
+
+	/** The block {@code id} in place of the one at {@code pos}, its properties kept where it has them, as weathering does. */
+	private static void weather(ServerLevel level, BlockPos pos, String id) {
+		BlockState now = level.getBlockState(pos);
+		Block next = BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(id));
+		level.setBlockAndUpdate(pos, next.withPropertiesOf(now));
+	}
+
 	/** What /aibuild undo reads back after the world is saved and loaded: everything, builds in their order. */
 	@GameTest
 	public void journalSurvivesSaving(GameTestHelper helper) {
@@ -316,6 +355,11 @@ public class UndoGameTest {
 		UndoJournal<BlockState, CompoundTag> second = new UndoJournal<>();
 		second.beforeWrite(new Pos(5, 5, 5), Blocks.AIR.defaultBlockState(), null);
 		second.afterWrite(new Pos(5, 5, 5), "minecraft:glass", 0);
+		// The build's levers as placed (spec v2 §5.1), and a refinement's changes to an earlier build's moving parts (§4.4).
+		second.lever(new Pos(5, 5, 6), true);
+		second.lever(new Pos(5, 5, 7), false);
+		second.reshown(UUID.randomUUID(), new Pos(30, 64, -9), Blocks.STONE.defaultBlockState());
+		second.reanimated(UUID.randomUUID(), new MovingPart("wing", new Vec3(0.5, 3, 4), List.of(new Motion.Swing("forward", -30, 40, 40, 0.25)), "body"));
 
 		UUID player = UUID.randomUUID();
 		UndoStore store = new UndoStore();
@@ -327,7 +371,11 @@ public class UndoGameTest {
 		UndoStore.StoredBuild newest = loaded.pop(player).orElseThrow();
 		helper.assertValueEqual(newest.title(), "a window", "newest build");
 		helper.assertValueEqual(newest.journal().entries(), second.entries(), "newest journal");
+		helper.assertValueEqual(newest.journal().reshown(), second.reshown(), "the displays a refinement showed another block on");
+		helper.assertValueEqual(newest.journal().reanimated(), second.reanimated(), "the motions a refinement replaced");
+		helper.assertValueEqual(newest.journal().levers(), second.levers(), "the levers as placed");
 		UndoStore.StoredBuild older = loaded.pop(player).orElseThrow();
+		helper.assertValueEqual(older.journal().levers(), java.util.Map.of(), "a journal with no levers");
 		helper.assertValueEqual(older.dimension(), Level.NETHER, "dimension");
 		helper.assertValueEqual(older.title(), "a tower", "title");
 		helper.assertValueEqual(older.journal().entries(), first.entries(), "journal");
@@ -362,6 +410,25 @@ public class UndoGameTest {
 		helper.assertValueEqual(loaded.builds(player).stream().map(UndoStore.StoredBuild::title).toList(), List.of("a window"),
 				"the builds that load");
 		helper.assertValueEqual(loaded.peek(player).orElseThrow().journal().entries(), window.entries(), "the window's journal");
+		helper.succeed();
+	}
+
+	/** An undo history saved before moving parts, whose entities have no kind, reads them as the item frames they are. */
+	@GameTest
+	public void anOldSaveStillReads(GameTestHelper helper) {
+		CompoundTag old;
+		try {
+			old = TagParser.parseCompoundFully("""
+					{players: [{player: [I; 1, 2, 3, 4], builds: [{dimension: "minecraft:overworld", title: "a frame", journal: {
+					  positions: [L;], states: [], state_index: [I;], written: [], written_index: [I;], hashes: [I;], data: [],
+					  entities: [{id: [I; 5, 6, 7, 8], pos: 0L, item: "minecraft:apple"}]}}]}]}""");
+		} catch (CommandSyntaxException e) {
+			throw new IllegalStateException(e);
+		}
+		UndoStore loaded = UndoStore.CODEC.parse(NbtOps.INSTANCE, old).getOrThrow();
+		List<UndoJournal.Spawned> spawned = loaded.peek(UUIDUtil.uuidFromIntArray(new int[] {1, 2, 3, 4})).orElseThrow().journal().spawned();
+		helper.assertValueEqual(spawned, List.of(new UndoJournal.Spawned(UUIDUtil.uuidFromIntArray(new int[] {5, 6, 7, 8}), new Pos(0, 0, 0),
+				"minecraft:apple", UndoJournal.Spawned.FRAME)), "what the old save spawned");
 		helper.succeed();
 	}
 

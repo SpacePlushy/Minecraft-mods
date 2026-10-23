@@ -1,29 +1,41 @@
 package io.palmisano.aibuilder.world;
 
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
+import io.palmisano.aibuilder.core.gadgets.GadgetUse;
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.anim.MovingPart;
 import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.tools.Brief;
 import io.palmisano.aibuilder.core.tools.BuildSink;
 import io.palmisano.aibuilder.core.tools.PhaseProgress;
 
-/** Hands the write tools' batches to a placement job; a checkpoint waits for the job to catch up. */
+/**
+ * Hands the write tools' batches to a placement job, a checkpoint waiting for the job to catch up, and a moving part's
+ * motion to {@code onAnimate} (from the backend's thread).
+ */
 public final class McBuildSink implements BuildSink {
 	private final PlacementJob job;
 	private final Consumer<Brief> onBrief;
 	private final Consumer<String> onFinish;
+	private final Consumer<MovingPart> onAnimate;
+	/** The gadgets placed, in order; written by the backend's thread, read when the build ends. */
+	private final List<GadgetUse> gadgets = new CopyOnWriteArrayList<>();
+	/** The earlier builds' gadgets this build cleared away, for the session to forget; the same threads. */
+	private final List<GadgetUse> gone = new CopyOnWriteArrayList<>();
 	/** Written by the backend's thread, read by the status line. */
 	private volatile PhaseProgress phases = PhaseProgress.of(List.of());
 
-	public McBuildSink(PlacementJob job, Consumer<Brief> onBrief, Consumer<String> onFinish) {
+	public McBuildSink(PlacementJob job, Consumer<Brief> onBrief, Consumer<String> onFinish, Consumer<MovingPart> onAnimate) {
 		this.job = job;
 		this.onBrief = onBrief;
 		this.onFinish = onFinish;
+		this.onAnimate = onAnimate;
 	}
 
 	/** The phase in progress, e.g. "walls (2/7)", for the status line. Any thread. */
@@ -45,6 +57,11 @@ public final class McBuildSink implements BuildSink {
 	@Override
 	public void queue(List<Placement> batch) {
 		job.enqueue(batch);
+	}
+
+	@Override
+	public void animate(MovingPart part) {
+		onAnimate.accept(part);
 	}
 
 	/** Blocks the backend's thread until the job has placed everything queued, or for at most the checkpoint timeout. */
@@ -85,5 +102,28 @@ public final class McBuildSink implements BuildSink {
 	@Override
 	public void finish(String summary) {
 		onFinish.accept(summary);
+	}
+
+	@Override
+	public void gadget(GadgetUse use) {
+		gadgets.add(use);
+	}
+
+	/** The gadgets this build placed. */
+	public List<GadgetUse> gadgets() {
+		return List.copyOf(gadgets);
+	}
+
+	/** A gadget cleared away: this build's is no longer one it placed; an earlier build's goes on the list. */
+	@Override
+	public void gadgetGone(GadgetUse use) {
+		if (!gadgets.remove(use)) {
+			gone.add(use);
+		}
+	}
+
+	/** The earlier builds' gadgets this build cleared away. */
+	public List<GadgetUse> gone() {
+		return List.copyOf(gone);
 	}
 }

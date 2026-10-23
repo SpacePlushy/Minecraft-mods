@@ -28,7 +28,7 @@ import io.palmisano.aibuilder.core.request.SizeTier;
 public record AiBuilderConfig(String backend, String model, String effort, String claudePath, Map<SizeTier, Long> sizeLimits,
 		int blocksPerTick, boolean animateBuild, int maxToolIterations, long maxTokensPerBuild, int maxBuildMinutes, boolean requireOp,
 		int opLevel, List<String> allowedPlayers, int rateLimitPerHour, int undoHistorySize, boolean protectPlayerBlocks, int siteGap,
-		List<String> bannedBlocks) {
+		List<String> bannedBlocks, int maxMovingBlocks, boolean movingParts) {
 	public static final List<String> BACKENDS = List.of("claude_code", "scripted");
 	public static final List<String> EFFORTS = List.of("low", "medium", "high", "xhigh", "max");
 	/** With animate_build off, how many times more blocks a tick (the per-tick time cap still holds). */
@@ -36,7 +36,8 @@ public record AiBuilderConfig(String backend, String model, String effort, Strin
 
 	public static final AiBuilderConfig DEFAULT = new AiBuilderConfig("claude_code", "claude-opus-5-5", "high", "", defaultLimits(),
 			Tunables.BLOCKS_PER_TICK, true, Tunables.MAX_TOOL_CALLS, Tunables.MAX_OUTPUT_TOKENS, Tunables.MAX_BUILD_MINUTES, true, 2, List.of(),
-			20, Tunables.UNDO_HISTORY, true, Tunables.SITE_GAP, Validator.DEFAULT_BANNED.stream().sorted().toList());
+			20, Tunables.UNDO_HISTORY, true, Tunables.SITE_GAP, Validator.DEFAULT_BANNED.stream().sorted().toList(), Tunables.MAX_MOVING_BLOCKS,
+			true);
 
 	public record Loaded(AiBuilderConfig config, List<String> warnings) {
 	}
@@ -91,7 +92,9 @@ public record AiBuilderConfig(String backend, String model, String effort, Strin
 				r.bool("protect_player_blocks", d.protectPlayerBlocks),
 				(int) r.number("site_gap", d.siteGap, 1, 16),
 				// A list of nothing but typos must not unban TNT and fire; an empty list is the owner's choice (M6 review).
-				r.list("banned_blocks", d.bannedBlocks, AiBuilderConfig::blockId, true));
+				r.list("banned_blocks", d.bannedBlocks, AiBuilderConfig::blockId, true),
+				(int) r.number("max_moving_blocks", d.maxMovingBlocks, 0, Tunables.MAX_MOVING_BLOCKS_CEILING),
+				r.bool("moving_parts", d.movingParts));
 		for (String key : o.keySet()) {
 			if (!key.startsWith("_") && !Reader.KEYS.contains(key)) {
 				warnings.add("config/aibuilder.json: unknown key \"" + key + "\" ignored");
@@ -132,6 +135,10 @@ public record AiBuilderConfig(String backend, String model, String effort, Strin
 		o.addProperty("site_gap", siteGap);
 		o.addProperty("_comment_banned_blocks", "Never placed. Unbreakable blocks (bedrock, barriers, command blocks…) are never placed anyway.");
 		o.add("banned_blocks", strings(bannedBlocks));
+		o.addProperty("_comment_moving_parts", "Moving parts (wings that flap, a windmill that turns) are displays, one an entity each: at most "
+				+ "max_moving_blocks a build. moving_parts false stops them all where they are, until it's true again.");
+		o.addProperty("max_moving_blocks", maxMovingBlocks);
+		o.addProperty("moving_parts", movingParts);
 		return new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(o) + "\n";
 	}
 
@@ -162,7 +169,8 @@ public record AiBuilderConfig(String backend, String model, String effort, Strin
 	private static final class Reader {
 		static final Set<String> KEYS = Set.of("backend", "model", "effort", "claude_path", "size_limits", "blocks_per_tick", "animate_build",
 				"max_tool_iterations", "max_tokens_per_build", "max_build_minutes", "require_op", "op_level", "allowed_players",
-				"rate_limit_per_hour", "undo_history_size", "protect_player_blocks", "site_gap", "banned_blocks");
+				"rate_limit_per_hour", "undo_history_size", "protect_player_blocks", "site_gap", "banned_blocks", "max_moving_blocks",
+				"moving_parts");
 
 		private final JsonObject o;
 		private final List<String> warnings;

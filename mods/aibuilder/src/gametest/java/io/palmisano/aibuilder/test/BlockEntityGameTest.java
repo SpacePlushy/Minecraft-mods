@@ -47,6 +47,20 @@ import net.minecraft.world.phys.AABB;
 
 /** place_block_entity in a real world (spec §8, §10): what each block entity ends up holding, and item frames' undo. */
 public class BlockEntityGameTest {
+	/** The game's own dispense behaviours: what a dispenser pours, shoots, places or uses, and what it simply drops. */
+	@GameTest
+	public void theGamesDispenseBehavioursAreKnown(GameTestHelper helper) {
+		McItemCatalog items = new McItemCatalog(helper.getLevel().registryAccess(), Validator.DEFAULT_BANNED);
+		for (String id : List.of("minecraft:lava_bucket", "minecraft:water_bucket", "minecraft:arrow", "minecraft:fire_charge", "minecraft:bone_meal",
+				"minecraft:minecart", "minecraft:flint_and_steel", "minecraft:iron_chestplate")) {
+			helper.assertTrue(items.dispenses(id), id + " should dispense on its own");
+		}
+		for (String id : List.of("minecraft:cobblestone", "minecraft:diamond", "minecraft:bread", "minecraft:redstone")) {
+			helper.assertFalse(items.dispenses(id), id + " should simply drop");
+		}
+		helper.succeed();
+	}
+
 	private static ArenaBuild start(GameTestHelper helper, String calls) {
 		return ArenaBuilds.start(helper, Facing.SOUTH, "{\"calls\": [{\"tool\": \"submit_brief\", \"args\": {\"title\": \"dressing\", \"style\": \"test\"}},"
 				+ calls + ",{\"tool\": \"finish\", \"args\": {\"summary\": \"dressed\"}}]}", Occupancy.players(helper.getLevel()), Tunables.BLOCKS_PER_TICK);

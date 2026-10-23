@@ -10,6 +10,7 @@ import java.util.stream.IntStream;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import io.palmisano.aibuilder.core.gadgets.GadgetUse;
 import io.palmisano.aibuilder.AiBuilderMod;
 import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.Pos;
@@ -35,6 +36,13 @@ public final class SessionStore extends SavedData {
 		return new Pos(p.getX(), p.getY(), p.getZ());
 	}, pos -> BlockPos.asLong(pos.x(), pos.y(), pos.z()));
 
+	private static final Codec<GadgetUse> GADGET = RecordCodecBuilder.create(i -> i.group(
+			Codec.STRING.fieldOf("kind").forGetter(GadgetUse::kind),
+			Codec.STRING.fieldOf("options").forGetter(GadgetUse::options),
+			POS.fieldOf("at").forGetter(GadgetUse::at),
+			Codec.STRING.fieldOf("facing").forGetter(GadgetUse::facing),
+			Codec.INT.fieldOf("build").forGetter(GadgetUse::build)).apply(i, GadgetUse::new));
+
 	private static final Codec<BuildSession> SESSION = RecordCodecBuilder.create(i -> i.group(
 			Codec.STRING.fieldOf("dimension").forGetter(BuildSession::dimension),
 			Codec.STRING.fieldOf("title").forGetter(BuildSession::title),
@@ -45,7 +53,11 @@ public final class SessionStore extends SavedData {
 			Codec.STRING.fieldOf("claude_session").forGetter(BuildSession::claudeSession),
 			Codec.STRING.listOf().fieldOf("prompts").forGetter(BuildSession::prompts),
 			Codec.INT.fieldOf("builds").forGetter(BuildSession::builds),
-			Codec.BOOL.fieldOf("last_undone").forGetter(BuildSession::lastUndone)).apply(i, BuildSession::new));
+			Codec.BOOL.fieldOf("last_undone").forGetter(BuildSession::lastUndone),
+			// Saved before moving parts: none.
+			Codec.STRING.optionalFieldOf("moving_build", "").forGetter(BuildSession::movingBuild),
+			// Saved before gadgets: none.
+			GADGET.listOf().optionalFieldOf("gadgets", List.of()).forGetter(BuildSession::gadgets)).apply(i, BuildSession::new));
 
 	private record Entry(UUID player, BuildSession session) {
 		static final Codec<Entry> CODEC = RecordCodecBuilder.create(i -> i.group(

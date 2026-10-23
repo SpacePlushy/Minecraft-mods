@@ -331,6 +331,23 @@ class ToolExecutorTest {
 		assertTrue(result.text().contains("lava_near_flammable"), result.text());
 	}
 
+	/**
+	 * A dispenser holds only what it would simply drop (spec v2 §5.5): a lava bucket would pour out, so it's refused;
+	 * cobblestone it takes, and a dropper, which only ever drops, takes the lava bucket too.
+	 */
+	@Test
+	void aDispenserHoldsOnlyWhatItWouldDrop() {
+		ToolResult lava = briefed().call("place_block_entity", json("{\"pos\":[0,0,2],\"block\":\"dispenser\",\"container\":{\"items\":"
+				+ "[{\"item\":\"cobblestone\",\"count\":5},{\"item\":\"lava_bucket\"}]}}"));
+		assertTrue(lava.isError() && lava.text().contains("lava_bucket") && lava.text().contains("dropper"), lava.text());
+		ToolResult stone = briefed().call("place_block_entity", json("{\"pos\":[0,0,2],\"block\":\"dispenser\",\"container\":{\"items\":"
+				+ "[{\"item\":\"cobblestone\",\"count\":64}]}}"));
+		assertFalse(stone.isError(), stone.text());
+		ToolResult dropper = briefed().call("place_block_entity", json("{\"pos\":[0,0,2],\"block\":\"dropper\",\"container\":{\"items\":"
+				+ "[{\"item\":\"lava_bucket\"}]}}"));
+		assertFalse(dropper.isError(), dropper.text());
+	}
+
 	/** place_block_entity's data rides with its block (spec §8). */
 	@Test
 	void aSignGoesInWithItsText() {

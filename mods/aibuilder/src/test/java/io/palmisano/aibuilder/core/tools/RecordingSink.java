@@ -16,7 +16,24 @@ public class RecordingSink implements BuildSink {
 	public volatile Runnable onAwait = () -> {
 	};
 	public volatile boolean capReached;
+	/** Each part's motion, as animate gave it. */
+	public final List<io.palmisano.aibuilder.core.anim.MovingPart> animated = new CopyOnWriteArrayList<>();
 	public volatile long pending;
+	/** Each gadget placed, as the session will keep it. */
+	public final List<io.palmisano.aibuilder.core.gadgets.GadgetUse> gadgets = new CopyOnWriteArrayList<>();
+
+	@Override
+	public void gadget(io.palmisano.aibuilder.core.gadgets.GadgetUse use) {
+		gadgets.add(use);
+	}
+
+	/** Each gadget cleared away, as the session will forget it. */
+	public final List<io.palmisano.aibuilder.core.gadgets.GadgetUse> gone = new CopyOnWriteArrayList<>();
+
+	@Override
+	public void gadgetGone(io.palmisano.aibuilder.core.gadgets.GadgetUse use) {
+		gone.add(use);
+	}
 
 	@Override
 	public boolean capReached() {
@@ -47,6 +64,11 @@ public class RecordingSink implements BuildSink {
 	@Override
 	public void awaitPlaced() {
 		onAwait.run();
+	}
+
+	@Override
+	public void animate(io.palmisano.aibuilder.core.anim.MovingPart part) {
+		animated.add(part);
 	}
 
 	@Override

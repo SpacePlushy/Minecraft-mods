@@ -3,10 +3,12 @@ package io.palmisano.aibuilder.world;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import io.palmisano.aibuilder.core.blocks.PlacementPass;
@@ -17,29 +19,38 @@ import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.RestoreDecision;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Display;
 import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LeverBlock;
+import net.minecraft.world.level.block.piston.PistonBaseBlock;
+import net.minecraft.world.level.block.piston.PistonHeadBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.TagValueInput;
 
 /**
- * Takes a build back (spec §10): first the item frames it hung (so none drops when its wall goes), then every position
- * that still holds the block the build left there, with the same block-entity data, gets its original back, contents
- * included; anything the player has changed since stays and is counted. Supports first, bottom-up, with the build's
+ * Takes a build back (spec §10): first the item frames it hung (so none drops when its wall goes) and its moving parts'
+ * displays (spec v2 §4.1), then every position that still holds the block the build left there, with the same
+ * block-entity data, gets its original back, contents included; anything the player has changed since stays and is
+ * counted. Supports first, bottom-up, with the build's
  * own flags, then the finalize pass. Keeps every chunk the journal touches loaded and waits for them (and for their
  * entities, which load on their own), so it works however far away the build is.
  */
 public final class UndoRunner implements Tickable {
-	public record UndoResult(int restored, int kept) {
+	/** {@code unreached}: moving blocks whose chunks' entities didn't load in time; the build stays to undo again. */
+	public record UndoResult(int restored, int kept, int unreached) {
 	}
 
 	private final ServerLevel level;
 	private final UndoJournal<BlockState, CompoundTag> journal;
+	private final AnimationStore animations;
 	private final int blocksPerTick;
 	private final List<Pos> order;
 	private final Set<ChunkPos> chunks;
@@ -53,12 +64,29 @@ public final class UndoRunner implements Tickable {
 	private int next;
 	private int restored;
 	private int kept;
+	private int unreached;
+	/** 0 before the levers go back; then the game time the machine has settled by (-1: none flipped). */
+	private long settleUntil;
+	private boolean pistonsIn;
+	private final Occupancy occupancy;
 	private boolean loggedFailure;
 
-	/** Server thread: the tickets go on here. */
+	/** Server thread: the tickets go on here. The build's moving parts are the world's. */
 	public UndoRunner(ServerLevel level, UndoJournal<BlockState, CompoundTag> journal, int blocksPerTick) {
+		this(level, journal, blocksPerTick, AnimationStore.get(level.getServer()));
+	}
+
+	/** Server thread: the tickets go on here; the displays taken down are forgotten in {@code animations}. */
+	public UndoRunner(ServerLevel level, UndoJournal<BlockState, CompoundTag> journal, int blocksPerTick, AnimationStore animations) {
+		this(level, journal, blocksPerTick, animations, Occupancy.players(level));
+	}
+
+	/** {@code occupancy}: where players stand, which no lever undo flips may push a piston into. */
+	public UndoRunner(ServerLevel level, UndoJournal<BlockState, CompoundTag> journal, int blocksPerTick, AnimationStore animations, Occupancy occupancy) {
 		this.level = level;
+		this.occupancy = occupancy;
 		this.journal = journal;
+		this.animations = animations;
 		this.blocksPerTick = blocksPerTick;
 		// Each position's pass worked out once: in the comparator it ran on every comparison (seconds for a 350k undo).
 		Map<Pos, PlacementPass> passes = new HashMap<>();
@@ -67,6 +95,7 @@ public final class UndoRunner implements Tickable {
 		Set<ChunkPos> touched = new LinkedHashSet<>();
 		order.forEach(p -> touched.add(ChunkPos.containing(Positions.toBlockPos(p))));
 		journal.spawned().forEach(s -> frameChunks.add(ChunkPos.containing(Positions.toBlockPos(s.pos()))));
+		journal.reshown().forEach(r -> frameChunks.add(ChunkPos.containing(Positions.toBlockPos(r.pos()))));
 		touched.addAll(frameChunks);
 		this.chunks = touched;
 		this.loaded = BuildTickets.load(level, chunks);
@@ -85,6 +114,21 @@ public final class UndoRunner implements Tickable {
 		if (!loaded.isDone()) {
 			return false;
 		}
+		if (settleUntil == 0) {
+			// The build's levers back as placed, and the machine left to settle: a door someone opened closes first. Not while
+			// a player stands where a piston would push (a flip would push them): then the pistons are only pulled in, below.
+			List<BlockPos> pistons = new ArrayList<>();
+			MachineRules.addPistons(level, journal, pistons);
+			boolean clear = MachineRules.playerInReach(level, pistons, occupancy) == null;
+			settleUntil = clear && putLeversBack() > 0 ? level.getGameTime() + Tunables.UNDO_SETTLE_TICKS : -1;
+		}
+		if (level.getGameTime() < settleUntil) {
+			return false;
+		}
+		if (!pistonsIn) {
+			pistonsIn = true;
+			retractPistons();
+		}
 		if (!framesDown) {
 			// A chunk's entities load after its blocks; give them a while, then carry on without the ones still away.
 			if (framesDeadline == 0) {
@@ -94,6 +138,14 @@ public final class UndoRunner implements Tickable {
 				return false;
 			}
 			kept += ItemFrames.takeDown(level, journal.spawned());
+			takeDownDisplays();
+			// A refinement's changes to an earlier build's parts: the blocks they showed, the motions they had.
+			for (UndoJournal.Reshown<BlockState> r : journal.reshown()) {
+				if (Displays.show(level, r.display(), r.before()) == null && !entitiesLoaded(r.pos())) {
+					unreached++;
+				}
+			}
+			journal.reanimated().forEach(r -> animations.restore(r.build(), r.before()));
 			framesDown = true;
 		}
 		long deadline = System.nanoTime() + Tunables.TICK_BUDGET_NANOS;
@@ -110,7 +162,7 @@ public final class UndoRunner implements Tickable {
 			return false;
 		}
 		BuildTickets.unload(level, chunks);
-		result.complete(new UndoResult(restored, kept));
+		result.complete(new UndoResult(restored, kept, unreached));
 		return true;
 	}
 
@@ -118,6 +170,96 @@ public final class UndoRunner implements Tickable {
 	public void failed(RuntimeException error) {
 		BuildTickets.unload(level, chunks);
 		result.completeExceptionally(error);
+	}
+
+	/**
+	 * Takes the build's displays down, and forgets in the moving builds those taken down and those already gone (not
+	 * there though their chunk's entities are loaded). One whose chunk's entities didn't load in time is kept, and
+	 * counted: the build stays to undo again.
+	 */
+	private void takeDownDisplays() {
+		Set<UUID> gone = new HashSet<>();
+		for (UndoJournal.Spawned s : journal.spawned()) {
+			if (!s.kind().equals(UndoJournal.Spawned.DISPLAY)) {
+				continue;
+			}
+			if (level.getEntity(s.id()) instanceof Display.BlockDisplay display) {
+				display.discard();
+				gone.add(s.id());
+			} else if (entitiesLoaded(s.pos())) {
+				gone.add(s.id());
+			} else {
+				unreached++;
+			}
+		}
+		if (!gone.isEmpty()) {
+			animations.forget(gone);
+		}
+	}
+
+	/** Flips each of the build's levers that's still the build's back to how it was placed; how many it flipped. */
+	private int putLeversBack() {
+		int flipped = 0;
+		for (Map.Entry<Pos, Boolean> lever : journal.levers().entrySet()) {
+			BlockPos pos = Positions.toBlockPos(lever.getKey());
+			if (!level.isLoaded(pos) || !journal.has(lever.getKey())) {
+				continue;
+			}
+			BlockState state = level.getBlockState(pos);
+			if (state.getBlock() instanceof LeverBlock block && "minecraft:lever".equals(journal.writtenBlock(lever.getKey()))
+					&& state.getValue(LeverBlock.POWERED) != lever.getValue()) {
+				block.pull(state, level, pos, null);
+				flipped++;
+			}
+		}
+		return flipped;
+	}
+
+	/**
+	 * Each of the build's pistons that stands extended once its levers are back (one a torch holds out, a door held
+	 * shut) goes back retracted, as placed, with the build's flags: its head goes, and a sticky piston's block comes back
+	 * into the head's spot, as its pull would bring it. Then restoring the blocks leaves nothing of the machine behind.
+	 */
+	private void retractPistons() {
+		for (Pos at : journal.positions()) {
+			BlockPos pos = Positions.toBlockPos(at);
+			if (!level.isLoaded(pos)) {
+				continue;
+			}
+			BlockState state = level.getBlockState(pos);
+			String id = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+			if (!(state.getBlock() instanceof PistonBaseBlock) || !state.getValue(PistonBaseBlock.EXTENDED) || !id.equals(journal.writtenBlock(at))) {
+				continue;
+			}
+			Direction facing = state.getValue(PistonBaseBlock.FACING);
+			BlockPos head = pos.relative(facing);
+			BlockPos ahead = head.relative(facing);
+			level.setBlock(pos, state.setValue(PistonBaseBlock.EXTENDED, false), PlacementJob.FLAGS);
+			if (!(level.getBlockState(head).getBlock() instanceof PistonHeadBlock)) {
+				continue;
+			}
+			BlockState pulled = level.isLoaded(ahead) ? level.getBlockState(ahead) : Blocks.AIR.defaultBlockState();
+			boolean pull = state.is(Blocks.STICKY_PISTON) && !pulled.isAir()
+					&& PistonBaseBlock.isPushable(pulled, level, ahead, facing.getOpposite(), false, facing);
+			level.setBlock(head, pull ? pulled : Blocks.AIR.defaultBlockState(), PlacementJob.FLAGS);
+			if (pull) {
+				level.setBlock(ahead, Blocks.AIR.defaultBlockState(), PlacementJob.FLAGS);
+			}
+		}
+	}
+
+	private boolean entitiesLoaded(Pos pos) {
+		return level.areEntitiesLoaded(ChunkPos.containing(Positions.toBlockPos(pos)).pack());
+	}
+
+	/** A position given back what it held before a build, block entity data included, with the build's own flags. */
+	static void putBack(ServerLevel level, BlockPos pos, BlockState original, CompoundTag data) {
+		level.setBlock(pos, original, PlacementJob.FLAGS);
+		if (data != null && level.getBlockEntity(pos) instanceof BlockEntity restored) {
+			restored.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), data));
+			restored.setChanged();
+			level.sendBlockUpdated(pos, original, original, Block.UPDATE_CLIENTS);
+		}
 	}
 
 	private void restore(Pos at) {
@@ -139,12 +281,7 @@ public final class UndoRunner implements Tickable {
 				kept++;
 				return;
 			}
-			level.setBlock(pos, original, PlacementJob.FLAGS);
-			if (data != null && level.getBlockEntity(pos) instanceof BlockEntity restoredEntity) {
-				restoredEntity.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), data));
-				restoredEntity.setChanged();
-				level.sendBlockUpdated(pos, original, original, Block.UPDATE_CLIENTS);
-			}
+			putBack(level, pos, original, data);
 			restored++;
 			restoredPositions.add(pos);
 		} catch (RuntimeException e) {
