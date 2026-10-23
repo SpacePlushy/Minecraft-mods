@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.config.AiBuilderConfig;
 import io.palmisano.aibuilder.core.frame.Facing;
+import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.survey.BuildProblems;
 import io.palmisano.aibuilder.test.ArenaBuilds.ArenaBuild;
@@ -19,8 +20,10 @@ import io.palmisano.aibuilder.world.BuildCheck;
 import io.palmisano.aibuilder.world.JobScheduler;
 import io.palmisano.aibuilder.world.McWorldReader;
 import io.palmisano.aibuilder.world.Occupancy;
+import io.palmisano.aibuilder.world.Positions;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.world.level.block.Blocks;
 
 /** check_build (spec §8): what it finds in a real world, and that it reads a big build over ticks. */
 public class CheckBuildGameTest {
@@ -116,6 +119,65 @@ public class CheckBuildGameTest {
 			String report = report(helper, build);
 			helper.assertTrue(report.contains("door (1)") && report.contains("(5, 1, 4)"), "only the door with stone at its feet: " + report);
 		});
+	}
+
+	/**
+	 * A slab step at the feet with a block two above: standing on the slab takes 2.3 blocks of room, so that door can't
+	 * be walked through. A slab with nothing over it is fine, and so is a carpet under a block (the minors' review).
+	 */
+	@GameTest(structure = ARENA, maxTicks = 1200, skyAccess = true)
+	public void aSlabStepUnderALowCeilingBlocksADoor(GameTestHelper helper) {
+		ArenaBuild build = start(helper, """
+				{"tool": "fill", "args": {"box": [-6, 1, 4, 6, 3, 4], "block": "stone"}},
+				{"tool": "set_blocks", "args": {"blocks": [
+				  {"pos": [-4, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
+				  {"pos": [-4, 1, 5], "block": "oak_slab", "state": {"type": "bottom"}}, {"pos": [-4, 3, 5], "block": "stone"},
+				  {"pos": [-1, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
+				  {"pos": [-1, 1, 5], "block": "oak_slab", "state": {"type": "bottom"}},
+				  {"pos": [2, 1, 4], "block": "oak_door", "state": {"facing": "forward"}},
+				  {"pos": [2, 1, 5], "block": "white_carpet"}, {"pos": [2, 3, 5], "block": "stone"}]}}""");
+		helper.succeedWhen(() -> {
+			String report = report(helper, build);
+			helper.assertTrue(report.contains("door (1)") && report.contains("(-4, 1, 4)"), "the door behind the slab step under a block: " + report);
+			helper.assertFalse(report.contains("(-1, 1, 4)") || report.contains("(2, 1, 4)"), "a door that can be walked through: " + report);
+		});
+	}
+
+	/**
+	 * What the build placed while a check read (a retry joins a check a timeout left running) is read too before it
+	 * answers: here a torch on nothing, journaled and written mid-check (the minors' review).
+	 */
+	@GameTest(structure = ARENA, maxTicks = 2400, skyAccess = true)
+	public void aCheckReadsWhatWasPlacedWhileItRead(GameTestHelper helper) {
+		ArenaBuild build = ArenaBuilds.start(helper, Facing.SOUTH, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "cube", "style": "test"}},
+				  {"tool": "fill", "args": {"box": [-1, 1, 3, 1, 3, 5], "block": "stone"}},
+				  {"tool": "finish", "args": {"summary": "a cube"}}
+				]}""", Occupancy.players(helper.getLevel()), Tunables.BLOCKS_PER_TICK);
+		AtomicReference<BuildCheck> check = new AtomicReference<>();
+		Pos torch = new Pos(4, 3, 4);
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenExecute(() -> {
+					check.set(new BuildCheck(helper.getLevel(), build.frame(), ArenaBuilds.ALLOWED, build.journal(), 1));
+					JobScheduler.add(check.get());
+				})
+				.thenIdle(5)
+				.thenExecute(() -> {
+					helper.assertFalse(check.get().result().isDone(), "the check was done before anything more was placed");
+					Pos at = build.frame().toWorld(torch);
+					build.journal().beforeWrite(at, Blocks.AIR.defaultBlockState(), null);
+					helper.getLevel().setBlock(Positions.toBlockPos(at), Blocks.TORCH.defaultBlockState(), 18);
+					build.journal().afterWrite(at, "minecraft:torch", 0);
+				})
+				.thenWaitUntil(() -> helper.assertTrue(check.get().result().isDone(), "the check hasn't finished"))
+				.thenExecute(() -> {
+					List<BuildProblems.Problem> problems = check.get().result().join();
+					helper.assertTrue(problems.stream().anyMatch(p -> p.kind() == BuildProblems.Kind.UNSUPPORTED && p.pos().equals(torch)),
+							"the torch placed while it read: " + problems);
+				})
+				.thenSucceed();
 	}
 
 	/** Nothing spawns on glass: a dark room with a glass floor has nowhere monsters could appear. */

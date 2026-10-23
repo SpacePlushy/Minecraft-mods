@@ -20,6 +20,14 @@ public record BuildStatus(String title, List<String> phases, int phase, int plac
 		note = cut(note);
 	}
 
+	/**
+	 * The panel for a running build: a title that's nothing as plain text (no brief yet, or only formatting codes) shows
+	 * {@code untitled}, as an empty one would be {@link #CLEAR} and take the panel down.
+	 */
+	public static BuildStatus showing(String title, String untitled, List<String> phases, int phase, int placed, int callsUsed, int callsMax, String note) {
+		return new BuildStatus(cut(title).isEmpty() ? untitled : title, phases, phase, placed, callsUsed, callsMax, note);
+	}
+
 	public boolean isClear() {
 		return title.isEmpty();
 	}

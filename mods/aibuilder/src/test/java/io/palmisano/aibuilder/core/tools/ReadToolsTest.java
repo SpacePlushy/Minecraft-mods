@@ -100,6 +100,23 @@ class ReadToolsTest {
 				+ " blocks as they are now)."), text.lines().findFirst().orElse(""));
 	}
 
+	/** Wider than the site, the survey is read now, so the build's blocks are in it: the text says so (the minors' review). */
+	@Test
+	void aWiderSurveySaysItsReadNow() {
+		String first = tools().call("survey_area", json("{\"radius\":30}")).text().lines().findFirst().orElse("");
+		assertTrue(first.startsWith("Read now, wider than the site as this build began: the blocks it has placed are in it."), first);
+	}
+
+	/** Where the player stands is the survey's second read: if that times out, the terrain still comes (the minors' review). */
+	@Test
+	void aSurveyComesWithoutThePlayersPosition() {
+		world.factsFail = new WorldReader.Unreadable("reading it took longer than 5 seconds");
+		ToolResult result = tools().call("survey_area", json("{}"));
+		assertFalse(result.isError(), result.text());
+		assertTrue(result.text().lines().findFirst().orElse("").endsWith(" Where the player is couldn't be read just now."), result.text());
+		assertTrue(result.text().contains("\nSurvey: 41×41 columns"), result.text());
+	}
+
 	/** In a refinement the player may stand inside the build: the survey says where (spec §5.5). */
 	@Test
 	void aSurveySaysWhereThePlayerIs() {

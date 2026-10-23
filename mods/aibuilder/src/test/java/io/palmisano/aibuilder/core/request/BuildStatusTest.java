@@ -48,4 +48,14 @@ class BuildStatusTest {
 		assertTrue(BuildStatus.CLEAR.isClear());
 		assertFalse(new BuildStatus("Cottage", List.of(), 0, 0, 0, 1, "").isClear());
 	}
+
+	/** A title that's nothing once plain (only formatting codes, or none yet) shows the untitled label: the panel stays up (the minors' review). */
+	@Test
+	void aTitleOfOnlyFormattingCodesKeepsThePanelUp() {
+		BuildStatus codes = BuildStatus.showing("\u00a7a\u00a7l", "AI Builder", List.of(), 0, 0, 1, 150, "");
+		assertFalse(codes.isClear());
+		assertEquals("AI Builder", codes.title());
+		assertEquals("AI Builder", BuildStatus.showing("", "AI Builder", List.of(), 0, 0, 1, 150, "").title());
+		assertEquals("Castle", BuildStatus.showing("Castle", "AI Builder", List.of(), 0, 0, 1, 150, "").title());
+	}
 }

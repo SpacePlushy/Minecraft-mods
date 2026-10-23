@@ -79,6 +79,64 @@ public class PermissionGameTest {
 	}
 
 	/**
+	 * /aibuild cancel while an undo runs says so: an undo can't be stopped, but there is something running (the minors'
+	 * review). In a test environment of its own, as it builds and undoes through the shared manager.
+	 */
+	@SuppressWarnings("removal")
+	@GameTest(environment = "aibuilder-test:alone_undo", maxTicks = 2400)
+	public void aCancelDuringAnUndoSaysTheUndoIsRunning(GameTestHelper helper) {
+		ServerPlayer owner = helper.makeMockServerPlayerInLevel();
+		BuildManager manager = BuildManager.of(helper.getLevel().getServer());
+		AiBuilderConfig allowed = AiBuilderConfig.load("{\"allowed_players\": [\"" + owner.getUUID() + "\"], \"require_op\": false}").config();
+		TestHooks.config = allowed;
+		try {
+			helper.assertValueEqual(manager.startTest(owner), BuildManager.Outcome.STARTED, "the demo build");
+		} finally {
+			TestHooks.config = null;
+		}
+		helper.startSequence()
+				.thenWaitUntil(() -> helper.assertFalse(manager.busy(), "the demo is still building"))
+				.thenExecute(() -> {
+					TestHooks.config = allowed;
+					try {
+						helper.assertValueEqual(manager.undo(owner), BuildManager.Outcome.STARTED, "the undo");
+						helper.assertValueEqual(manager.cancel(owner), BuildManager.Outcome.BUSY, "a cancel while the undo runs");
+					} finally {
+						TestHooks.config = null;
+					}
+				})
+				.thenWaitUntil(() -> helper.assertFalse(manager.busy(), "the undo never finished"))
+				.thenSucceed();
+	}
+
+	/**
+	 * While Claude Code is being checked for a build, the build is its owner's too: another allowed player's cancel is
+	 * refused and the check goes on; the owner's stops it (the minors' review). In a test environment of its own.
+	 */
+	@SuppressWarnings("removal")
+	@GameTest(environment = "aibuilder-test:alone_check", maxTicks = 400)
+	public void onlyTheOwnerStopsTheClaudeCodeCheck(GameTestHelper helper) {
+		ServerPlayer owner = helper.makeMockServerPlayerInLevel();
+		ServerPlayer other = helper.makeMockServerPlayerInLevel();
+		BuildManager manager = BuildManager.of(helper.getLevel().getServer());
+		TestHooks.config = AiBuilderConfig.load("{\"allowed_players\": [\"" + owner.getUUID() + "\", \"" + other.getUUID() + "\"],"
+				+ " \"require_op\": false}").config();
+		try {
+			manager.submit(owner, "a hut", SizeTier.SMALL);
+			helper.assertTrue(manager.busy(), "the Claude Code check didn't start");
+			helper.assertValueEqual(manager.cancel(other), BuildManager.Outcome.REFUSED, "someone else's cancel during the check");
+			helper.assertTrue(manager.busy(), "someone else's cancel stopped the check");
+			helper.assertValueEqual(manager.cancel(owner), BuildManager.Outcome.DONE, "the owner's cancel during the check");
+		} finally {
+			if (manager.busy()) {
+				manager.cancel(owner);
+			}
+			TestHooks.config = null;
+		}
+		helper.succeedWhen(() -> helper.assertFalse(manager.busy(), "the owner's cancel didn't stop the check"));
+	}
+
+	/**
 	 * The owner is the singleplayer profile's UUID, never its name: an offline LAN guest can take the host's name (M2
 	 * review). The test server has no owner, so this sets one briefly; the other tests' mock players have other ids.
 	 */

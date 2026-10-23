@@ -129,6 +129,7 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 				aPromptWaitsForTheLastProcess(ctx, server, session);
 				GameTestSupport.awaitChatCount(ctx, "Done: ", 5, 600);
 				logsNeverHoldTheToken(ctx);
+				aFailureLineIsScrubbed(ctx, server);
 				offlineMidBuildEndsCleanly(ctx);
 				aLostSessionBuildsNewNextTime(ctx, server, owner);
 
@@ -253,6 +254,28 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 	 * The Wi-Fi goes off mid-build (spec §18's M6 check): the action bar shows Claude Code's retries, then chat says the
 	 * connection went, with [Undo], and what went in before it went comes off again.
 	 */
+	/**
+	 * A failure line that quotes Claude Code holds neither the build's token nor a key (spec §16; the minors' review):
+	 * the fake stops with both in its error text, and chat shows it scrubbed. Nothing was placed, so nothing to undo.
+	 */
+	private static void aFailureLineIsScrubbed(ClientGameTestContext ctx, TestServerContext server) {
+		Path tokenFile = FabricLoader.getInstance().getGameDir().resolve("aibuilder-test-token");
+		try {
+			Files.deleteIfExists(tokenFile);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "leak-stop", "FAKE_CLAUDE_TOKEN_FILE", tokenFile.toString());
+		int stopped = GameTestSupport.count("Claude Code stopped: ");
+		GameTestSupport.runPlayerCommand(ctx, "aibuild new a stopped hut");
+		GameTestSupport.awaitChatCount(ctx, "Claude Code stopped: ", stopped + 1, 600);
+		String token = read(tokenFile).strip();
+		check(token.length() >= 32, "the fake never wrote its token: " + token);
+		String line = GameTestSupport.chat().stream().filter(l -> l.startsWith("Claude Code stopped: ")).reduce((a, b) -> b).orElseThrow();
+		check(!line.contains(token) && !line.contains("sk-ant-api03-FAKE") && line.contains("[redacted]"), "the failure line: " + line);
+		server.waitFor(s -> !BuildManager.of(s).lastProcessRunning());
+	}
+
 	private static void offlineMidBuildEndsCleanly(ClientGameTestContext ctx) {
 		// The hut refined above still stands where this one goes: taken back first (after its refinements, too).
 		int undone = GameTestSupport.count("Undone: ");

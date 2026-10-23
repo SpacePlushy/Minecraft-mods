@@ -73,10 +73,11 @@ public final class ToolExecutor {
 	private ProtectionMask protection;
 	private FireRule fire;
 	private boolean briefed;
-	private int siteGap = Tunables.SITE_GAP;
-	/** The build a refinement changes, and its changes so far; "" and null for a new build. */
-	private String refining = "";
-	private Box changes;
+	/** Set (under the lock) before the backend starts, read by get_context outside it: volatile, so it's seen. */
+	private volatile int siteGap = Tunables.SITE_GAP;
+	/** The build a refinement changes, and its changes so far; "" and null for a new build. Set as siteGap is. */
+	private volatile String refining = "";
+	private volatile Box changes;
 	private volatile boolean finished;
 	private volatile CallListener listener = (name, args, result, millis) -> {
 	};
@@ -236,10 +237,21 @@ public final class ToolExecutor {
 		int centreX = Math.floorDiv(allowed.min().x() + allowed.max().x() + 1, 2);
 		int centreZ = Math.floorDiv(allowed.min().z() + allowed.max().z() + 1, 2);
 		TerrainSnapshot snapshot = world.terrain(centreX - radius, centreZ - radius, 2 * radius + 1, 2 * radius + 1);
-		// The site is read once, as the build begins (it decides what's protected); a refinement's player may stand in it.
-		String note = "As the site was when this build began: blocks it has placed since aren't in it (inspect_region shows blocks as they"
-				+ " are now). " + whereThePlayerIs(world.facts());
+		// The site is read once, as the build begins (it decides what's protected); wider than it, the survey is read now.
+		// A refinement's player may stand in it.
+		String when = radius <= fits ? "As the site was when this build began: blocks it has placed since aren't in it (inspect_region shows"
+				+ " blocks as they are now)." : "Read now, wider than the site as this build began: the blocks it has placed are in it.";
+		String note = when + " " + whereThePlayerIsNow();
 		return ToolResult.ok(note + "\n" + SurveyEncoder.encode(snapshot, allowed, Tunables.SURVEY_MAX_CHARS - note.length() - 1));
+	}
+
+	/** Where the player is, for survey_area's note: a read of its own, which may time out though the terrain came. */
+	private String whereThePlayerIsNow() {
+		try {
+			return whereThePlayerIs(world.facts());
+		} catch (WorldReader.Unreadable e) {
+			return "Where the player is couldn't be read just now.";
+		}
 	}
 
 	/** Where the player is, in the frame (spec §5.5); nowhere when they're offline or in another dimension. */
@@ -642,6 +654,10 @@ public final class ToolExecutor {
 			sink.queue(batch);
 		}
 		StringBuilder text = new StringBuilder("Queued ").append(blocks(batch.size())).append('.');
+		if (supersededCount > 0) {
+			text.append(' ').append(supersededCount == 1 ? "1 entry was replaced by a later one for the same spot."
+					: String.format(Locale.ROOT, "%,d", supersededCount) + " entries were replaced by later ones for the same spots.");
+		}
 		if (rejected > 0) {
 			text.append(" Rejected ").append(String.format(Locale.ROOT, "%,d", rejected)).append(':');
 			lines.stream().limit(REJECTION_LINES).forEach(line -> text.append('\n').append(line));

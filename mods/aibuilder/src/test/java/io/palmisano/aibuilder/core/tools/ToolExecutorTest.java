@@ -283,7 +283,7 @@ class ToolExecutorTest {
 		ToolExecutor tools = briefed();
 		ToolResult result = tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,2],\"block\":\"lava\"},"
 				+ "{\"pos\":[0,0,2],\"block\":\"oak_planks\"}]}"));
-		assertEquals("Queued 1 block.", result.text());
+		assertEquals("Queued 1 block. 1 entry was replaced by a later one for the same spot.", result.text());
 		assertEquals(List.of("minecraft:oak_planks"), sink.batches.getFirst().stream().map(p -> p.block().info().id()).toList());
 		ToolResult lava = tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[1,0,2],\"block\":\"lava\"}]}"));
 		assertTrue(lava.text().contains("lava_near_flammable"), "judged as planks: " + lava.text());
