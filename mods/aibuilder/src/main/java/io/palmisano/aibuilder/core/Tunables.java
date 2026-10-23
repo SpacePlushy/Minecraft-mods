@@ -27,6 +27,12 @@ public final class Tunables {
 	public static final int GROUND_SEARCH_DOWN = 64;
 	/** Ticks between action-bar status updates. */
 	public static final int STATUS_INTERVAL_TICKS = 20;
+	/** The status panel (spec §5.3): a title, phase name or note shows at most this many characters (Claude's text). */
+	public static final int HUD_TEXT_MAX = 48;
+	/** Phases the panel lists, at most. */
+	public static final int HUD_PHASES_MAX = 12;
+	/** The panel goes when no status has come for this long (a lost connection, a crash). */
+	public static final int HUD_STALE_SECONDS = 5;
 	/** How often a running build's session record catches up with what it has built (a crash loses at most this). */
 	public static final int SESSION_REFRESH_TICKS = 100;
 	/** How long a checkpoint waits for its blocks to be placed: well inside Claude Code's 120 s MCP timeout. */
@@ -94,6 +100,8 @@ public final class Tunables {
 	public static final int SURVEY_MAX_CHARS = 30_000;
 	/** Blocks one inspect_region call may read (spec §8). */
 	public static final int INSPECT_MAX_BLOCKS = 4096;
+	/** The longest inspect_region text, as the survey's: a line a row, so a tall, narrow box of the most blocks runs past it. */
+	public static final int INSPECT_MAX_CHARS = 30_000;
 	/** How long a read tool waits for the world: a survey (read over ticks), and a region or the facts. */
 	public static final int SURVEY_TIMEOUT_SECONDS = 60;
 	public static final int READ_TIMEOUT_SECONDS = 10;
@@ -108,6 +116,8 @@ public final class Tunables {
 	public static final int CHECK_BUILD_LIGHT_WAIT_SECONDS = 5;
 	/** check_build's "indoors": sky light at most this (open sky is 15, under an overhang in the open 14). */
 	public static final int CHECK_BUILD_INDOOR_SKY_LIGHT = 13;
+	/** Without a sky (the Nether, its ceiling over every spot), a spot is indoors under a block at most this far above it. */
+	public static final int CHECK_ROOF_SCAN = 16;
 	/** How long undo waits for a far build's item frames to load (entities load after their chunk) before going on. */
 	public static final int UNDO_ENTITY_WAIT_SECONDS = 10;
 	/** Placement feel (spec §9): blocks a tick that get a sound and a puff of particles; how loud next to a player's; how many particles. */

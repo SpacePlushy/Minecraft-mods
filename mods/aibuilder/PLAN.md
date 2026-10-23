@@ -69,10 +69,13 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   places a few hundred blocks per tick rather than thousands at once.
 - **Block updates.** Placing a block normally pokes its neighbors: water flows, sand falls, fences connect. The
   mod places with the pokes off and tidies the shapes once at the end.
-- **Networking (payloads).** Client and server talk only in packets. The mod adds two small ones: your prompt
-  (client to server) and the status (server to client, M5).
-- **Mixins.** Patches that change the game's own code as it loads. This design needs none so far, which keeps
-  the mod sturdy across game updates.
+- **Networking (payloads).** Client and server talk only in packets. The mod adds three small ones: your prompt
+  (client to server), the status (server to client, M5) and the screen's mode line (the screen asks, the server
+  answers with the build a prompt would change).
+- **Mixins.** Patches that change the game's own code as it loads. The mod has two: one only reads (who sent a
+  command, so a command block can't speak for the player), and the client's stops a clicked /aibuild (a book's or a
+  sign's link can't send a prompt through your login); the tests have one more (vsync off, so they run while the Mac
+  is locked). Nothing else in the game changes, which keeps the mod sturdy across game updates.
 - **Chunk tickets.** How the server decides which 16×16 chunks stay loaded. The mod holds a temporary one over
   the site while it builds.
 - **GameTests.** Automated tests that run inside a real game world, headless or with a window.
@@ -150,3 +153,11 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   nothing no longer costs an older build its undo; a checkpoint may say a word twice; the screen has its "Stop build"
   and status line (spec §5.1); and the tunable numbers live in `Tunables`. Frankie played it, and AI Builder v1 is
   merged to `main` (pull request #1).
+- **2026-10-22:** The milestones' deferred minor findings that still held are fixed on `aibuilder-minors`, test-first
+  (plan `docs/superpowers/plans/2026-10-22-aibuilder-minors-plan.md`; its ledger, `…-minors-progress.md`, has every
+  ruling and what's still deferred): odd prompts and history files, undo data a removed mod's block can't spoil,
+  set_blocks keeping the last entry for a spot, a survey that says when it was read and where the player is,
+  check_build's doors, Nether roofs and spawn ground, a plain-text status panel, Claude Code's folder on its PATH,
+  waiting on Claude Code's process itself, a build that only its owner stops or follows, and no key in an echo or a
+  log's name. A fresh Opus 5.5 review found two more, both fixed: B while sprinting on a Mac, and another player
+  reading a build's status. Pull request #2.

@@ -63,12 +63,85 @@ class ReadToolsTest {
 		assertTrue(text.contains("149 of 150 tool calls left"), text);
 	}
 
+	/** On a refinement get_context names the build and where its changes are so far (spec §8). */
+	@Test
+	void aRefinementsContextNamesItsBuild() {
+		ToolExecutor tools = tools();
+		tools.refining("Stonehold Castle", Box.of(-5, 0, 2, 5, 12, 14));
+		String text = tools.call("get_context", json("{}")).text();
+		assertTrue(text.contains("\nRefining: Stonehold Castle, the build this session made: its blocks fill x -5..5, y 0..12, z 2..14;"), text);
+		assertTrue(text.contains("y=0 is the ground at the origin, where this build began."), text);
+		assertFalse(text.contains("in front of the player"), text);
+	}
+
+	/** The origin is site_gap ahead of the player, as the config sets it. */
+	@Test
+	void theSiteGapIsTheConfigs() {
+		ToolExecutor tools = tools();
+		tools.siteGap(7);
+		String text = tools.call("get_context", json("{}")).text();
+		assertTrue(text.contains("y=0 is the ground at the origin, 7 blocks in front of the player."), text);
+		assertFalse(text.contains("Refining"), text);
+	}
+
 	/** The default radius is half the tier's size plus 8, centred on the box's footprint. */
 	@Test
 	void surveyUsesTheSnapshot() {
 		String text = tools().call("survey_area", json("{}")).text();
 		assertEquals("terrain -20 -8 41 41", world.requests.getFirst());
-		assertTrue(text.startsWith("Survey: 41×41 columns"), text);
+		assertTrue(text.contains("\nSurvey: 41×41 columns"), text);
+	}
+
+	/** Mid-build, the site survey is still the one read as the build began: the text says so. */
+	@Test
+	void aSurveySaysWhenItWasRead() {
+		String text = tools().call("survey_area", json("{}")).text();
+		assertTrue(text.startsWith("As the site was when this build began: blocks it has placed since aren't in it (inspect_region shows"
+				+ " blocks as they are now)."), text.lines().findFirst().orElse(""));
+	}
+
+	/** Wider than the site, the survey is read now, so the build's blocks are in it: the text says so (the minors' review). */
+	@Test
+	void aWiderSurveySaysItsReadNow() {
+		String first = tools().call("survey_area", json("{\"radius\":30}")).text().lines().findFirst().orElse("");
+		assertTrue(first.startsWith("Read now, wider than the site as this build began: the blocks it has placed are in it."), first);
+	}
+
+	/** Where the player stands is the survey's second read: if that times out, the terrain still comes (the minors' review). */
+	@Test
+	void aSurveyComesWithoutThePlayersPosition() {
+		world.factsFail = new WorldReader.Unreadable("reading it took longer than 5 seconds");
+		ToolResult result = tools().call("survey_area", json("{}"));
+		assertFalse(result.isError(), result.text());
+		assertTrue(result.text().lines().findFirst().orElse("").endsWith(" Where the player is couldn't be read just now."), result.text());
+		assertTrue(result.text().contains("\nSurvey: 41×41 columns"), result.text());
+	}
+
+	/** In a refinement the player may stand inside the build: the survey says where (spec §5.5). */
+	@Test
+	void aSurveySaysWhereThePlayerIs() {
+		String first = tools().call("survey_area", json("{}")).text().lines().findFirst().orElse("");
+		assertTrue(first.endsWith(" The player stands at x 0, y 1, z -3."), first);
+	}
+
+	/** The owner offline, or in another dimension: no position, rather than one made up. */
+	@Test
+	void noPlayerIsNoPosition() {
+		world.facts = new WorldFacts("minecraft:overworld", "minecraft:plains", "morning", "clear", "minecraft:grass_block", null);
+		String context = tools().call("get_context", json("{}")).text();
+		assertTrue(context.contains("\nThe player isn't in this world right now.\n"), context);
+		assertFalse(context.contains("stands at"), context);
+		String survey = tools().call("survey_area", json("{}")).text().lines().findFirst().orElse("");
+		assertTrue(survey.endsWith(" The player isn't in this world right now."), survey);
+	}
+
+	/** A line of text a row: a tall, narrow box would run past what one read returns. */
+	@Test
+	void aRegionTooLongToReadIsRefused() {
+		ToolResult result = tools().call("inspect_region", json("{\"box\":[0,-2048,1,0,2047,1]}"));
+		String first = result.text().lines().findFirst().orElse("");
+		assertTrue(result.isError() && first.startsWith("too_many: "), first);
+		assertTrue(first.contains("look at it in parts"), first);
 	}
 
 	@Test

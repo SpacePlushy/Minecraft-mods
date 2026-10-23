@@ -14,9 +14,17 @@ public final class BuildPrompt {
 	private BuildPrompt() {
 	}
 
-	/** The prompt as the player meant it: outer whitespace removed, inner newlines kept. */
+	/**
+	 * The prompt as the player meant it: outer whitespace removed, inner newlines kept, and half an emoji (a lone
+	 * surrogate, as the screen's box leaves when it cuts one at its limit) dropped, so it never goes out as "?".
+	 */
 	public static String normalize(String raw) {
-		return raw == null ? "" : raw.strip();
+		if (raw == null) {
+			return "";
+		}
+		StringBuilder kept = new StringBuilder(raw.length());
+		raw.codePoints().filter(c -> c < Character.MIN_SURROGATE || c > Character.MAX_SURROGATE).forEach(kept::appendCodePoint);
+		return kept.toString().strip();
 	}
 
 	public static Problem check(String normalized) {

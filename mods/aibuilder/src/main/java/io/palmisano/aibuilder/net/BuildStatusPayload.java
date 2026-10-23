@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import io.palmisano.aibuilder.AiBuilderMod;
+import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.request.BuildStatus;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -39,7 +40,7 @@ public record BuildStatusPayload(BuildStatus status) implements CustomPacketPayl
 
 	private static BuildStatusPayload read(RegistryFriendlyByteBuf buf) {
 		String title = buf.readUtf(WIRE_CHARS);
-		int count = Math.min(buf.readVarInt(), BuildStatus.PHASES_MAX);
+		int count = Math.min(buf.readVarInt(), Tunables.HUD_PHASES_MAX);
 		List<String> phases = new ArrayList<>(count);
 		for (int i = 0; i < count; i++) {
 			phases.add(buf.readUtf(WIRE_CHARS));

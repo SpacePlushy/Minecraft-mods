@@ -7,6 +7,7 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.palmisano.aibuilder.BuildManager;
 import io.palmisano.aibuilder.BuildPermission;
+import io.palmisano.aibuilder.TestHooks;
 import io.palmisano.aibuilder.core.config.AiBuilderConfig;
 import io.palmisano.aibuilder.core.request.BuildRules;
 import io.palmisano.aibuilder.core.request.SizeTier;
@@ -36,6 +37,103 @@ public class PermissionGameTest {
 		// The other gametests' jobs share the scheduler, so ask the manager rather than count jobs.
 		helper.assertFalse(manager.busy(), "something started for a non-owner");
 		helper.succeed();
+	}
+
+	/** Someone who may not build doesn't see what a build is doing either (M6 review). */
+	@SuppressWarnings("removal")
+	@GameTest
+	public void strangersDontSeeTheStatus(GameTestHelper helper) {
+		ServerPlayer player = helper.makeMockServerPlayerInLevel();
+		helper.assertValueEqual(BuildManager.of(helper.getLevel().getServer()).status(player), BuildManager.Outcome.REFUSED, "/aibuild status");
+		helper.succeed();
+	}
+
+	/**
+	 * On a server where two players may build, a build is its owner's to follow and to stop: the other is told whose it
+	 * is, and it goes on (M6 review; final review). In a test environment of its own, so its build never overlaps the
+	 * other tests here, which ask the same manager whether anything is running.
+	 */
+	@SuppressWarnings("removal")
+	@GameTest(environment = "aibuilder-test:alone", maxTicks = 400)
+	public void onlyTheBuildsOwnerStopsItOrSeesItsStatus(GameTestHelper helper) {
+		ServerPlayer owner = helper.makeMockServerPlayerInLevel();
+		ServerPlayer other = helper.makeMockServerPlayerInLevel();
+		BuildManager manager = BuildManager.of(helper.getLevel().getServer());
+		TestHooks.config = AiBuilderConfig.load("{\"allowed_players\": [\"" + owner.getUUID() + "\", \"" + other.getUUID() + "\"],"
+				+ " \"require_op\": false}").config();
+		try {
+			helper.assertValueEqual(manager.startTest(owner), BuildManager.Outcome.STARTED, "the owner's demo build");
+			helper.assertValueEqual(manager.status(other), BuildManager.Outcome.REFUSED, "someone else's status");
+			helper.assertValueEqual(manager.status(owner), BuildManager.Outcome.DONE, "the owner's status");
+			helper.assertValueEqual(manager.cancel(other), BuildManager.Outcome.REFUSED, "someone else's cancel");
+			helper.assertTrue(manager.busy(), "someone else's cancel stopped the build");
+			helper.assertValueEqual(manager.cancel(owner), BuildManager.Outcome.DONE, "the owner's cancel");
+		} finally {
+			// A check above that fails mustn't leave the demo running into the next batch.
+			if (manager.busy()) {
+				manager.cancel(owner);
+			}
+			TestHooks.config = null;
+		}
+		helper.succeedWhen(() -> helper.assertFalse(manager.busy(), "the owner's cancel didn't stop the build"));
+	}
+
+	/**
+	 * /aibuild cancel while an undo runs says so: an undo can't be stopped, but there is something running (the minors'
+	 * review). In a test environment of its own, as it builds and undoes through the shared manager.
+	 */
+	@SuppressWarnings("removal")
+	@GameTest(environment = "aibuilder-test:alone_undo", maxTicks = 2400)
+	public void aCancelDuringAnUndoSaysTheUndoIsRunning(GameTestHelper helper) {
+		ServerPlayer owner = helper.makeMockServerPlayerInLevel();
+		BuildManager manager = BuildManager.of(helper.getLevel().getServer());
+		AiBuilderConfig allowed = AiBuilderConfig.load("{\"allowed_players\": [\"" + owner.getUUID() + "\"], \"require_op\": false}").config();
+		TestHooks.config = allowed;
+		try {
+			helper.assertValueEqual(manager.startTest(owner), BuildManager.Outcome.STARTED, "the demo build");
+		} finally {
+			TestHooks.config = null;
+		}
+		helper.startSequence()
+				.thenWaitUntil(() -> helper.assertFalse(manager.busy(), "the demo is still building"))
+				.thenExecute(() -> {
+					TestHooks.config = allowed;
+					try {
+						helper.assertValueEqual(manager.undo(owner), BuildManager.Outcome.STARTED, "the undo");
+						helper.assertValueEqual(manager.cancel(owner), BuildManager.Outcome.BUSY, "a cancel while the undo runs");
+					} finally {
+						TestHooks.config = null;
+					}
+				})
+				.thenWaitUntil(() -> helper.assertFalse(manager.busy(), "the undo never finished"))
+				.thenSucceed();
+	}
+
+	/**
+	 * While Claude Code is being checked for a build, the build is its owner's too: another allowed player's cancel is
+	 * refused and the check goes on; the owner's stops it (the minors' review). In a test environment of its own.
+	 */
+	@SuppressWarnings("removal")
+	@GameTest(environment = "aibuilder-test:alone_check", maxTicks = 400)
+	public void onlyTheOwnerStopsTheClaudeCodeCheck(GameTestHelper helper) {
+		ServerPlayer owner = helper.makeMockServerPlayerInLevel();
+		ServerPlayer other = helper.makeMockServerPlayerInLevel();
+		BuildManager manager = BuildManager.of(helper.getLevel().getServer());
+		TestHooks.config = AiBuilderConfig.load("{\"allowed_players\": [\"" + owner.getUUID() + "\", \"" + other.getUUID() + "\"],"
+				+ " \"require_op\": false}").config();
+		try {
+			manager.submit(owner, "a hut", SizeTier.SMALL);
+			helper.assertTrue(manager.busy(), "the Claude Code check didn't start");
+			helper.assertValueEqual(manager.cancel(other), BuildManager.Outcome.REFUSED, "someone else's cancel during the check");
+			helper.assertTrue(manager.busy(), "someone else's cancel stopped the check");
+			helper.assertValueEqual(manager.cancel(owner), BuildManager.Outcome.DONE, "the owner's cancel during the check");
+		} finally {
+			if (manager.busy()) {
+				manager.cancel(owner);
+			}
+			TestHooks.config = null;
+		}
+		helper.succeedWhen(() -> helper.assertFalse(manager.busy(), "the owner's cancel didn't stop the check"));
 	}
 
 	/**

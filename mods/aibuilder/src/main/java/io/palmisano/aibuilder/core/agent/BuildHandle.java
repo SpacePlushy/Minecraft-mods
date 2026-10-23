@@ -9,6 +9,14 @@ public interface BuildHandle {
 	CompletableFuture<BuildOutcome> outcome();
 
 	/**
+	 * Completes once the build's process itself has ended (not its output, which a child of it may hold open): one
+	 * process at a time waits on this. A build without a process has ended with its outcome.
+	 */
+	default CompletableFuture<?> exited() {
+		return outcome();
+	}
+
+	/**
 	 * Why the build ended, once {@link #outcome()} is FAILED, CAPPED or LIMITED; "" otherwise. For FAILED and LIMITED
 	 * it's the player's whole line, shown as it is; for CAPPED, which limit ("the 150 tool-call limit").
 	 */

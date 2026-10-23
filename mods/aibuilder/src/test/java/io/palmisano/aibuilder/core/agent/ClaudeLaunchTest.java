@@ -99,6 +99,23 @@ class ClaudeLaunchTest {
 		assertEquals("/Users/f/.claude-work", env.get("CLAUDE_CONFIG_DIR"), "the login can live there");
 	}
 
+	/**
+	 * An npm install's claude runs "env node", with node beside it, but a game started from the launcher has a short
+	 * PATH: the binary's folder goes first (once), under the PATH key the environment already uses.
+	 */
+	@Test
+	void theBinarysFolderComesFirstOnPath() {
+		Path claude = Path.of("/opt/homebrew/bin/claude");
+		assertEquals("/opt/homebrew/bin:/usr/bin:/bin", ClaudeLaunch.binaryFirst(Map.of("PATH", "/usr/bin:/bin", "HOME", "/Users/f"), claude, ":")
+				.get("PATH"));
+		assertEquals("/opt/homebrew/bin:/usr/bin", ClaudeLaunch.binaryFirst(Map.of("PATH", "/opt/homebrew/bin:/usr/bin"), claude, ":").get("PATH"));
+		Map<String, String> windows = ClaudeLaunch.binaryFirst(Map.of("Path", "/windows"), claude, ";");
+		assertEquals("/opt/homebrew/bin;/windows", windows.get("Path"));
+		assertFalse(windows.containsKey("PATH"));
+		assertEquals("/opt/homebrew/bin", ClaudeLaunch.binaryFirst(Map.of(), claude, ":").get("PATH"));
+		assertEquals(Map.of("PATH", "/usr/bin"), ClaudeLaunch.binaryFirst(Map.of("PATH", "/usr/bin"), Path.of("claude"), ":"), "no folder: as it was");
+	}
+
 	@Test
 	void theFiveAreAdded() {
 		Map<String, String> env = ClaudeLaunch.environment(inherited());

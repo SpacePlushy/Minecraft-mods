@@ -31,6 +31,8 @@ public final class LogWriter implements Consumer<String> {
 	/** Writer thread only. */
 	private Writer out;
 	private boolean broken;
+	/** Closed for good: a line that comes after (a tool call landing after the outcome) is left out. Writer thread only. */
+	private boolean closed;
 
 	public LogWriter(Path file) {
 		this.file = file;
@@ -43,11 +45,14 @@ public final class LogWriter implements Consumer<String> {
 
 	/** Closes the file once every line so far is written; the future completes then. */
 	public CompletableFuture<Void> close() {
-		return CompletableFuture.runAsync(this::closeNow, WRITER);
+		return CompletableFuture.runAsync(() -> {
+			closed = true;
+			closeNow();
+		}, WRITER);
 	}
 
 	private void write(String line) {
-		if (broken) {
+		if (broken || closed) {
 			return;
 		}
 		try {

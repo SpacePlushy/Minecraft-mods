@@ -1,11 +1,14 @@
 package io.palmisano.aibuilder;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -40,6 +43,7 @@ import io.palmisano.aibuilder.core.agent.BuildLog;
 import io.palmisano.aibuilder.core.agent.BuildOutcome;
 import io.palmisano.aibuilder.core.agent.BuildRequest;
 import io.palmisano.aibuilder.core.agent.ClaudeLaunch;
+import io.palmisano.aibuilder.core.agent.ClaudeLocator;
 import io.palmisano.aibuilder.core.agent.ClaudeSettings;
 import io.palmisano.aibuilder.core.agent.McpHandler;
 import io.palmisano.aibuilder.core.agent.McpSessions;
@@ -58,6 +62,7 @@ import io.palmisano.aibuilder.core.request.Refinement;
 import io.palmisano.aibuilder.core.request.BuildSession;
 import io.palmisano.aibuilder.core.request.RateLimit;
 import io.palmisano.aibuilder.core.request.BuildStatus;
+import io.palmisano.aibuilder.core.request.HudUpdate;
 import io.palmisano.aibuilder.core.request.Messages;
 import io.palmisano.aibuilder.core.request.SizeTier;
 import io.palmisano.aibuilder.core.shapes.Box;
@@ -142,6 +147,10 @@ public final class BuildManager {
 	 * build without a restart. Written with the defaults on the first run. Server thread.
 	 */
 	public AiBuilderConfig config() {
+		AiBuilderConfig override = TestHooks.config;
+		if (override != null) {
+			return override;
+		}
 		Path dir = FabricLoader.getInstance().getConfigDir();
 		FileTime time = modified(dir.resolve(ConfigFile.NAME));
 		if (config == null || time == null || !time.equals(configTime)) {
@@ -211,9 +220,10 @@ public final class BuildManager {
 		return !lastBackend.isDone();
 	}
 
-	/** What a player who asks while {@link #busy()} is told. */
-	private String busyLine() {
-		return undo != null ? Messages.undoing() : build != null || starting != null ? Messages.busy() : Messages.stillStopping();
+	/** What a player who asks while {@link #busy()} is told: whose build it is, when it isn't theirs. */
+	private String busyLine(ServerPlayer player) {
+		UUID owner = build != null ? build.owner : starting != null ? starting.owner : null;
+		return Messages.busy(undo != null, owner == null || owner.equals(player.getUUID()), owner == null ? "" : name(owner));
 	}
 
 	/**
@@ -265,7 +275,7 @@ public final class BuildManager {
 			return;
 		}
 		if (busy()) {
-			reply(player, busyLine());
+			reply(player, busyLine(player));
 			return;
 		}
 		AiBuilderConfig cfg = config();
@@ -313,7 +323,7 @@ public final class BuildManager {
 		// the last build's process is still ending (right after "Done:", or in a cancel's grace) starts once it has.
 		CompletableFuture<?> previous = lastBackend;
 		CompletableFuture.supplyAsync(() -> ended(previous) ? check(override, environment, cfg.claudePath())
-				: new Checked(List.of(), Messages.stillStopping()), CHECKS).whenComplete((checked, error) -> server.execute(() -> {
+				: new Checked(List.of(), environment, Messages.stillStopping()), CHECKS).whenComplete((checked, error) -> server.execute(() -> {
 			if (starting != start) {
 				return;
 			}
@@ -335,7 +345,7 @@ public final class BuildManager {
 				Scrub scrub = new Scrub();
 				LogWriter writer = new LogWriter(logs.resolve(name + ".jsonl"));
 				Logging logging = new Logging(new BuildLog(writer, scrub, System::currentTimeMillis), writer, scrub);
-				build = new Build(owner, level, frame, allowed, claudeBackend(checked.command(), environment, cfg, logs.resolve(name + ".stream.jsonl"),
+				build = new Build(owner, level, frame, allowed, claudeBackend(checked.command(), checked.environment(), cfg, logs.resolve(name + ".stream.jsonl"),
 						scrub), request, cfg.placementRate(), budget(cfg), cfg, refines.orElse(null), prompt, logging);
 			} catch (IOException e) {
 				tell(start.owner, Component.literal(Messages.failed("the mod's tool server couldn't start: " + e.getMessage())));
@@ -359,17 +369,22 @@ public final class BuildManager {
 	private static Checked check(List<String> override, Map<String, String> environment, String path) {
 		List<String> command = override;
 		if (command == null) {
+			ClaudeLocator.configuredProblem(path, Files::isExecutable).ifPresent(AiBuilderMod.LOG::warn);
 			Optional<List<String>> found = ClaudeChecks.command(path.isEmpty() ? null : path, System.getenv(), Path.of(System.getProperty("user.home")),
 					Files::isExecutable);
 			if (found.isEmpty()) {
-				return new Checked(List.of(), Messages.notInstalled());
+				return new Checked(List.of(), environment, Messages.notInstalled());
 			}
 			command = found.get();
 		}
-		return new Checked(command, ClaudeChecks.login(command, environment).orElse(""));
+		// An npm install's claude starts with `env node`, and node sits beside it: a game started from the launcher
+		// has a short PATH without that folder (M4 review).
+		Map<String, String> launch = ClaudeLaunch.binaryFirst(environment, Path.of(command.getFirst()), File.pathSeparator);
+		return new Checked(command, launch, ClaudeChecks.login(command, launch).orElse(""));
 	}
 
-	private record Checked(List<String> command, String problem) {
+	/** The command that runs Claude Code, the environment it runs with, and what's wrong ("" when nothing). */
+	private record Checked(List<String> command, Map<String, String> environment, String problem) {
 	}
 
 	/** A Claude build's log (spec §16): the lines, the file they go to, and the scrubber the backend tells its token. */
@@ -451,7 +466,7 @@ public final class BuildManager {
 			return Outcome.REFUSED;
 		}
 		if (busy()) {
-			reply(player, busyLine());
+			reply(player, busyLine(player));
 			return Outcome.BUSY;
 		}
 		AiBuilderConfig cfg = config();
@@ -475,6 +490,10 @@ public final class BuildManager {
 			return Outcome.REFUSED;
 		}
 		if (starting != null) {
+			if (!starting.owner.equals(player.getUUID())) {
+				reply(player, Messages.notYourBuild(name(starting.owner)));
+				return Outcome.REFUSED;
+			}
 			// Still checking Claude Code: nothing has started, so nothing is left to undo.
 			starting.cancelled = true;
 			starting = null;
@@ -482,11 +501,23 @@ public final class BuildManager {
 			return Outcome.DONE;
 		}
 		if (build == null) {
-			reply(player, Messages.nothingToCancel());
-			return Outcome.NOTHING;
+			// An undo can't be stopped, but it is running: saying nothing is would be wrong while its blocks go back.
+			reply(player, undo != null ? Messages.undoing() : Messages.nothingToCancel());
+			return undo != null ? Outcome.BUSY : Outcome.NOTHING;
+		}
+		if (!build.owner.equals(player.getUUID())) {
+			// Where several players may build (a server's allowed_players), a build is its owner's to stop.
+			reply(player, Messages.notYourBuild(name(build.owner)));
+			return Outcome.REFUSED;
 		}
 		build.cancel();
 		return Outcome.DONE;
+	}
+
+	/** The player's name while they're online; "" otherwise. */
+	private String name(UUID player) {
+		ServerPlayer online = server.getPlayerList().getPlayer(player);
+		return online == null ? "" : online.getName().getString();
 	}
 
 	/** {@code /aibuild undo}: take back the player's newest build. */
@@ -495,7 +526,7 @@ public final class BuildManager {
 			return Outcome.REFUSED;
 		}
 		if (busy()) {
-			reply(player, busyLine());
+			reply(player, busyLine(player));
 			return Outcome.BUSY;
 		}
 		// Left in the history until the undo has finished, so a crash half-way loses nothing.
@@ -534,36 +565,64 @@ public final class BuildManager {
 		UUID owner = player.getUUID();
 		List<UndoJournal<BlockState, CompoundTag>> earlier = UndoStore.get(server).builds(owner).stream()
 				.filter(build -> build.dimension().equals(level.dimension())).map(StoredBuild::journal).toList();
-		McWorldReader reader = new McWorldReader(level, frame, allowed.get(), SizeTier.AUTO, player::blockPosition, earlier, new UndoJournal<>(),
+		McWorldReader reader = new McWorldReader(level, frame, allowed.get(), SizeTier.AUTO, () -> player, earlier, new UndoJournal<>(),
 				cfg);
 		reply(player, Messages.surveying());
-		reader.whenRead().whenComplete((survey, error) -> {
+		String name = player.getName().getString();
+		Path folder = server.getServerDirectory().resolve("aibuilder/surveys");
+		// Encoding a wide site and writing the file take a while: off the server thread. Chat goes back on it, and a
+		// failure anywhere is said, not left at "Reading the site…".
+		reader.whenRead().thenApplyAsync(survey -> {
+			String text = SurveyEncoder.encode(survey.terrain(), allowed.get(), Tunables.SURVEY_MAX_CHARS);
+			AiBuilderMod.LOG.info("Survey of the site in front of {}:\n{}", name, text);
+			return new SavedSurvey(text, saveSurvey(folder, text));
+		}, CHECKS).whenComplete((survey, error) -> server.execute(() -> {
 			if (error != null) {
 				tell(owner, Component.literal(Messages.failed(reason(error))));
 				return;
 			}
-			String text = SurveyEncoder.encode(survey.terrain(), allowed.get(), Tunables.SURVEY_MAX_CHARS);
-			AiBuilderMod.LOG.info("Survey of the site in front of {}:\n{}", player.getName().getString(), text);
-			String saved;
-			try {
-				Path folder = server.getServerDirectory().resolve("aibuilder/surveys");
-				Files.createDirectories(folder);
-				String name = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")) + ".txt";
-				Files.writeString(folder.resolve(name), text, StandardCharsets.UTF_8);
-				saved = "aibuilder/surveys/" + name;
-			} catch (IOException e) {
-				AiBuilderMod.LOG.warn("Couldn't save the survey", e);
-				saved = "the log only (the file couldn't be written)";
-			}
 			// The header and the summaries; the maps are too long for chat.
-			text.lines().takeWhile(line -> !line.startsWith("Surface blocks:")).forEach(line -> tell(owner, Component.literal(line)));
-			tell(owner, Component.literal(Messages.surveySaved(text.length(), saved)));
-		});
+			survey.text().lines().takeWhile(line -> !line.startsWith("Surface blocks:")).forEach(line -> tell(owner, Component.literal(line)));
+			tell(owner, Component.literal(Messages.surveySaved(survey.text().length(), survey.saved())));
+		}));
 		return Outcome.STARTED;
 	}
 
+	/** A survey's text and where it was saved, for chat. */
+	private record SavedSurvey(String text, String saved) {
+	}
+
+	/** Writes a survey under a name of its own (two in one second: -2, -3…); says where, or that only the log has it. */
+	private static String saveSurvey(Path folder, String text) {
+		try {
+			Files.createDirectories(folder);
+			String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
+			for (int n = 1; ; n++) {
+				String file = stamp + (n == 1 ? "" : "-" + n) + ".txt";
+				try {
+					Files.writeString(folder.resolve(file), text, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
+					return "aibuilder/surveys/" + file;
+				} catch (FileAlreadyExistsException e) {
+					// Another survey this second: the next number.
+				}
+			}
+		} catch (IOException e) {
+			AiBuilderMod.LOG.warn("Couldn't save the survey", e);
+			return "the log only (the file couldn't be written)";
+		}
+	}
+
 	/** {@code /aibuild status}. */
-	public void status(ServerPlayer player) {
+	public Outcome status(ServerPlayer player) {
+		if (!mayBuild(player)) {
+			return Outcome.REFUSED;
+		}
+		// Where several players may build, a build is its owner's to follow, as it's theirs to stop.
+		UUID running = build != null ? build.owner : starting != null ? starting.owner : null;
+		if (running != null && !running.equals(player.getUUID())) {
+			reply(player, Messages.notYourBuild(name(running)));
+			return Outcome.REFUSED;
+		}
 		if (build != null) {
 			reply(player, Messages.status(build.sink.phase(), build.job.placed(), build.budget.used(), build.budget.max()));
 		} else if (starting != null) {
@@ -571,6 +630,7 @@ public final class BuildManager {
 		} else {
 			reply(player, undo != null ? Messages.undoing() : Messages.nothingBuilding());
 		}
+		return Outcome.DONE;
 	}
 
 	private void tick() {
@@ -714,10 +774,7 @@ public final class BuildManager {
 			// The player's earlier builds here are theirs to change: the survey doesn't protect what those left.
 			List<UndoJournal<BlockState, CompoundTag>> earlier = store.builds(owner).stream()
 					.filter(build -> build.dimension().equals(level.dimension())).map(StoredBuild::journal).toList();
-			world = new McWorldReader(level, frame, allowed, request.size(), () -> {
-				ServerPlayer online = server.getPlayerList().getPlayer(owner);
-				return online == null ? null : online.blockPosition();
-			}, earlier, journal, cfg);
+			world = new McWorldReader(level, frame, allowed, request.size(), () -> server.getPlayerList().getPlayer(owner), earlier, journal, cfg);
 			stored = new StoredBuild(level.dimension(), "", journal);
 			store.push(owner, stored);
 			undoHistorySize = cfg.undoHistorySize();
@@ -735,6 +792,10 @@ public final class BuildManager {
 			});
 			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Set.copyOf(cfg.bannedBlocks())), frame, allowed, request.size(),
 					cap, sink, budget, world);
+			tools.siteGap(cfg.siteGap());
+			if (refines != null) {
+				tools.refining(refines.title().isBlank() ? Messages.untitledBuild() : refines.title(), refines.changed());
+			}
 			if (logging != null) {
 				logging.log().request(playerPrompt, request.size().label(), refines != null, refines == null ? "" : refines.title(), cfg.model(),
 						cfg.effort(), request.session().toString());
@@ -766,7 +827,10 @@ public final class BuildManager {
 				}
 			});
 			handle.outcome().thenAccept(outcome -> server.execute(() -> backendEnded(outcome)));
-			lastBackend = handle.outcome();
+			if (claude) {
+				// The process itself, not its output (a child of it may hold that open); the demo has none to wait for.
+				lastBackend = handle.exited();
+			}
 		}
 
 		void cancel() {
@@ -783,17 +847,20 @@ public final class BuildManager {
 			if (!ServerPlayNetworking.canSend(player, BuildStatusPayload.TYPE)) {
 				return;
 			}
-			if (!player.isAlive() || player.level() != level) {
-				if (hudShown) {
+			switch (HudUpdate.decide(player.isAlive(), player.level() == level, hudShown)) {
+				case SEND -> {
+					PhaseProgress progress = sink.progress();
+					ServerPlayNetworking.send(player, new BuildStatusPayload(BuildStatus.showing(title, Messages.hudUntitled(), progress.phases(),
+							progress.current(), job.placed(), budget.used(), budget.max(), note)));
+					hudShown = true;
+				}
+				case CLEAR -> {
 					ServerPlayNetworking.send(player, new BuildStatusPayload(BuildStatus.CLEAR));
 					hudShown = false;
 				}
-				return;
+				case NOTHING -> {
+				}
 			}
-			PhaseProgress progress = sink.progress();
-			ServerPlayNetworking.send(player, new BuildStatusPayload(new BuildStatus(title.isEmpty() ? Messages.hudUntitled() : title,
-					progress.phases(), progress.current(), job.placed(), budget.used(), budget.max(), note)));
-			hudShown = true;
 		}
 
 		private void briefed(Brief brief) {
@@ -889,8 +956,9 @@ public final class BuildManager {
 				line = Messages.failed(reason(error));
 				outcome = "failed";
 			} else if (failure != null) {
-				// The backend's reason is the player's whole line (spec §12.2's messages word for word).
-				line = failure;
+				// The backend's reason is the player's whole line (spec §12.2's messages word for word). It may quote Claude
+				// Code (its last words, its error line): scrubbed, as the summary is.
+				line = logging == null ? failure : logging.scrub().apply(failure);
 				outcome = "failed";
 			} else if (stoppedBy == BuildOutcome.CAPPED) {
 				line = Messages.capped(stopReason, job.placed());

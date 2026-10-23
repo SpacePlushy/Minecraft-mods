@@ -43,8 +43,9 @@ import io.palmisano.aibuilder.core.survey.SurveyEncoder;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 
 /**
- * Runs the write tools: expands each shape, validates its blocks, drops positions outside the allowed box, maps
- * the rest to the world through the frame and queues them as one batch. A bad entry never fails the whole call.
+ * Runs Claude's tools (spec §8). The read tools look through the {@link WorldReader}; the write tools expand each
+ * shape, validate its blocks, drop positions outside the allowed box, map the rest to the world through the frame and
+ * queue them as one batch. A bad entry never fails the whole call.
  */
 public final class ToolExecutor {
 	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
@@ -72,6 +73,11 @@ public final class ToolExecutor {
 	private ProtectionMask protection;
 	private FireRule fire;
 	private boolean briefed;
+	/** Set (under the lock) before the backend starts, read by get_context outside it: volatile, so it's seen. */
+	private volatile int siteGap = Tunables.SITE_GAP;
+	/** The build a refinement changes, and its changes so far; "" and null for a new build. Set as siteGap is. */
+	private volatile String refining = "";
+	private volatile Box changes;
 	private volatile boolean finished;
 	private volatile CallListener listener = (name, args, result, millis) -> {
 	};
@@ -106,6 +112,17 @@ public final class ToolExecutor {
 	/** The build's caps; the Claude Code backend adds output tokens to it as they stream in. */
 	public Budget budget() {
 		return budget;
+	}
+
+	/** How far in front of the player a new build's origin is (the config's site_gap), for get_context. */
+	public synchronized void siteGap(int gap) {
+		siteGap = gap;
+	}
+
+	/** A refinement (spec §8): get_context names the build and the box its changes fill so far. */
+	public synchronized void refining(String title, Box changes) {
+		refining = title;
+		this.changes = changes;
 	}
 
 	public void listen(CallListener listener) {
@@ -195,16 +212,22 @@ public final class ToolExecutor {
 	private ToolResult context() {
 		WorldFacts facts = world.facts();
 		int left = Math.max(0, budget.max() - budget.used());
-		return ToolResult.ok(String.join("\n",
-				"Frame: you build in a local frame. +x is the player's right, +z is forward (away from the player), +y is up; y=0 is the ground at"
-						+ " the origin, " + Tunables.SITE_GAP + " blocks in front of the player. Block states take forward, back, left, right, up and"
-						+ " down for directions, never compass names.",
-				"Size: " + tier.label() + " (" + tier.size() + " blocks): the allowed box is " + describe(allowed) + "; at most "
-						+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks.",
+		List<String> lines = new ArrayList<>();
+		lines.add("Frame: you build in a local frame. +x is the player's right, +z is forward (away from the player), +y is up; y=0 is the ground"
+				+ " at the origin, " + (refining.isEmpty() ? siteGap + " blocks in front of the player." : "where this build began.")
+				+ " Block states take forward, back, left, right, up and down for directions, never compass names.");
+		lines.add("Size: " + tier.label() + " (" + tier.size() + " blocks): the allowed box is " + describe(allowed) + "; at most "
+				+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks.");
+		if (!refining.isEmpty()) {
+			lines.add("Refining: " + refining + ", the build this session made: its blocks fill " + describe(changes) + "; the allowed box"
+					+ " reaches past them, and they're yours to change.");
+		}
+		lines.addAll(List.of(
 				"World: " + facts.dimension() + ", biome " + facts.biome() + ", " + facts.time() + ", " + facts.weather()
 						+ "; the ground block at the origin is " + facts.groundBlock() + ".",
-				"The player stands at x " + facts.player().x() + ", y " + facts.player().y() + ", z " + facts.player().z() + ".",
+				whereThePlayerIs(facts),
 				"Budget: " + left + " of " + budget.max() + " tool calls left."));
+		return ToolResult.ok(String.join("\n", lines));
 	}
 
 	/** Centred on the allowed box's footprint; the default radius covers it with 8 blocks to spare, as the site does. */
@@ -214,7 +237,27 @@ public final class ToolExecutor {
 		int centreX = Math.floorDiv(allowed.min().x() + allowed.max().x() + 1, 2);
 		int centreZ = Math.floorDiv(allowed.min().z() + allowed.max().z() + 1, 2);
 		TerrainSnapshot snapshot = world.terrain(centreX - radius, centreZ - radius, 2 * radius + 1, 2 * radius + 1);
-		return ToolResult.ok(SurveyEncoder.encode(snapshot, allowed, Tunables.SURVEY_MAX_CHARS));
+		// The site is read once, as the build begins (it decides what's protected); wider than it, the survey is read now.
+		// A refinement's player may stand in it.
+		String when = radius <= fits ? "As the site was when this build began: blocks it has placed since aren't in it (inspect_region shows"
+				+ " blocks as they are now)." : "Read now, wider than the site as this build began: the blocks it has placed are in it.";
+		String note = when + " " + whereThePlayerIsNow();
+		return ToolResult.ok(note + "\n" + SurveyEncoder.encode(snapshot, allowed, Tunables.SURVEY_MAX_CHARS - note.length() - 1));
+	}
+
+	/** Where the player is, for survey_area's note: a read of its own, which may time out though the terrain came. */
+	private String whereThePlayerIsNow() {
+		try {
+			return whereThePlayerIs(world.facts());
+		} catch (WorldReader.Unreadable e) {
+			return "Where the player is couldn't be read just now.";
+		}
+	}
+
+	/** Where the player is, in the frame (spec §5.5); nowhere when they're offline or in another dimension. */
+	private static String whereThePlayerIs(WorldFacts facts) {
+		Pos p = facts.player();
+		return p == null ? "The player isn't in this world right now." : "The player stands at x " + p.x() + ", y " + p.y() + ", z " + p.z() + ".";
 	}
 
 	private ToolResult inspect(Args a) {
@@ -232,7 +275,13 @@ public final class ToolExecutor {
 					+ String.format(Locale.ROOT, "%,d", Tunables.INSPECT_MAX_BLOCKS) + " blocks a call; this box holds " + blocks(box.volume())
 					+ ". Look at it in parts.");
 		}
-		return ToolResult.ok(RegionEncoder.encode(box, world.states(box)));
+		String text = RegionEncoder.encode(box, world.states(box));
+		if (text.length() > Tunables.INSPECT_MAX_CHARS) {
+			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": this box's text would run to " + String.format(Locale.ROOT, "%,d", text.length())
+					+ " characters, past the " + String.format(Locale.ROOT, "%,d", Tunables.INSPECT_MAX_CHARS) + " one read returns (a line a row, so"
+					+ " a tall or deep, narrow box is the longest); look at it in parts, wider and flatter");
+		}
+		return ToolResult.ok(text);
 	}
 
 	private ToolResult search(Args a) {
@@ -428,7 +477,7 @@ public final class ToolExecutor {
 				long depth = box.max().z() - box.min().z() + 1 + grow;
 				yield width * depth * (Math.max(width, depth) + 1);
 			}
-			case "staircase" -> a.string("style").equals("spiral")
+			case "staircase" -> a.string("style").equalsIgnoreCase("spiral")
 					? atLeast0(a.integer("to_y") - (long) a.integer("from_y") + 1) + 8 * atLeast0(a.integer("radius"))
 					: atLeast0(a.integer("steps")) * atLeast0(a.optInt("width", 1));
 			default -> 0;
@@ -449,7 +498,7 @@ public final class ToolExecutor {
 	}
 
 	private static List<LocalBlock> fill(Args a) {
-		String mode = a.optString("mode", "solid");
+		String mode = a.optString("mode", "solid").toLowerCase(Locale.ROOT);
 		if (mode.equals("replace")) {
 			return Shapes.replace(a.box("box"), a.block("block"), a.string("filter"));
 		}
@@ -457,8 +506,9 @@ public final class ToolExecutor {
 	}
 
 	private static List<LocalBlock> staircase(Args a) {
-		return switch (a.string("style")) {
-			case "straight" -> Staircases.straight(a.pos("from"), a.string("direction"), a.integer("steps"), a.optInt("width", 1),
+		return switch (a.string("style").toLowerCase(Locale.ROOT)) {
+			case "straight" -> Staircases.straight(a.pos("from"), a.string("direction").toLowerCase(Locale.ROOT), a.integer("steps"),
+					a.optInt("width", 1),
 					a.block("block"));
 			case "spiral" -> Staircases.spiral(a.pos("center"), a.integer("radius"), a.integer("from_y"), a.integer("to_y"),
 					a.block("block"), a.optBool("clockwise", true));
@@ -538,7 +588,15 @@ public final class ToolExecutor {
 		int fitCount = 0;
 		Map<String, Integer> grouped = new LinkedHashMap<>();
 		List<String> lines = new ArrayList<>();
+		// Claude's entries for one spot: only the last given goes in and is judged. Placement sorts a batch (fluids
+		// last), so an earlier lava would otherwise end up over a later block the lava rule took the spot for.
+		boolean[] superseded = perEntry ? superseded(blocks) : null;
+		int supersededCount = 0;
 		for (int i = 0; i < blocks.size(); i++) {
+			if (superseded != null && superseded[i]) {
+				supersededCount++;
+				continue;
+			}
 			LocalBlock block = blocks.get(i);
 			Validation v = checked.computeIfAbsent(block.block(), validator::validate);
 			String problem = null;
@@ -588,7 +646,7 @@ public final class ToolExecutor {
 			claimed.addAll(others);
 			batch.add(new Placement(frame.toWorld(block.pos()), resolved, block.onlyReplacing(), block.data()));
 		}
-		int rejected = blocks.size() - batch.size();
+		int rejected = blocks.size() - supersededCount - batch.size();
 		// Those spots are the build's own from now on, even where it may clear a protected block.
 		claimed.forEach(mask::release);
 		grouped.forEach((problem, count) -> lines.add(blocks(count) + " — " + problem));
@@ -596,6 +654,10 @@ public final class ToolExecutor {
 			sink.queue(batch);
 		}
 		StringBuilder text = new StringBuilder("Queued ").append(blocks(batch.size())).append('.');
+		if (supersededCount > 0) {
+			text.append(' ').append(supersededCount == 1 ? "1 entry was replaced by a later one for the same spot."
+					: String.format(Locale.ROOT, "%,d", supersededCount) + " entries were replaced by later ones for their spots.");
+		}
 		if (rejected > 0) {
 			text.append(" Rejected ").append(String.format(Locale.ROOT, "%,d", rejected)).append(':');
 			lines.stream().limit(REJECTION_LINES).forEach(line -> text.append('\n').append(line));
@@ -604,6 +666,19 @@ public final class ToolExecutor {
 			}
 		}
 		return new ToolResult(text.toString(), batch.isEmpty() && rejected > 0, List.copyOf(lines));
+	}
+
+	/** Which entries a later entry for the same spot replaces. */
+	private static boolean[] superseded(List<LocalBlock> blocks) {
+		boolean[] earlier = new boolean[blocks.size()];
+		Map<Pos, Integer> last = new HashMap<>();
+		for (int i = 0; i < blocks.size(); i++) {
+			Integer before = last.put(blocks.get(i).pos(), i);
+			if (before != null) {
+				earlier[before] = true;
+			}
+		}
+		return earlier;
 	}
 
 	/** Why a block's other half (a door's top, a bed's head) can't go where it would, or null if it can. */

@@ -71,9 +71,16 @@ public final class FakeWorld implements WorldReader {
 		return out;
 	}
 
+	/** Thrown by facts() when set: a read that timed out, say. */
+	public RuntimeException factsFail;
+	public WorldFacts facts = new WorldFacts("minecraft:overworld", "minecraft:plains", "morning", "clear", "minecraft:grass_block", new Pos(0, 1, -3));
+
 	@Override
 	public WorldFacts facts() {
-		return new WorldFacts("minecraft:overworld", "minecraft:plains", "morning", "clear", "minecraft:grass_block", new Pos(0, 1, -3));
+		if (factsFail != null) {
+			throw factsFail;
+		}
+		return facts;
 	}
 
 	@Override

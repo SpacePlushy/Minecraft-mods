@@ -308,6 +308,19 @@ class ClaudeCodeBackendTest {
 		assertEquals(Messages.extraUsage(), handle.reason());
 	}
 
+	/**
+	 * One process at a time waits on the process itself, not its output: a child of it that holds the output open
+	 * after it has gone keeps the run going, but not the next build waiting. The fake gets an empty PATH, so its child
+	 * can't lean on a program only some systems have (`sleep` isn't on Windows; PR review).
+	 */
+	@Test
+	void exitedIsTheProcessNotItsOutput() throws Exception {
+		BuildHandle handle = start("orphan", "a tiny hut", Map.of("PATH", temp.resolve("nothing-here").toString()));
+		handle.exited().get(30, TimeUnit.SECONDS);
+		assertFalse(handle.outcome().isDone(), "the output is still open (the child's), so the run can't be over");
+		assertEquals(BuildOutcome.FINISHED, outcome(handle));
+	}
+
 	@Test
 	void cancelEndsAHangingProcess() throws Exception {
 		BuildHandle handle = start("hang");

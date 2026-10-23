@@ -15,7 +15,8 @@ import io.palmisano.aibuilder.core.shapes.Box;
  * per y from the bottom up, one row per z, cells by x. States come in already, directions relative.
  */
 public final class RegionEncoder {
-	private static final String KEYS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&*+=@^~!<>?";
+	/** No "=": it joins a key to its block in the palette. */
+	private static final String KEYS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&*+@^~!<>?";
 	private static final Set<String> AIR = Set.of("minecraft:air", "minecraft:cave_air", "minecraft:void_air");
 
 	private RegionEncoder() {

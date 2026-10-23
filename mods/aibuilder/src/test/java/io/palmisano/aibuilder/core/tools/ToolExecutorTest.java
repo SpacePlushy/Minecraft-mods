@@ -274,6 +274,34 @@ class ToolExecutorTest {
 		assertEquals(1, sink.queuedCount());
 	}
 
+	/**
+	 * Two entries for one spot: the last is the one placed and the one the lava rule judges (placement sorts a batch,
+	 * fluids last, so the lava would otherwise end up over the planks while the rule took the spot for planks).
+	 */
+	@Test
+	void twoEntriesForOneSpotKeepTheLast() {
+		ToolExecutor tools = briefed();
+		ToolResult result = tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[0,0,2],\"block\":\"lava\"},"
+				+ "{\"pos\":[0,0,2],\"block\":\"oak_planks\"}]}"));
+		assertEquals("Queued 1 block. 1 entry was replaced by a later one for the same spot.", result.text());
+		assertEquals(List.of("minecraft:oak_planks"), sink.batches.getFirst().stream().map(p -> p.block().info().id()).toList());
+		ToolResult lava = tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[1,0,2],\"block\":\"lava\"}]}"));
+		assertTrue(lava.text().contains("lava_near_flammable"), "judged as planks: " + lava.text());
+	}
+
+	@Test
+	void modesTakeAnyCase() {
+		ToolExecutor tools = briefed();
+		ToolResult replace = tools.call("fill", json("{\"box\":[0,0,1,1,0,1],\"block\":\"stone\",\"mode\":\"Replace\",\"filter\":\"air\"}"));
+		assertFalse(replace.isError(), replace.text());
+		ToolResult straight = tools.call("staircase", json("{\"style\":\"Straight\",\"from\":[0,0,3],\"direction\":\"Forward\","
+				+ "\"steps\":2,\"block\":\"oak_stairs\"}"));
+		assertFalse(straight.isError(), straight.text());
+		ToolResult spiral = tools.call("staircase", json("{\"style\":\"SPIRAL\",\"center\":[0,0,8],\"radius\":2,\"from_y\":0,"
+				+ "\"to_y\":3,\"block\":\"oak_stairs\"}"));
+		assertFalse(spiral.isError(), spiral.text());
+	}
+
 	/** Lava where a log was replaces the log: its own spot doesn't count. */
 	@Test
 	void lavaCanReplaceWhatBurns() {

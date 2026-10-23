@@ -17,6 +17,16 @@ class BuildPromptTest {
 	}
 
 	@Test
+	void aLoneSurrogateIsDropped() {
+		// The box counts UTF-16 units, so an emoji at its limit can be cut in half; the half would go out as "?".
+		assertEquals("castle", BuildPrompt.normalize("castle\uD83C"));
+		assertEquals("castle", BuildPrompt.normalize("\uDF70castle"));
+		assertEquals("castle", BuildPrompt.normalize("cas\uD83Ctle"));
+		assertEquals("castle", BuildPrompt.normalize("  castle \uD83C"));
+		assertEquals("castle 🏰", BuildPrompt.normalize("castle 🏰"));
+	}
+
+	@Test
 	void blankIsEmpty() {
 		assertEquals(Problem.EMPTY, BuildPrompt.check(BuildPrompt.normalize(" \n\t ")));
 	}

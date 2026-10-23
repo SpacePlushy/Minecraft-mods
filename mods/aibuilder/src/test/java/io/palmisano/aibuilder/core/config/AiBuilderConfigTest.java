@@ -58,6 +58,12 @@ class AiBuilderConfigTest {
 		assertEquals(7, loaded.warnings().size(), loaded.warnings().toString());
 	}
 
+	/** A name can change hands (and an offline-mode server takes any): the file says to list players by UUID. */
+	@Test
+	void theFileSaysToListPlayersByUuid() {
+		assertTrue(AiBuilderConfig.DEFAULT.toJson().contains("by UUID"), AiBuilderConfig.DEFAULT.toJson());
+	}
+
 	@Test
 	void brokenJsonIsAllDefaults() {
 		AiBuilderConfig.Loaded loaded = AiBuilderConfig.load("{\"blocks_per_tick\": 5,");

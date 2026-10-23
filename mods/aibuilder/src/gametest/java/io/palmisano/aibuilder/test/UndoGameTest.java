@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.blocks.BlockSpec;
 import io.palmisano.aibuilder.core.blocks.Validation;
@@ -33,6 +34,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
@@ -330,6 +332,68 @@ public class UndoGameTest {
 		helper.assertValueEqual(older.title(), "a tower", "title");
 		helper.assertValueEqual(older.journal().entries(), first.entries(), "journal");
 		helper.assertTrue(loaded.pop(player).isEmpty(), "an extra build came back");
+		helper.succeed();
+	}
+
+	/** A saved build naming a block the game no longer has (a mod's, removed since) costs only that build. */
+	@GameTest
+	public void aBuildThatCantBeReadIsSkipped(GameTestHelper helper) {
+		UndoJournal<BlockState, CompoundTag> window = new UndoJournal<>();
+		window.beforeWrite(new Pos(5, 5, 5), Blocks.AIR.defaultBlockState(), null);
+		window.afterWrite(new Pos(5, 5, 5), "minecraft:glass", 0);
+		UndoJournal<BlockState, CompoundTag> pit = new UndoJournal<>();
+		pit.beforeWrite(new Pos(1, 64, 2), Blocks.SPONGE.defaultBlockState(), null);
+		pit.afterWrite(new Pos(1, 64, 2), "minecraft:stone", 0);
+		UUID player = UUID.randomUUID();
+		UndoStore store = new UndoStore();
+		store.push(player, new UndoStore.StoredBuild(Level.OVERWORLD, "a window", window));
+		store.push(player, new UndoStore.StoredBuild(Level.OVERWORLD, "a pit", pit));
+		String saved = UndoStore.CODEC.encodeStart(NbtOps.INSTANCE, store).getOrThrow().toString();
+		helper.assertTrue(saved.contains("\"minecraft:sponge\""), "no sponge in " + saved);
+		CompoundTag broken;
+		try {
+			// As if the sponge were a block of a mod removed since.
+			broken = TagParser.parseCompoundFully(saved.replace("\"minecraft:sponge\"", "\"gone:sponge\""));
+		} catch (CommandSyntaxException e) {
+			throw new IllegalStateException(e);
+		}
+		// As the game reads saved data: the result, or what it could read of it.
+		UndoStore loaded = UndoStore.CODEC.parse(NbtOps.INSTANCE, broken).resultOrPartial(error -> { }).orElseThrow();
+		helper.assertValueEqual(loaded.builds(player).stream().map(UndoStore.StoredBuild::title).toList(), List.of("a window"),
+				"the builds that load");
+		helper.assertValueEqual(loaded.peek(player).orElseThrow().journal().entries(), window.entries(), "the window's journal");
+		helper.succeed();
+	}
+
+	/**
+	 * A player whose saved entry can't be read at all (here its id isn't one) costs only them: the store still reads,
+	 * without an error (the game would log it as broken), and the other player's build is whole (the minors' review).
+	 */
+	@GameTest
+	public void aPlayerWhoseBuildsCantBeReadIsSkipped(GameTestHelper helper) {
+		UndoJournal<BlockState, CompoundTag> window = new UndoJournal<>();
+		window.beforeWrite(new Pos(5, 5, 5), Blocks.AIR.defaultBlockState(), null);
+		window.afterWrite(new Pos(5, 5, 5), "minecraft:glass", 0);
+		UUID first = UUID.randomUUID();
+		UUID second = UUID.randomUUID();
+		UndoStore store = new UndoStore();
+		store.push(first, new UndoStore.StoredBuild(Level.OVERWORLD, "the first's window", window));
+		store.push(second, new UndoStore.StoredBuild(Level.OVERWORLD, "the second's window", window));
+		String saved = UndoStore.CODEC.encodeStart(NbtOps.INSTANCE, store).getOrThrow().toString();
+		String brokenText = saved.replaceFirst("player:\\[I;[^\\]]*\\]", "player:\"nobody\"");
+		helper.assertFalse(brokenText.equals(saved), "no player's id to break in " + saved);
+		CompoundTag broken;
+		try {
+			broken = TagParser.parseCompoundFully(brokenText);
+		} catch (CommandSyntaxException e) {
+			throw new IllegalStateException(e);
+		}
+		UndoStore loaded = UndoStore.CODEC.parse(NbtOps.INSTANCE, broken).result().orElse(null);
+		helper.assertTrue(loaded != null, "the store didn't read whole");
+		List<String> titles = new ArrayList<>();
+		loaded.builds(first).forEach(build -> titles.add(build.title()));
+		loaded.builds(second).forEach(build -> titles.add(build.title()));
+		helper.assertValueEqual(titles.size(), 1, "the builds that load: " + titles);
 		helper.succeed();
 	}
 

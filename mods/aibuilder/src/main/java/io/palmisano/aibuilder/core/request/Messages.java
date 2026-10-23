@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import io.palmisano.aibuilder.core.agent.Scrub;
 import io.palmisano.aibuilder.core.tools.Brief;
 
 /** The chat lines the player sees about a prompt and a build. */
@@ -13,14 +14,25 @@ public final class Messages {
 
 	/** The prompt was taken: what's coming, and how to stop it (spec §5.3: builds take minutes, not seconds). */
 	public static String accepted(String prompt, SizeTier size) {
-		return "AI Builder: building \"" + prompt + "\" (" + size.label() + "). Claude plans before it builds, so give it a few minutes;"
+		return "AI Builder: building \"" + echo(prompt) + "\" (" + size.label() + "). Claude plans before it builds, so give it a few minutes;"
 				+ " /aibuild cancel stops it.";
 	}
 
 	/** A prompt that refines the last build (spec §5.4); /aibuild new builds new instead. */
 	public static String refining(String title, String prompt) {
-		return "AI Builder: changing " + title + ": \"" + prompt + "\". Claude plans before it builds, so give it a few minutes;"
+		return "AI Builder: changing " + title + ": \"" + echo(prompt) + "\". Claude plans before it builds, so give it a few minutes;"
 				+ " /aibuild cancel stops it, and /aibuild new builds something new instead.";
+	}
+
+	/** The prompt as chat (and the client's log) shows it: a key pasted into it by mistake never goes back out. */
+	private static String echo(String prompt) {
+		return new Scrub().apply(prompt);
+	}
+
+	/** Someone else's build: where several players may build, only its owner follows it and stops it. */
+	public static String notYourBuild(String owner) {
+		return (owner.isEmpty() ? "That build is someone else's" : "That's " + owner + "'s build") + ": only they can stop it or see how it's"
+				+ " going.";
 	}
 
 	/** A refined build that never got a title from its brief. */
@@ -147,6 +159,17 @@ public final class Messages {
 
 	public static String busy() {
 		return "A build is already running: /aibuild cancel stops it.";
+	}
+
+	/**
+	 * What a player is told while something runs: an undo, which can't be stopped; their own build, which /aibuild cancel
+	 * stops; anyone else's, named (where several may build, only its owner stops it).
+	 */
+	public static String busy(boolean undoing, boolean yours, String owner) {
+		if (undoing) {
+			return undoing();
+		}
+		return yours ? busy() : (owner.isEmpty() ? "Someone else's build" : owner + "'s build") + " is running: only they can stop it.";
 	}
 
 	public static String undoing() {

@@ -126,14 +126,7 @@ public final class PlacementJob implements Tickable {
 		return placed;
 	}
 
-	/** Everything queued is placed and nothing is waiting for a player to move. */
-	public boolean idle() {
-		synchronized (lock) {
-			return idleLocked();
-		}
-	}
-
-	/** Completes, with {@link #placed()}, once the job is next {@link #idle()}. */
+	/** Completes, with {@link #placed()}, once everything queued is placed and nothing waits for a player to move. */
 	public CompletableFuture<Integer> whenIdle() {
 		synchronized (lock) {
 			if (idleLocked()) {

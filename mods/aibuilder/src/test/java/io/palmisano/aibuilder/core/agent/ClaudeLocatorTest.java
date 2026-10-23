@@ -1,6 +1,7 @@
 package io.palmisano.aibuilder.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.Map;
@@ -29,6 +30,15 @@ class ClaudeLocatorTest {
 		Path local = HOME.resolve(".local/bin/claude");
 		assertEquals(Optional.of(local), find("/nowhere/claude", ENV, "Mac OS X", Set.of(local)));
 		assertEquals(Optional.of(local), find("  ", ENV, "Mac OS X", Set.of(local)));
+	}
+
+	/** A claude_path that isn't there (or can't run) is passed over, with a line saying so; none or one that runs, nothing. */
+	@Test
+	void aMissingClaudePathIsSaidSo() {
+		Path mine = Path.of("/opt/claude/claude");
+		assertTrue(ClaudeLocator.configuredProblem("/nowhere/claude", Set.of(mine)::contains).orElseThrow().contains("/nowhere/claude"));
+		assertEquals(Optional.empty(), ClaudeLocator.configuredProblem(mine.toString(), Set.of(mine)::contains));
+		assertEquals(Optional.empty(), ClaudeLocator.configuredProblem("  ", Set.of(mine)::contains));
 	}
 
 	@Test

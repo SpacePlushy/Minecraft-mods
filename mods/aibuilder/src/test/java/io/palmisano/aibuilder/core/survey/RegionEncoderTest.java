@@ -1,6 +1,7 @@
 package io.palmisano.aibuilder.core.survey;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.List;
 import java.util.stream.IntStream;
@@ -30,6 +31,17 @@ class RegionEncoderTest {
 				z 0: ...
 				z 1: ...
 				""", RegionEncoder.encode(Box.of(0, 1, 0, 2, 2, 1), states));
+	}
+
+	/** "=" joins a key to its block in the palette, so it's never a key, of one character or of two. */
+	@Test
+	void equalsIsNeverAKey() {
+		for (int kinds : new int[] {60, 70}) {
+			List<String> states = IntStream.range(0, kinds).mapToObj(i -> "minecraft:block_" + i).toList();
+			String text = RegionEncoder.encode(Box.of(0, 0, 0, kinds - 1, 0, 0), states);
+			String row = text.lines().filter(line -> line.startsWith("z 0: ")).findFirst().orElseThrow();
+			assertFalse(row.substring(5).contains("="), kinds + " kinds: " + row);
+		}
 	}
 
 	/** More kinds than one-character keys: every cell takes two characters, so rows stay aligned. */

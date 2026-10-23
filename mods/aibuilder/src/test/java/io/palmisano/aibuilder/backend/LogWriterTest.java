@@ -24,6 +24,18 @@ class LogWriterTest {
 		assertEquals(IntStream.range(0, 500).mapToObj(i -> "line " + i).toList(), Files.readAllLines(file));
 	}
 
+	/** A tool call that lands after the outcome (the log is closed) is left out, not written to a reopened file. */
+	@Test
+	void nothingIsWrittenAfterClose() throws Exception {
+		Path file = temp.resolve("late.jsonl");
+		LogWriter writer = new LogWriter(file);
+		writer.accept("outcome");
+		writer.close().get(10, TimeUnit.SECONDS);
+		writer.accept("a late call");
+		writer.close().get(10, TimeUnit.SECONDS);
+		assertEquals(List.of("outcome"), Files.readAllLines(file));
+	}
+
 	@Test
 	void aFileThatCantBeWrittenIsDropped() throws Exception {
 		Path taken = Files.createDirectories(temp.resolve("a folder where the file would go"));
