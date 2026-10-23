@@ -290,6 +290,52 @@ public class MovingBuildGameTest {
 				.thenSucceed();
 	}
 
+	/**
+	 * A refinement that gives an earlier part another motion, re-tips one of its blocks and adds one: undoing it puts
+	 * the motion, the block and the part back as they were (spec v2 §4.4).
+	 */
+	@GameTest(structure = ARENA, maxTicks = 800)
+	public void undoingARefinementPutsTheMotionBack(GameTestHelper helper) {
+		ArenaBuild first = start(helper, Facing.SOUTH, FLAP);
+		AtomicReference<ArenaBuild> second = new AtomicReference<>();
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> moving(helper, first))
+				.thenExecute(() -> second.set(ArenaBuilds.refine(helper, first, """
+						{"calls": [
+						  {"tool": "submit_brief", "args": {"title": "a spinning wing", "style": "test"}},
+						  {"tool": "set_blocks", "args": {"blocks": [{"pos": [2, 3, 4], "block": "black_wool"}, {"pos": [4, 3, 4], "block": "gray_wool"}],
+						    "part": "wing"}},
+						  {"tool": "animate", "args": {"part": "wing", "pivot": [0.5, 3, 4], "motions": [{"spin": {"axis": "forward", "period": 80}}]}},
+						  {"tool": "finish", "args": {"summary": "a longer wing with a black stripe, spinning"}}
+						]}""")))
+				.thenWaitUntil(() -> {
+					ArenaBuilds.assertDone(helper, second.get());
+					AnimationStore.Part wing = first.animations().builds().getFirst().parts().getFirst();
+					helper.assertTrue(wing.motion().motions().getFirst() instanceof Motion.Spin, "the wing isn't spinning");
+					helper.assertValueEqual(wing.displays().size(), 4, "the wing's displays");
+				})
+				.thenExecute(() -> {
+					Map<BlockPos, Display.BlockDisplay> displays = byCorner(helper, first);
+					helper.assertValueEqual(displays.size(), 4, "displays after the refinement");
+					helper.assertValueEqual(state(displays.get(first.world(new Pos(2, 3, 4)))).getBlock(), Blocks.WOOL.pick(DyeColor.BLACK), "the stripe");
+					UndoRunner runner = new UndoRunner(first.level(), second.get().journal(), Tunables.BLOCKS_PER_TICK, first.animations());
+					JobScheduler.add(runner);
+					undo.set(runner);
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> {
+					AnimationStore.Part wing = first.animations().builds().getFirst().parts().getFirst();
+					helper.assertValueEqual(wing.motion().motions(), List.of(new Motion.Swing("forward", -30, 40, 40, 0)), "the motion after the undo");
+					helper.assertValueEqual(wing.displays().size(), 3, "the wing's displays after the undo");
+					Map<BlockPos, Display.BlockDisplay> displays = byCorner(helper, first);
+					helper.assertValueEqual(displays.size(), 3, "displays after the undo");
+					helper.assertValueEqual(state(displays.get(first.world(new Pos(2, 3, 4)))).getBlock(), Blocks.WOOL.pick(DyeColor.GRAY),
+							"the stripe after the undo");
+				})
+				.thenSucceed();
+	}
+
 	/** A saved moving build that can't be read (a facing that isn't one) costs only itself. */
 	@GameTest
 	public void aStoredBuildThatCantBeReadIsSkipped(GameTestHelper helper) {

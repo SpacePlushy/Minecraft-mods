@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.LongStream;
@@ -58,6 +59,10 @@ public final class AnimationStore extends SavedData {
 	public record MovingBuild(Key key, List<Part> parts) {
 		public MovingBuild {
 			parts = List.copyOf(parts);
+		}
+
+		public Optional<Part> part(String name) {
+			return parts.stream().filter(part -> part.motion().name().equals(name)).findFirst();
 		}
 
 		/** Each part's motion by name, as {@code Poses} reads them. */
@@ -128,18 +133,34 @@ public final class AnimationStore extends SavedData {
 
 	private static final Codec<long[]> LONGS = Codec.LONG_STREAM.xmap(LongStream::toArray, LongStream::of);
 
+	private record SavedMotion(String name, Vec3 pivot, List<Motion> motions, String parent) {
+		static final Codec<SavedMotion> CODEC = RecordCodecBuilder.create(i -> i.group(
+				Codec.STRING.fieldOf("name").forGetter(SavedMotion::name),
+				PIVOT.fieldOf("pivot").forGetter(SavedMotion::pivot),
+				MOTION.listOf().fieldOf("motions").forGetter(SavedMotion::motions),
+				Codec.STRING.optionalFieldOf("parent", "").forGetter(SavedMotion::parent)).apply(i, SavedMotion::new));
+
+		DataResult<MovingPart> part() {
+			try {
+				return DataResult.success(new MovingPart(name, pivot, motions, parent));
+			} catch (IllegalArgumentException e) {
+				return DataResult.error(() -> "a saved part can't be read: " + e.getMessage());
+			}
+		}
+	}
+
+	/** A moving part's name, pivot, motions and parent, held to animate's limits. */
+	static final Codec<MovingPart> MOVING_PART = SavedMotion.CODEC.flatXmap(SavedMotion::part,
+			m -> DataResult.success(new SavedMotion(m.name(), m.pivot(), m.motions(), m.parent())));
+
 	/** A part as saved: its displays as two arrays, the ids two longs each and the blocks packed. */
-	private record SavedPart(String name, Vec3 pivot, List<Motion> motions, String parent, long[] ids, long[] blocks) {
+	private record SavedPart(MovingPart motion, long[] ids, long[] blocks) {
 		static final Codec<SavedPart> CODEC = RecordCodecBuilder.create(i -> i.group(
-				Codec.STRING.fieldOf("name").forGetter(SavedPart::name),
-				PIVOT.fieldOf("pivot").forGetter(SavedPart::pivot),
-				MOTION.listOf().fieldOf("motions").forGetter(SavedPart::motions),
-				Codec.STRING.optionalFieldOf("parent", "").forGetter(SavedPart::parent),
+				MOVING_PART.fieldOf("motion").forGetter(SavedPart::motion),
 				LONGS.fieldOf("display_ids").forGetter(SavedPart::ids),
 				LONGS.fieldOf("display_blocks").forGetter(SavedPart::blocks)).apply(i, SavedPart::new));
 
 		static SavedPart of(Part part) {
-			MovingPart m = part.motion();
 			int n = part.displays().size();
 			long[] ids = new long[2 * n];
 			long[] blocks = new long[n];
@@ -149,18 +170,12 @@ public final class AnimationStore extends SavedData {
 				ids[2 * k + 1] = d.id().getLeastSignificantBits();
 				blocks[k] = BlockPos.asLong(d.block().x(), d.block().y(), d.block().z());
 			}
-			return new SavedPart(m.name(), m.pivot(), m.motions(), m.parent(), ids, blocks);
+			return new SavedPart(part.motion(), ids, blocks);
 		}
 
 		DataResult<Part> part() {
 			if (ids.length != 2 * blocks.length) {
 				return DataResult.error(() -> "a saved part's displays don't add up");
-			}
-			MovingPart motion;
-			try {
-				motion = new MovingPart(name, pivot, motions, parent);
-			} catch (IllegalArgumentException e) {
-				return DataResult.error(() -> "a saved part can't be read: " + e.getMessage());
 			}
 			List<PartDisplay> displays = new ArrayList<>(blocks.length);
 			for (int k = 0; k < blocks.length; k++) {
@@ -238,6 +253,32 @@ public final class AnimationStore extends SavedData {
 		if (changed) {
 			setDirty();
 		}
+	}
+
+	/** Gives a part back the motion it had (undoing a refinement), while the build still has the part. */
+	public void restore(UUID build, MovingPart motion) {
+		Live live = builds.get(build);
+		if (live != null && live.parts.containsKey(motion.name())) {
+			live.parts.get(motion.name()).motion = motion;
+			live.motions = null;
+			setDirty();
+		}
+	}
+
+	/** Whether the moving build is still the store's. */
+	public boolean has(UUID build) {
+		return builds.containsKey(build);
+	}
+
+	/** A part's motion as it stands, if the build has the part. */
+	public Optional<MovingPart> motion(UUID build, String part) {
+		Live live = builds.get(build);
+		return live == null || !live.parts.containsKey(part) ? Optional.empty() : Optional.of(live.parts.get(part).motion);
+	}
+
+	/** One moving build as it stands. */
+	public Optional<MovingBuild> build(UUID id) {
+		return builds().stream().filter(build -> build.key().id().equals(id)).findFirst();
 	}
 
 	/** Every moving build as it stands, in the order they began. */

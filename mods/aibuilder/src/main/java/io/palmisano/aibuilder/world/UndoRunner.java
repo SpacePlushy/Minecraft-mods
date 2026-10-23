@@ -110,6 +110,9 @@ public final class UndoRunner implements Tickable {
 			if (!displays.isEmpty()) {
 				animations.forget(displays);
 			}
+			// A refinement's changes to an earlier build's parts: the blocks they showed, the motions they had.
+			journal.reshown().forEach(r -> Displays.show(level, r.display(), r.before()));
+			journal.reanimated().forEach(r -> animations.restore(r.build(), r.before()));
 			framesDown = true;
 		}
 		long deadline = System.nanoTime() + Tunables.TICK_BUDGET_NANOS;

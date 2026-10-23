@@ -3,10 +3,12 @@ package io.palmisano.aibuilder.world;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -72,6 +74,8 @@ public final class PlacementJob implements Tickable {
 	private final Map<Block, String> ids = new IdentityHashMap<>();
 	/** Each moving part's displays by the block they stand at, so a spot given again shows the later block. */
 	private final Map<String, Map<BlockPos, UUID>> shown = new HashMap<>();
+	/** The displays this job made; the others in {@link #shown} are an earlier build's (a refinement's parts). */
+	private final Set<UUID> made = new HashSet<>();
 	private volatile DisplayListener onDisplay = (part, display, at) -> {
 	};
 
@@ -126,6 +130,14 @@ public final class PlacementJob implements Tickable {
 				queue.addAll(sorted);
 			}
 		}
+	}
+
+	/**
+	 * An earlier build's displays by part and block (a refinement's, spec v2 §4.4): a spot one stands at shows the later
+	 * block, as one of this job's would, and the journal keeps what it showed before. Server thread, before the job starts.
+	 */
+	public void knownDisplays(Map<String, Map<BlockPos, UUID>> earlier) {
+		earlier.forEach((part, displays) -> shown.computeIfAbsent(part, p -> new HashMap<>()).putAll(displays));
 	}
 
 	/** Who hears of the displays it makes. Any thread, before the job starts. */
@@ -357,7 +369,11 @@ public final class PlacementJob implements Tickable {
 		Map<BlockPos, UUID> part = shown.computeIfAbsent(placement.part(), p -> new HashMap<>());
 		for (Map.Entry<BlockPos, BlockState> entry : StateFactory.states(placement.block(), rotation, pos)) {
 			UUID shown = part.get(entry.getKey());
-			if (shown == null || !Displays.show(level, shown, entry.getValue())) {
+			BlockState before = shown == null ? null : Displays.show(level, shown, entry.getValue());
+			if (before != null && !made.contains(shown) && before != entry.getValue()) {
+				journal.reshown(shown, before);
+			}
+			if (before == null) {
 				Display.BlockDisplay display = Displays.spawn(level, entry.getKey(), entry.getValue());
 				if (display == null) {
 					if (failures++ == 0) {
@@ -366,6 +382,7 @@ public final class PlacementJob implements Tickable {
 					continue;
 				}
 				part.put(entry.getKey(), display.getUUID());
+				made.add(display.getUUID());
 				journal.addSpawned(new UndoJournal.Spawned(display.getUUID(), Positions.toPos(entry.getKey()), "", UndoJournal.Spawned.DISPLAY));
 				onDisplay.shown(placement.part(), display.getUUID(), entry.getKey());
 			}

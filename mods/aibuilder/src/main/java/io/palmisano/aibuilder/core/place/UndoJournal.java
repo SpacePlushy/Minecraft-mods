@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import io.palmisano.aibuilder.core.anim.MovingPart;
 import io.palmisano.aibuilder.core.frame.Pos;
 
 /**
@@ -26,6 +27,17 @@ public final class UndoJournal<S, D> {
 		public static final String DISPLAY = "display";
 	}
 
+	/** A display an earlier build made that this one showed another block on (a refinement): undo shows {@code before} again. */
+	public record Reshown<S>(UUID display, S before) {
+	}
+
+	/** The motion a part of an earlier build had before this one gave it another (a refinement): undo gives it back. */
+	public record Reanimated(UUID build, MovingPart before) {
+	}
+
+	private record PartOf(UUID build, String part) {
+	}
+
 	private static final class Record<S, D> {
 		final S original;
 		final D originalData;
@@ -40,19 +52,51 @@ public final class UndoJournal<S, D> {
 
 	private final Map<Pos, Record<S, D>> records = new LinkedHashMap<>();
 	private final List<Spawned> spawned = new ArrayList<>();
+	private final Map<UUID, S> reshown = new LinkedHashMap<>();
+	private final Map<PartOf, MovingPart> reanimated = new LinkedHashMap<>();
 
 	public static <S, D> UndoJournal<S, D> of(List<Entry<S, D>> entries) {
 		return of(entries, List.of());
 	}
 
 	public static <S, D> UndoJournal<S, D> of(List<Entry<S, D>> entries, List<Spawned> spawned) {
+		return of(entries, spawned, List.of(), List.of());
+	}
+
+	public static <S, D> UndoJournal<S, D> of(List<Entry<S, D>> entries, List<Spawned> spawned, List<Reshown<S>> reshown, List<Reanimated> reanimated) {
 		UndoJournal<S, D> journal = new UndoJournal<>();
 		for (Entry<S, D> e : entries) {
 			journal.beforeWrite(e.pos(), e.original(), e.originalData());
 			journal.afterWrite(e.pos(), e.writtenBlock(), e.writtenDataHash());
 		}
 		spawned.forEach(journal::addSpawned);
+		reshown.forEach(r -> journal.reshown(r.display(), r.before()));
+		reanimated.forEach(r -> journal.reanimated(r.build(), r.before()));
 		return journal;
+	}
+
+	/** An earlier build's display showing another block now; the first block it showed before this build wins. */
+	public void reshown(UUID display, S before) {
+		reshown.putIfAbsent(display, before);
+	}
+
+	/** In the order they were first shown another block. */
+	public List<Reshown<S>> reshown() {
+		List<Reshown<S>> out = new ArrayList<>(reshown.size());
+		reshown.forEach((display, before) -> out.add(new Reshown<>(display, before)));
+		return out;
+	}
+
+	/** An earlier part's motion before this build gave it another; the first wins, as for blocks. */
+	public void reanimated(UUID build, MovingPart before) {
+		reanimated.putIfAbsent(new PartOf(build, before.name()), before);
+	}
+
+	/** In the order they were first given another motion. */
+	public List<Reanimated> reanimated() {
+		List<Reanimated> out = new ArrayList<>(reanimated.size());
+		reanimated.forEach((part, before) -> out.add(new Reanimated(part.build(), before)));
+		return out;
 	}
 
 	public void addSpawned(Spawned entity) {
@@ -108,9 +152,12 @@ public final class UndoJournal<S, D> {
 		return records.size();
 	}
 
-	/** Nothing to undo: no block changed and no entity spawned (a build that only hung frames isn't empty). */
+	/**
+	 * Nothing to undo: no block changed, no entity spawned and nothing of an earlier build's moving parts changed (a
+	 * build that only hung frames isn't empty, nor a refinement that only made the wings flap faster).
+	 */
 	public boolean isEmpty() {
-		return records.isEmpty() && spawned.isEmpty();
+		return records.isEmpty() && spawned.isEmpty() && reshown.isEmpty() && reanimated.isEmpty();
 	}
 
 	public RestoreDecision decide(Pos pos, String currentBlockId, int currentDataHash) {

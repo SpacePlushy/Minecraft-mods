@@ -743,6 +743,8 @@ public final class BuildManager {
 		final Budget budget;
 		final PlacementJob job;
 		final McBuildSink sink;
+		/** Its moving parts into the world's AnimationStore; a refinement's join its session's moving build. */
+		final MovingParts moving;
 		final Set<ChunkPos> chunks;
 		final BuildHandle handle;
 		StoredBuild stored;
@@ -799,7 +801,9 @@ public final class BuildManager {
 			JobScheduler.add(job);
 			job.whenEnded().whenComplete(this::ended);
 			// The sink's callbacks come from the backend's thread.
-			MovingParts moving = new MovingParts(level, frame, AnimationStore.get(server), job);
+			AnimationStore animations = AnimationStore.get(server);
+			moving = refines == null || refines.movingBuild().isEmpty() ? new MovingParts(level, frame, animations, job, journal)
+					: MovingParts.refining(level, frame, animations, job, journal, UUID.fromString(refines.movingBuild()));
 			sink = new McBuildSink(job, brief -> server.execute(() -> briefed(brief)), finished -> {
 				summary = finished == null ? "" : finished;
 				job.finish();
@@ -810,6 +814,7 @@ public final class BuildManager {
 			tools.movingBudget(cfg.maxMovingBlocks());
 			if (refines != null) {
 				tools.refining(refines.title().isBlank() ? Messages.untitledBuild() : refines.title(), refines.changed());
+				tools.refiningParts(moving.earlierParts());
 			}
 			if (logging != null) {
 				logging.log().request(playerPrompt, request.size().label(), refines != null, refines == null ? "" : refines.title(), cfg.model(),
@@ -916,14 +921,19 @@ public final class BuildManager {
 			if (journal.isEmpty()) {
 				return;
 			}
+			// A refinement that only changed a motion changed no position: the box stays as it was.
 			Box changes = changedBox();
+			if (changes == null && refines == null) {
+				return;
+			}
 			String session = handle.sessionId().isBlank() ? request.session().toString() : handle.sessionId();
-			sessions.put(owner, refines != null ? refines.refined(playerPrompt, changes, session, title)
+			String movingBuild = moving.inStore() ? moving.key().id().toString() : refines != null ? refines.movingBuild() : "";
+			sessions.put(owner, (refines != null ? refines.refined(playerPrompt, changes == null ? refines.changed() : changes, session, title)
 					: new BuildSession(level.dimension().identifier().toString(), title, frame.origin(), frame.facing(), request.size(), changes,
-							session, List.of(playerPrompt), 1, false));
+							session, List.of(playerPrompt), 1, false, "")).withMovingBuild(movingBuild));
 		}
 
-		/** What this build changed (its frames included), as a local box. */
+		/** What this build changed (its frames and displays included), as a local box; null when it changed no position. */
 		private Box changedBox() {
 			int minX = Integer.MAX_VALUE;
 			int minY = Integer.MAX_VALUE;
@@ -933,6 +943,9 @@ public final class BuildManager {
 			int maxZ = Integer.MIN_VALUE;
 			List<Pos> all = new ArrayList<>(journal.positions());
 			journal.spawned().forEach(s -> all.add(s.pos()));
+			if (all.isEmpty()) {
+				return null;
+			}
 			for (Pos world : all) {
 				Pos p = frame.toLocal(world);
 				minX = Math.min(minX, p.x());

@@ -53,12 +53,24 @@ public final class UndoStore extends SavedData {
 				return new UndoJournal.Spawned(id, new Pos(at.getX(), at.getY(), at.getZ()), item, kind);
 			}));
 
+	/** An earlier build's display a refinement showed another block on, and the block it showed before. */
+	private static final Codec<UndoJournal.Reshown<BlockState>> RESHOWN_CODEC = RecordCodecBuilder.create(i -> i.group(
+			UUIDUtil.CODEC.fieldOf("display").forGetter(r -> r.display()),
+			BlockState.CODEC.fieldOf("before").forGetter(r -> r.before())).apply(i, UndoJournal.Reshown::new));
+
+	/** An earlier build's part a refinement gave another motion, and the motion it had. */
+	private static final Codec<UndoJournal.Reanimated> REANIMATED_CODEC = RecordCodecBuilder.create(i -> i.group(
+			UUIDUtil.CODEC.fieldOf("build").forGetter(UndoJournal.Reanimated::build),
+			AnimationStore.MOVING_PART.fieldOf("before").forGetter(UndoJournal.Reanimated::before)).apply(i, UndoJournal.Reanimated::new));
+
 	/**
-	 * A journal as palettes and arrays, one slot per position in the order they were first changed, and the entities
-	 * it spawned (none in a journal saved before M5).
+	 * A journal as palettes and arrays, one slot per position in the order they were first changed, the entities it
+	 * spawned (none in a journal saved before M5), and what it changed of earlier builds' moving parts (none before
+	 * moving parts).
 	 */
 	private record PackedJournal(long[] positions, List<BlockState> states, int[] stateIndex, List<String> written,
-			int[] writtenIndex, int[] hashes, List<DataEntry> data, List<UndoJournal.Spawned> entities) {
+			int[] writtenIndex, int[] hashes, List<DataEntry> data, List<UndoJournal.Spawned> entities, List<UndoJournal.Reshown<BlockState>> reshown,
+			List<UndoJournal.Reanimated> reanimated) {
 		static final Codec<long[]> LONGS = Codec.LONG_STREAM.xmap(LongStream::toArray, LongStream::of);
 		static final Codec<int[]> INTS = Codec.INT_STREAM.xmap(IntStream::toArray, IntStream::of);
 		static final Codec<PackedJournal> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -69,7 +81,9 @@ public final class UndoStore extends SavedData {
 				INTS.fieldOf("written_index").forGetter(PackedJournal::writtenIndex),
 				INTS.fieldOf("hashes").forGetter(PackedJournal::hashes),
 				DataEntry.CODEC.listOf().fieldOf("data").forGetter(PackedJournal::data),
-				SPAWNED_CODEC.listOf().optionalFieldOf("entities", List.of()).forGetter(PackedJournal::entities)).apply(i, PackedJournal::new));
+				SPAWNED_CODEC.listOf().optionalFieldOf("entities", List.of()).forGetter(PackedJournal::entities),
+				RESHOWN_CODEC.listOf().optionalFieldOf("reshown", List.of()).forGetter(PackedJournal::reshown),
+				REANIMATED_CODEC.listOf().optionalFieldOf("reanimated", List.of()).forGetter(PackedJournal::reanimated)).apply(i, PackedJournal::new));
 
 		static PackedJournal pack(UndoJournal<BlockState, CompoundTag> journal) {
 			List<UndoJournal.Entry<BlockState, CompoundTag>> entries = journal.entries();
@@ -93,7 +107,7 @@ public final class UndoStore extends SavedData {
 				}
 			}
 			return new PackedJournal(positions, List.copyOf(states.keySet()), stateIndex, List.copyOf(written.keySet()), writtenIndex,
-					hashes, data, journal.spawned());
+					hashes, data, journal.spawned(), journal.reshown(), journal.reanimated());
 		}
 
 		/** The journal, or an error when the arrays don't add up (a palette read in part lacks the block it couldn't read). */
@@ -116,7 +130,7 @@ public final class UndoStore extends SavedData {
 				entries.add(new UndoJournal.Entry<>(new Pos(pos.getX(), pos.getY(), pos.getZ()), states.get(stateIndex[k]),
 						dataByIndex.get(k), block.isEmpty() ? null : block, hashes[k]));
 			}
-			return DataResult.success(UndoJournal.of(entries, entities));
+			return DataResult.success(UndoJournal.of(entries, entities, reshown, reanimated));
 		}
 	}
 

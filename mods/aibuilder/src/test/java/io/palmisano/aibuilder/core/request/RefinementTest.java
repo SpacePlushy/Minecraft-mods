@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 class RefinementTest {
 	/** A castle facing south from (100, 64, 0): it covers x 90..110 (local −10..10), z 3..43 (local 3..43). */
 	private static final BuildSession CASTLE = new BuildSession("minecraft:overworld", "Stonehold Castle", new Pos(100, 64, 0), Facing.SOUTH,
-			SizeTier.MEDIUM, Box.of(-10, 0, 3, 10, 30, 43), "7b0f3c1e-1111-4222-8333-444455556666", List.of("a castle"), 1, false);
+			SizeTier.MEDIUM, Box.of(-10, 0, 3, 10, 30, 43), "7b0f3c1e-1111-4222-8333-444455556666", List.of("a castle"), 1, false, "");
 
 	@Test
 	void withinFortyEightBlocksRefines() {
@@ -32,6 +32,17 @@ class RefinementTest {
 		assertEquals(Optional.empty(), Refinement.decide(CASTLE, false, new Pos(100 + 10 + 49, 64, 20), "minecraft:overworld"), "49 off");
 		assertEquals(Optional.empty(), Refinement.decide(CASTLE, false, new Pos(100, 64, 20), "minecraft:the_nether"), "another dimension");
 		assertEquals(Optional.empty(), Refinement.decide(null, false, new Pos(100, 64, 20), "minecraft:overworld"), "no build yet");
+	}
+
+	/** The moving build a session's parts are in goes with it through refinements and undos (spec v2 §4.4). */
+	@Test
+	void aSessionKeepsItsMovingBuild() {
+		String moving = "5c1f0d7e-aaaa-4bbb-8ccc-ddddeeeeffff";
+		BuildSession dragon = CASTLE.withMovingBuild(moving);
+		assertEquals("", CASTLE.movingBuild());
+		BuildSession faster = dragon.refined("flap faster", Box.of(0, 0, 3, 2, 2, 5), "7b0f3c1e-1111-4222-8333-444455556666", "");
+		assertEquals(moving, faster.movingBuild());
+		assertEquals(moving, faster.undone().orElseThrow().movingBuild());
 	}
 
 	@Test

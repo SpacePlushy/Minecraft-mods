@@ -5,10 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import io.palmisano.aibuilder.core.anim.Motion;
+import io.palmisano.aibuilder.core.anim.MovingPart;
+import io.palmisano.aibuilder.core.anim.Vec3;
 import io.palmisano.aibuilder.core.blocks.FakeCatalog;
 import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.Facing;
@@ -18,6 +22,7 @@ import io.palmisano.aibuilder.core.place.FireMask;
 import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.place.ProtectionMask;
 import io.palmisano.aibuilder.core.request.SizeTier;
+import io.palmisano.aibuilder.core.shapes.Box;
 import org.junit.jupiter.api.Test;
 
 /** Moving parts in the tools (spec v2 §4.1, §4.2): a write with a part makes displays; animate gives a part its motion. */
@@ -140,6 +145,52 @@ class MovingPartsTest {
 		assertTrue(result.text().contains("passes through 1 solid block: [0, 1, 2]"), result.text());
 		sink.pending = 500;
 		assertTrue(tools.call("check_motion", json("{}")).text().contains("500 blocks are still going in"));
+	}
+
+	/** An earlier build's wing, as a refinement's tools are told of it. */
+	private static final PartInfo EARLIER_WING = new PartInfo(List.of(new Pos(0, 1, 2), new Pos(1, 1, 2), new Pos(2, 1, 2), new Pos(0, 1, 3),
+			new Pos(1, 1, 3), new Pos(2, 1, 3)), new MovingPart("wing", new Vec3(-0.5, 1, 2.5), List.of(new Motion.Swing("forward", -20, 45, 40, 0)),
+			""));
+
+	/** A refinement's get_context lists the moving parts it may change, with their motions (spec v2 §4.4). */
+	@Test
+	void aRefinementsContextListsItsParts() {
+		ToolExecutor tools = tools();
+		tools.refining("Dragon", Box.of(0, 0, 2, 5, 5, 9));
+		Map<String, PartInfo> earlier = new LinkedHashMap<>();
+		earlier.put("wing", EARLIER_WING);
+		earlier.put("tail", new PartInfo(List.of(new Pos(0, 2, 8), new Pos(0, 2, 9)), null));
+		tools.refiningParts(earlier);
+		String context = tools.call("get_context", json("{}")).text();
+		assertTrue(context.contains("Moving parts:"), context);
+		assertTrue(context.contains("wing (6 blocks) moves about the pivot [-0.5, 1, 2.5]: swings about forward from -20° to 45° every 40 ticks"),
+				context);
+		assertTrue(context.contains("tail (2 blocks) stands still"), context);
+	}
+
+	@Test
+	void aRefinementAnimatesAnEarlierPart() {
+		ToolExecutor tools = tools();
+		tools.refiningParts(Map.of("wing", EARLIER_WING));
+		ToolResult faster = tools.call("animate", json("{\"part\":\"wing\",\"pivot\":[-0.5,1,2.5],\"motions\":[{\"swing\":{\"axis\":"
+				+ "\"forward\",\"from\":-20,\"to\":45,\"period\":20}}]}"));
+		assertFalse(faster.isError(), faster.text());
+		assertEquals(List.of(new Motion.Swing("forward", -20, 45, 20, 0)), tools.parts().get("wing").motion().motions());
+		assertEquals(1, sink.animated.size());
+	}
+
+	/** A write naming an earlier part adds to it: its blocks count, a spot it has counts once, and it keeps its motion. */
+	@Test
+	void aRefinementAddsToAnEarlierPart() {
+		ToolExecutor tools = tools();
+		tools.movingBudget(8);
+		tools.refiningParts(Map.of("wing", EARLIER_WING));
+		ToolResult more = tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[3,1,2],\"block\":\"stone\"},{\"pos\":[3,1,3],\"block\":\"stone\"},"
+				+ "{\"pos\":[0,1,2],\"block\":\"stone\"}],\"part\":\"wing\"}"));
+		assertFalse(more.isError(), more.text());
+		assertTrue(more.text().contains("8 moving blocks in this build; 0 left"), more.text());
+		assertEquals(8, tools.parts().get("wing").blocks().size());
+		assertEquals(EARLIER_WING.motion(), tools.parts().get("wing").motion(), "the motion it had");
 	}
 
 	@Test

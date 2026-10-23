@@ -45,7 +45,9 @@ public final class SessionStore extends SavedData {
 			Codec.STRING.fieldOf("claude_session").forGetter(BuildSession::claudeSession),
 			Codec.STRING.listOf().fieldOf("prompts").forGetter(BuildSession::prompts),
 			Codec.INT.fieldOf("builds").forGetter(BuildSession::builds),
-			Codec.BOOL.fieldOf("last_undone").forGetter(BuildSession::lastUndone)).apply(i, BuildSession::new));
+			Codec.BOOL.fieldOf("last_undone").forGetter(BuildSession::lastUndone),
+			// Saved before moving parts: none.
+			Codec.STRING.optionalFieldOf("moving_build", "").forGetter(BuildSession::movingBuild)).apply(i, BuildSession::new));
 
 	private record Entry(UUID player, BuildSession session) {
 		static final Codec<Entry> CODEC = RecordCodecBuilder.create(i -> i.group(

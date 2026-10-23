@@ -13,6 +13,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.anim.Motion;
+import io.palmisano.aibuilder.core.anim.MovingPart;
+import io.palmisano.aibuilder.core.anim.Vec3;
 import io.palmisano.aibuilder.core.blocks.BlockSpec;
 import io.palmisano.aibuilder.core.blocks.Validation;
 import io.palmisano.aibuilder.core.blocks.Validator;
@@ -317,6 +320,9 @@ public class UndoGameTest {
 		UndoJournal<BlockState, CompoundTag> second = new UndoJournal<>();
 		second.beforeWrite(new Pos(5, 5, 5), Blocks.AIR.defaultBlockState(), null);
 		second.afterWrite(new Pos(5, 5, 5), "minecraft:glass", 0);
+		// A refinement's changes to an earlier build's moving parts (spec v2 §4.4).
+		second.reshown(UUID.randomUUID(), Blocks.STONE.defaultBlockState());
+		second.reanimated(UUID.randomUUID(), new MovingPart("wing", new Vec3(0.5, 3, 4), List.of(new Motion.Swing("forward", -30, 40, 40, 0.25)), "body"));
 
 		UUID player = UUID.randomUUID();
 		UndoStore store = new UndoStore();
@@ -328,6 +334,8 @@ public class UndoGameTest {
 		UndoStore.StoredBuild newest = loaded.pop(player).orElseThrow();
 		helper.assertValueEqual(newest.title(), "a window", "newest build");
 		helper.assertValueEqual(newest.journal().entries(), second.entries(), "newest journal");
+		helper.assertValueEqual(newest.journal().reshown(), second.reshown(), "the displays a refinement showed another block on");
+		helper.assertValueEqual(newest.journal().reanimated(), second.reanimated(), "the motions a refinement replaced");
 		UndoStore.StoredBuild older = loaded.pop(player).orElseThrow();
 		helper.assertValueEqual(older.dimension(), Level.NETHER, "dimension");
 		helper.assertValueEqual(older.title(), "a tower", "title");

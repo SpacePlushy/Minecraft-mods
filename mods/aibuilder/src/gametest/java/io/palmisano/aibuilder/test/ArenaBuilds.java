@@ -6,6 +6,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Executor;
 
 import io.palmisano.aibuilder.core.Tunables;
@@ -70,10 +71,21 @@ final class ArenaBuilds {
 	}
 
 	static ArenaBuild start(GameTestHelper helper, Facing facing, String scriptJson, Occupancy occupancy, int blocksPerTick, long maxChanged) {
+		// Each test build's own store, never the world's: the game's own engine moves only what's in the world's.
+		return run(helper, frame(helper, facing), scriptJson, occupancy, blocksPerTick, maxChanged, new AnimationStore(), null);
+	}
+
+	/** A refinement of {@code earlier} (spec v2 §4.4): its frame and store, joining its moving build, its parts known to the tools. */
+	static ArenaBuild refine(GameTestHelper helper, ArenaBuild earlier, String scriptJson) {
+		return run(helper, earlier.frame(), scriptJson, Occupancy.players(helper.getLevel()), Tunables.BLOCKS_PER_TICK,
+				SizeTier.SMALL.maxChangedBlocks(), earlier.animations(), earlier.moving().key().id());
+	}
+
+	private static ArenaBuild run(GameTestHelper helper, LocalFrame frame, String scriptJson, Occupancy occupancy, int blocksPerTick, long maxChanged,
+			AnimationStore animations, UUID refining) {
 		ServerLevel level = helper.getLevel();
-		LocalFrame frame = frame(helper, facing);
 		UndoJournal<BlockState, CompoundTag> journal = new UndoJournal<>();
-		PlacementJob job = new PlacementJob(level, StateFactory.rotation(facing), journal, occupancy, blocksPerTick,
+		PlacementJob job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, occupancy, blocksPerTick,
 				Tunables.TICK_BUDGET_NANOS, maxChanged);
 		Set<ChunkPos> chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(ALLOWED.min())),
 				Positions.toBlockPos(frame.toWorld(ALLOWED.max())));
@@ -81,20 +93,20 @@ final class ArenaBuilds {
 		job.whenEnded().whenComplete((skipped, error) -> BuildTickets.release(level, chunks));
 		JobScheduler.add(job);
 
-		// Each test build's own store, never the world's: the game's own engine moves only what's in the world's.
-		AnimationStore animations = new AnimationStore();
-		MovingParts moving = new MovingParts(level, frame, animations, job);
+		MovingParts moving = refining == null ? new MovingParts(level, frame, animations, job, journal)
+				: MovingParts.refining(level, frame, animations, job, journal, refining);
 		McBuildSink sink = new McBuildSink(job, brief -> {
 		}, summary -> job.finish(), moving::animate);
 		McWorldReader world = new McWorldReader(level, frame, ALLOWED, SizeTier.SMALL, () -> null, List.of(), journal, AiBuilderConfig.DEFAULT);
 		ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, ALLOWED, SizeTier.SMALL,
 				SizeTier.SMALL.maxChangedBlocks(), sink, new Budget(Tunables.MAX_TOOL_CALLS), world);
+		tools.refiningParts(moving.earlierParts());
 		Executor worker = task -> Thread.ofPlatform().daemon().name("aibuilder-arena-build").start(task);
 		ScriptedBackend backend = new ScriptedBackend(scriptJson, worker);
 		BuildHandle handle = backend.start(new BuildRequest("arena test", SizeTier.SMALL), tools, BuildEvents.NONE);
 		// A script that throws never reaches finish: end the job anyway, as BuildManager will.
 		handle.outcome().thenRun(() -> job.finish());
-		return new ArenaBuild(level, frame, job, journal, backend, handle, animations);
+		return new ArenaBuild(level, frame, job, journal, backend, handle, animations, moving);
 	}
 
 	/** The demo house the {@code /aibuild test} command builds. */
@@ -116,7 +128,7 @@ final class ArenaBuilds {
 	}
 
 	record ArenaBuild(ServerLevel level, LocalFrame frame, PlacementJob job, UndoJournal<BlockState, CompoundTag> journal,
-			ScriptedBackend backend, BuildHandle handle, AnimationStore animations) {
+			ScriptedBackend backend, BuildHandle handle, AnimationStore animations, MovingParts moving) {
 		BlockPos world(Pos local) {
 			return Positions.toBlockPos(frame.toWorld(local));
 		}

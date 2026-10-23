@@ -130,6 +130,18 @@ public final class ToolExecutor {
 		movingBudget = blocks;
 	}
 
+	/**
+	 * A refinement's earlier moving parts (spec v2 §4.4): get_context lists them, animate may give one another motion,
+	 * and a write naming one adds to it (its blocks count against max_moving_blocks).
+	 */
+	public synchronized void refiningParts(Map<String, PartInfo> earlier) {
+		earlier.forEach((name, info) -> {
+			PartState state = parts.computeIfAbsent(name, n -> new PartState());
+			state.blocks.addAll(info.blocks());
+			state.motion = info.motion();
+		});
+	}
+
 	/** The build's moving parts: each one's displays (local positions) and its motion (null until animated). */
 	public synchronized Map<String, PartInfo> parts() {
 		Map<String, PartInfo> out = new LinkedHashMap<>();
@@ -245,6 +257,13 @@ public final class ToolExecutor {
 		if (!refining.isEmpty()) {
 			lines.add("Refining: " + refining + ", the build this session made: its blocks fill " + describe(changes) + "; the allowed box"
 					+ " reaches past them, and they're yours to change.");
+		}
+		Map<String, PartInfo> moving = parts();
+		if (!moving.isEmpty()) {
+			List<String> each = new ArrayList<>();
+			moving.forEach((name, part) -> each.add(name + " (" + blocks(part.blocks().size()) + ") "
+					+ (part.motion() == null ? "stands still" : motion(part.motion()))));
+			lines.add("Moving parts: " + String.join("; ", each) + ". Use animate to give one another motion; a write naming one adds to it.");
 		}
 		lines.addAll(List.of(
 				"World: " + facts.dimension() + ", biome " + facts.biome() + ", " + facts.time() + ", " + facts.weather()
@@ -562,9 +581,14 @@ public final class ToolExecutor {
 		return "there's no part called \"" + name + "\": build it first, with \"part\": \"" + name + "\" on a write tool";
 	}
 
-	/** A part's motion in words, as animate answers and get_context lists it. */
+	/** A part's motion in words, as animate answers it. */
 	static String describe(MovingPart part) {
-		StringBuilder out = new StringBuilder(part.name()).append(" moves about the pivot ").append(describe(part.pivot())).append(": ");
+		return part.name() + " " + motion(part) + ".";
+	}
+
+	/** "moves about the pivot …: swings about …", as animate answers and get_context lists it. */
+	private static String motion(MovingPart part) {
+		StringBuilder out = new StringBuilder("moves about the pivot ").append(describe(part.pivot())).append(": ");
 		List<String> each = new ArrayList<>();
 		for (Motion m : part.motions()) {
 			each.add(switch (m) {
@@ -579,7 +603,7 @@ public final class ToolExecutor {
 		if (!part.parent().isEmpty()) {
 			out.append("; it rides with ").append(part.parent());
 		}
-		return out.append('.').toString();
+		return out.toString();
 	}
 
 	private static double phaseOf(Motion m) {

@@ -20,7 +20,8 @@ public class RefinementGameTest {
 	public void sessionsSurviveASave(GameTestHelper helper) {
 		UUID player = UUID.randomUUID();
 		BuildSession castle = new BuildSession("minecraft:overworld", "Stonehold Castle", new Pos(100, 64, -7), Facing.WEST, SizeTier.MEDIUM,
-				Box.of(-10, -2, 3, 10, 30, 43), "7b0f3c1e-1111-4222-8333-444455556666", List.of("a castle", "add a moat"), 2, true);
+				Box.of(-10, -2, 3, 10, 30, 43), "7b0f3c1e-1111-4222-8333-444455556666", List.of("a castle", "add a moat"), 2, true,
+				"5c1f0d7e-aaaa-4bbb-8ccc-ddddeeeeffff");
 		SessionStore store = new SessionStore();
 		store.put(player, castle);
 		Tag saved = SessionStore.CODEC.encodeStart(NbtOps.INSTANCE, store).getOrThrow();

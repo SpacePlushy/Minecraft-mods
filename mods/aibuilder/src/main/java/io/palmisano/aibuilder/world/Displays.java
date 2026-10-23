@@ -41,13 +41,14 @@ public final class Displays {
 		return level.addFreshEntity(display) ? display : null;
 	}
 
-	/** Shows {@code state} instead, if the display is still there; false when it's gone. */
-	static boolean show(ServerLevel level, UUID id, BlockState state) {
+	/** Shows {@code state} instead, if the display is still there: what it showed before, or null when it's gone. */
+	static BlockState show(ServerLevel level, UUID id, BlockState state) {
 		if (level.getEntity(id) instanceof Display.BlockDisplay display && !display.isRemoved()) {
+			BlockState before = ((BlockDisplayAccessor) display).aibuilder$blockState();
 			((BlockDisplayAccessor) display).aibuilder$setBlockState(state);
-			return true;
+			return before;
 		}
-		return false;
+		return null;
 	}
 
 	/** Tells a display to glide from where it's drawn now to {@code pose}, over {@code ticks}. */
