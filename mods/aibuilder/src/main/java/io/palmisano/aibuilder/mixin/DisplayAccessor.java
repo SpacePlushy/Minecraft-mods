@@ -1,6 +1,7 @@
 package io.palmisano.aibuilder.mixin;
 
 import com.mojang.math.Transformation;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.entity.Display;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Invoker;
@@ -25,4 +26,13 @@ public interface DisplayAccessor {
 
 	@Invoker("getViewRange")
 	float aibuilder$viewRange();
+
+	@Invoker("getTransformationInterpolationDuration")
+	int aibuilder$transformationInterpolationDuration();
+
+	/** The pose a display draws with (scale and right rotation included), read from its synced data. */
+	@Invoker("createTransformation")
+	static Transformation aibuilder$transformation(SynchedEntityData data) {
+		throw new AssertionError();
+	}
 }

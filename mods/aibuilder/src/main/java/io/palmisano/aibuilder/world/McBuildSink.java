@@ -1,8 +1,6 @@
 package io.palmisano.aibuilder.world;
 
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -15,19 +13,23 @@ import io.palmisano.aibuilder.core.tools.Brief;
 import io.palmisano.aibuilder.core.tools.BuildSink;
 import io.palmisano.aibuilder.core.tools.PhaseProgress;
 
-/** Hands the write tools' batches to a placement job; a checkpoint waits for the job to catch up. */
+/**
+ * Hands the write tools' batches to a placement job, a checkpoint waiting for the job to catch up, and a moving part's
+ * motion to {@code onAnimate} (from the backend's thread).
+ */
 public final class McBuildSink implements BuildSink {
 	private final PlacementJob job;
 	private final Consumer<Brief> onBrief;
 	private final Consumer<String> onFinish;
-	private final Map<String, MovingPart> parts = new ConcurrentHashMap<>();
+	private final Consumer<MovingPart> onAnimate;
 	/** Written by the backend's thread, read by the status line. */
 	private volatile PhaseProgress phases = PhaseProgress.of(List.of());
 
-	public McBuildSink(PlacementJob job, Consumer<Brief> onBrief, Consumer<String> onFinish) {
+	public McBuildSink(PlacementJob job, Consumer<Brief> onBrief, Consumer<String> onFinish, Consumer<MovingPart> onAnimate) {
 		this.job = job;
 		this.onBrief = onBrief;
 		this.onFinish = onFinish;
+		this.onAnimate = onAnimate;
 	}
 
 	/** The phase in progress, e.g. "walls (2/7)", for the status line. Any thread. */
@@ -51,14 +53,9 @@ public final class McBuildSink implements BuildSink {
 		job.enqueue(batch);
 	}
 
-	/** Each moving part's motion so far, by name. Any thread. */
-	public Map<String, MovingPart> parts() {
-		return Map.copyOf(parts);
-	}
-
 	@Override
 	public void animate(MovingPart part) {
-		parts.put(part.name(), part);
+		onAnimate.accept(part);
 	}
 
 	/** Blocks the backend's thread until the job has placed everything queued, or for at most the checkpoint timeout. */

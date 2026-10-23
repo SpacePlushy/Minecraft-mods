@@ -73,11 +73,14 @@ import io.palmisano.aibuilder.core.tools.PhaseProgress;
 import io.palmisano.aibuilder.core.tools.ToolCatalog;
 import io.palmisano.aibuilder.core.tools.ToolExecutor;
 import io.palmisano.aibuilder.net.BuildStatusPayload;
+import io.palmisano.aibuilder.world.AnimationEngine;
+import io.palmisano.aibuilder.world.AnimationStore;
 import io.palmisano.aibuilder.world.BuildTickets;
 import io.palmisano.aibuilder.world.JobScheduler;
 import io.palmisano.aibuilder.world.McBlockCatalog;
 import io.palmisano.aibuilder.world.McBuildSink;
 import io.palmisano.aibuilder.world.McWorldReader;
+import io.palmisano.aibuilder.world.MovingParts;
 import io.palmisano.aibuilder.world.Occupancy;
 import io.palmisano.aibuilder.world.PlacementJob;
 import io.palmisano.aibuilder.world.Positions;
@@ -137,9 +140,19 @@ public final class BuildManager {
 	private CompletableFuture<?> lastBackend = CompletableFuture.completedFuture(null);
 	/** Ticks until the running build's session record is brought up to date. */
 	private int ticksToRemember = Tunables.SESSION_REFRESH_TICKS;
+	/** Moves the world's moving parts (spec v2 §4.3); made on the first tick, once the overworld is there. */
+	private AnimationEngine animations;
 
 	private BuildManager(MinecraftServer server) {
 		this.server = server;
+	}
+
+	/** The world's moving parts move while the config's moving_parts is true (spec v2 §4.3). */
+	private AnimationEngine animations() {
+		if (animations == null) {
+			animations = new AnimationEngine(server, AnimationStore.get(server), () -> config().movingParts(), Tunables.TICK_BUDGET_NANOS);
+		}
+		return animations;
 	}
 
 	/**
@@ -632,6 +645,8 @@ public final class BuildManager {
 	}
 
 	private void tick() {
+		// The world's moving parts, whether or not anything is being built.
+		animations().tick(server.overworld().getGameTime());
 		if (build == null) {
 			return;
 		}
@@ -784,10 +799,11 @@ public final class BuildManager {
 			JobScheduler.add(job);
 			job.whenEnded().whenComplete(this::ended);
 			// The sink's callbacks come from the backend's thread.
+			MovingParts moving = new MovingParts(level, frame, AnimationStore.get(server), job);
 			sink = new McBuildSink(job, brief -> server.execute(() -> briefed(brief)), finished -> {
 				summary = finished == null ? "" : finished;
 				job.finish();
-			});
+			}, moving::animate);
 			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Set.copyOf(cfg.bannedBlocks())), frame, allowed, request.size(),
 					cap, sink, budget, world);
 			tools.siteGap(cfg.siteGap());

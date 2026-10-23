@@ -26,6 +26,15 @@ class MotionTest {
 		assertEquals(new Motion.Bob("up", 0.5, 60, 0), parse("{\"bob\": {\"direction\": \"up\", \"distance\": 0.5, \"period\": 60}}"));
 	}
 
+	/** The world saves a motion as animate reads it: each kind comes back the same. */
+	@Test
+	void eachKindRoundTrips() {
+		for (Motion m : java.util.List.of(new Motion.Swing("forward", -30, 40.5, 40, 0.25), new Motion.Spin("up", -200, 0),
+				new Motion.Bob("down", 0.5, 60, 1))) {
+			assertEquals(m, Motion.parse(m.toJson()));
+		}
+	}
+
 	@Test
 	void limitsAreRefusedWithTheirReason() {
 		assertTrue(refusal("{\"swing\": {\"axis\": \"up\", \"from\": 0, \"to\": 40, \"period\": 9}}").contains("period"));

@@ -49,6 +49,11 @@ public final class PlacementJob implements Tickable {
 	private record Settling(BlockPos pos, long readyAt) {
 	}
 
+	/** Hears of each display the job makes for a moving part: the part, the display, the block it stands at. */
+	public interface DisplayListener {
+		void shown(String part, UUID display, BlockPos at);
+	}
+
 	/** A block held back because a player stood there, with its block entity's data (place_block_entity) if any. */
 	private record Held(BlockPos pos, BlockState state, BlockEntityData data) {
 	}
@@ -66,7 +71,9 @@ public final class PlacementJob implements Tickable {
 	/** One id string per block, shared by every journal entry (a 350k build would otherwise hold 350k copies). */
 	private final Map<Block, String> ids = new IdentityHashMap<>();
 	/** Each moving part's displays by the block they stand at, so a spot given again shows the later block. */
-	private final Map<String, Map<BlockPos, UUID>> displays = new HashMap<>();
+	private final Map<String, Map<BlockPos, UUID>> shown = new HashMap<>();
+	private volatile DisplayListener onDisplay = (part, display, at) -> {
+	};
 
 	private final Object lock = new Object();
 	private final ArrayDeque<Placement> queue = new ArrayDeque<>(); // guarded by lock
@@ -119,6 +126,11 @@ public final class PlacementJob implements Tickable {
 				queue.addAll(sorted);
 			}
 		}
+	}
+
+	/** Who hears of the displays it makes. Any thread, before the job starts. */
+	public void onDisplay(DisplayListener listener) {
+		this.onDisplay = listener;
 	}
 
 	/** What placing sounds and looks like; tests listen in. Any thread, before the job starts. */
@@ -342,7 +354,7 @@ public final class PlacementJob implements Tickable {
 	 * no collision). A spot the part already shows takes the later block, as a block would.
 	 */
 	private void show(Placement placement, BlockPos pos) {
-		Map<BlockPos, UUID> part = displays.computeIfAbsent(placement.part(), p -> new HashMap<>());
+		Map<BlockPos, UUID> part = shown.computeIfAbsent(placement.part(), p -> new HashMap<>());
 		for (Map.Entry<BlockPos, BlockState> entry : StateFactory.states(placement.block(), rotation, pos)) {
 			UUID shown = part.get(entry.getKey());
 			if (shown == null || !Displays.show(level, shown, entry.getValue())) {
@@ -355,6 +367,7 @@ public final class PlacementJob implements Tickable {
 				}
 				part.put(entry.getKey(), display.getUUID());
 				journal.addSpawned(new UndoJournal.Spawned(display.getUUID(), Positions.toPos(entry.getKey()), "", UndoJournal.Spawned.DISPLAY));
+				onDisplay.shown(placement.part(), display.getUUID(), entry.getKey());
 			}
 			if (felt < Tunables.FEEL_PER_TICK && !entry.getValue().isAir()) {
 				felt++;

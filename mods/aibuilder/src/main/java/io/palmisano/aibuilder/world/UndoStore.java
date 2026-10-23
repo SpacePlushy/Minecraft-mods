@@ -10,10 +10,8 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
 
-import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
-import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import io.palmisano.aibuilder.AiBuilderMod;
 import io.palmisano.aibuilder.core.Tunables;
@@ -134,11 +132,12 @@ public final class UndoStore extends SavedData {
 	private record PlayerBuilds(UUID player, List<StoredBuild> builds) {
 		static final Codec<PlayerBuilds> CODEC = RecordCodecBuilder.create(i -> i.group(
 				UUIDUtil.CODEC.fieldOf("player").forGetter(PlayerBuilds::player),
-				skipping(BUILD_CODEC, "build").fieldOf("builds").forGetter(PlayerBuilds::builds)).apply(i, PlayerBuilds::new));
+				SavedLists.skipping(BUILD_CODEC, "build", "it can't be undone").fieldOf("builds").forGetter(PlayerBuilds::builds))
+				.apply(i, PlayerBuilds::new));
 	}
 
-	public static final Codec<UndoStore> CODEC = skipping(PlayerBuilds.CODEC, "player's builds").fieldOf("players").codec()
-			.xmap(UndoStore::fromPlayers, UndoStore::toPlayers);
+	public static final Codec<UndoStore> CODEC = SavedLists.skipping(PlayerBuilds.CODEC, "player's builds", "they can't be undone")
+			.fieldOf("players").codec().xmap(UndoStore::fromPlayers, UndoStore::toPlayers);
 
 	public static final SavedDataType<UndoStore> TYPE = new SavedDataType<>(AiBuilderMod.id("undo"), UndoStore::new, CODEC, null);
 
@@ -190,34 +189,6 @@ public final class UndoStore extends SavedData {
 	public void replace(UUID player, StoredBuild build, StoredBuild replacement) {
 		history.replace(player, build, replacement);
 		setDirty();
-	}
-
-	/**
-	 * A list read one item at a time: an item that can't be read (a build naming a block the game no longer has, a
-	 * mod's removed since) is left out with a warning, so it costs only itself. Read whole, it would fail the store, and
-	 * the game would start an empty one and save it over the file.
-	 */
-	private static <T> Codec<List<T>> skipping(Codec<T> item, String what) {
-		Codec<List<T>> whole = item.listOf();
-		return new Codec<>() {
-			@Override
-			public <O> DataResult<Pair<List<T>, O>> decode(DynamicOps<O> ops, O input) {
-				return ops.getList(input).map(items -> {
-					List<T> read = new ArrayList<>();
-					items.accept(element -> {
-						DataResult<T> one = item.parse(ops, element);
-						one.result().ifPresentOrElse(read::add, () -> AiBuilderMod.LOG.warn("Left out a saved {} that can't be read (it can't be"
-								+ " undone): {}", what, one.error().map(DataResult.Error::message).orElse("")));
-					});
-					return Pair.of(read, ops.empty());
-				});
-			}
-
-			@Override
-			public <O> DataResult<O> encode(List<T> input, DynamicOps<O> ops, O prefix) {
-				return whole.encode(input, ops, prefix);
-			}
-		};
 	}
 
 	private static UndoStore fromPlayers(List<PlayerBuilds> players) {

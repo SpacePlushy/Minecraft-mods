@@ -53,6 +53,37 @@ public sealed interface Motion permits Motion.Swing, Motion.Spin, Motion.Bob {
 		}
 	}
 
+	/** The motion as {@link #parse} reads it: how the world saves it. */
+	default JsonObject toJson() {
+		JsonObject m = new JsonObject();
+		String kind = switch (this) {
+			case Swing s -> {
+				m.addProperty("axis", s.axis());
+				m.addProperty("from", s.from());
+				m.addProperty("to", s.to());
+				m.addProperty("period", s.period());
+				m.addProperty("phase", s.phase());
+				yield "swing";
+			}
+			case Spin s -> {
+				m.addProperty("axis", s.axis());
+				m.addProperty("period", s.period());
+				m.addProperty("phase", s.phase());
+				yield "spin";
+			}
+			case Bob b -> {
+				m.addProperty("direction", b.direction());
+				m.addProperty("distance", b.distance());
+				m.addProperty("period", b.period());
+				m.addProperty("phase", b.phase());
+				yield "bob";
+			}
+		};
+		JsonObject motion = new JsonObject();
+		motion.add(kind, m);
+		return motion;
+	}
+
 	/** {@code {"swing": {…}}}, {@code {"spin": {…}}} or {@code {"bob": {…}}}; phase is optional (0). */
 	static Motion parse(JsonObject motion) {
 		if (motion == null || motion.size() != 1) {

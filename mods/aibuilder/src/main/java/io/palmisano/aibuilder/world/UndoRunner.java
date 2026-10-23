@@ -7,7 +7,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import io.palmisano.aibuilder.core.blocks.PlacementPass;
 
@@ -41,6 +43,7 @@ public final class UndoRunner implements Tickable {
 
 	private final ServerLevel level;
 	private final UndoJournal<BlockState, CompoundTag> journal;
+	private final AnimationStore animations;
 	private final int blocksPerTick;
 	private final List<Pos> order;
 	private final Set<ChunkPos> chunks;
@@ -56,10 +59,16 @@ public final class UndoRunner implements Tickable {
 	private int kept;
 	private boolean loggedFailure;
 
-	/** Server thread: the tickets go on here. */
+	/** Server thread: the tickets go on here. The build's moving parts are the world's. */
 	public UndoRunner(ServerLevel level, UndoJournal<BlockState, CompoundTag> journal, int blocksPerTick) {
+		this(level, journal, blocksPerTick, AnimationStore.get(level.getServer()));
+	}
+
+	/** Server thread: the tickets go on here; the displays taken down are forgotten in {@code animations}. */
+	public UndoRunner(ServerLevel level, UndoJournal<BlockState, CompoundTag> journal, int blocksPerTick, AnimationStore animations) {
 		this.level = level;
 		this.journal = journal;
+		this.animations = animations;
 		this.blocksPerTick = blocksPerTick;
 		// Each position's pass worked out once: in the comparator it ran on every comparison (seconds for a 350k undo).
 		Map<Pos, PlacementPass> passes = new HashMap<>();
@@ -96,6 +105,11 @@ public final class UndoRunner implements Tickable {
 			}
 			kept += ItemFrames.takeDown(level, journal.spawned());
 			Displays.takeDown(level, journal.spawned());
+			Set<UUID> displays = journal.spawned().stream().filter(s -> s.kind().equals(UndoJournal.Spawned.DISPLAY)).map(UndoJournal.Spawned::id)
+					.collect(Collectors.toSet());
+			if (!displays.isEmpty()) {
+				animations.forget(displays);
+			}
 			framesDown = true;
 		}
 		long deadline = System.nanoTime() + Tunables.TICK_BUDGET_NANOS;

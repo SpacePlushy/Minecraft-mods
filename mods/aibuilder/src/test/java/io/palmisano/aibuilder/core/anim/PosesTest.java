@@ -107,6 +107,30 @@ class PosesTest {
 		}
 	}
 
+	/**
+	 * The game glides a display's corner in a straight line between two poses while it turns, so a part that turns far
+	 * between them draws in for a moment: a fast part is posed every 2 ticks or every tick, and a part riding it as
+	 * often.
+	 */
+	@Test
+	void aFastPartIsPosedMoreOften() {
+		Map<String, MovingPart> parts = Map.of(
+				"slow", part("slow", Vec3.ZERO, "", new Motion.Swing("forward", -30, 40, 40, 0)),
+				"quick", part("quick", Vec3.ZERO, "", new Motion.Spin("up", 80, 0)),
+				"fast", part("fast", Vec3.ZERO, "", new Motion.Spin("up", 30, 0)),
+				"fastest", part("fastest", Vec3.ZERO, "", new Motion.Spin("up", -10, 0)),
+				"rider", part("rider", new Vec3(1, 0, 0), "fast", new Motion.Swing("up", 0, 10, 400, 0)),
+				"both", part("both", Vec3.ZERO, "", new Motion.Spin("up", 72, 0), new Motion.Spin("forward", 72, 0)),
+				"bobbing", part("bobbing", Vec3.ZERO, "", new Motion.Bob("up", 16, 10, 0)));
+		assertEquals(4, Poses.stepTicks("slow", parts), "22° in 4 ticks");
+		assertEquals(4, Poses.stepTicks("quick", parts), "18° in 4 ticks");
+		assertEquals(2, Poses.stepTicks("fast", parts), "48° in 4 ticks");
+		assertEquals(1, Poses.stepTicks("fastest", parts), "144° in 4 ticks");
+		assertEquals(2, Poses.stepTicks("rider", parts), "it rides a part posed every 2");
+		assertEquals(2, Poses.stepTicks("both", parts), "two 20° turns add up");
+		assertEquals(4, Poses.stepTicks("bobbing", parts), "a bob glides straight");
+	}
+
 	/** A dragon circling a tower: a spin about a pivot outside the part keeps it at its distance, going round. */
 	@Test
 	void aPivotOutsideThePartCirclesIt() {

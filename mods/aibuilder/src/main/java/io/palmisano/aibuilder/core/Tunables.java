@@ -136,6 +136,11 @@ public final class Tunables {
 	public static final double MOTION_DISTANCE_MAX = 16;
 	/** The game glides the short way between two poses: a motion must turn less than this between them. */
 	public static final double STEP_DEGREES_MAX = 180;
+	/**
+	 * A part turning more than this in a step is posed more often (every 2 ticks, or every tick): between poses a
+	 * display's corner glides straight, so a part turning further would draw in visibly (by 3% at 30°).
+	 */
+	public static final double SMOOTH_TURN_DEGREES = 30;
 	public static final int MOTIONS_PER_PART_MAX = 8;
 	public static final int PARTS_PER_BUILD_MAX = 32;
 	/** How many parts deep a part may ride (a wing on a body on a ship). */

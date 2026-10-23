@@ -24,11 +24,13 @@ import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.tools.Budget;
 import io.palmisano.aibuilder.core.tools.ToolExecutor;
 import io.palmisano.aibuilder.core.tools.ToolResult;
+import io.palmisano.aibuilder.world.AnimationStore;
 import io.palmisano.aibuilder.world.BuildTickets;
 import io.palmisano.aibuilder.world.JobScheduler;
 import io.palmisano.aibuilder.world.McBlockCatalog;
 import io.palmisano.aibuilder.world.McBuildSink;
 import io.palmisano.aibuilder.world.McWorldReader;
+import io.palmisano.aibuilder.world.MovingParts;
 import io.palmisano.aibuilder.world.Occupancy;
 import io.palmisano.aibuilder.world.PlacementJob;
 import io.palmisano.aibuilder.world.Positions;
@@ -79,8 +81,11 @@ final class ArenaBuilds {
 		job.whenEnded().whenComplete((skipped, error) -> BuildTickets.release(level, chunks));
 		JobScheduler.add(job);
 
+		// Each test build's own store, never the world's: the game's own engine moves only what's in the world's.
+		AnimationStore animations = new AnimationStore();
+		MovingParts moving = new MovingParts(level, frame, animations, job);
 		McBuildSink sink = new McBuildSink(job, brief -> {
-		}, summary -> job.finish());
+		}, summary -> job.finish(), moving::animate);
 		McWorldReader world = new McWorldReader(level, frame, ALLOWED, SizeTier.SMALL, () -> null, List.of(), journal, AiBuilderConfig.DEFAULT);
 		ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, ALLOWED, SizeTier.SMALL,
 				SizeTier.SMALL.maxChangedBlocks(), sink, new Budget(Tunables.MAX_TOOL_CALLS), world);
@@ -89,7 +94,7 @@ final class ArenaBuilds {
 		BuildHandle handle = backend.start(new BuildRequest("arena test", SizeTier.SMALL), tools, BuildEvents.NONE);
 		// A script that throws never reaches finish: end the job anyway, as BuildManager will.
 		handle.outcome().thenRun(() -> job.finish());
-		return new ArenaBuild(level, frame, job, journal, backend, handle);
+		return new ArenaBuild(level, frame, job, journal, backend, handle, animations);
 	}
 
 	/** The demo house the {@code /aibuild test} command builds. */
@@ -111,7 +116,7 @@ final class ArenaBuilds {
 	}
 
 	record ArenaBuild(ServerLevel level, LocalFrame frame, PlacementJob job, UndoJournal<BlockState, CompoundTag> journal,
-			ScriptedBackend backend, BuildHandle handle) {
+			ScriptedBackend backend, BuildHandle handle, AnimationStore animations) {
 		BlockPos world(Pos local) {
 			return Positions.toBlockPos(frame.toWorld(local));
 		}

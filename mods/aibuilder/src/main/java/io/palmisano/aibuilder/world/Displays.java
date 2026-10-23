@@ -3,7 +3,11 @@ package io.palmisano.aibuilder.world;
 import java.util.List;
 import java.util.UUID;
 
+import com.mojang.math.Transformation;
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.anim.DisplayPose;
+import io.palmisano.aibuilder.core.anim.Quat;
+import io.palmisano.aibuilder.core.anim.Vec3;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.mixin.BlockDisplayAccessor;
 import io.palmisano.aibuilder.mixin.DisplayAccessor;
@@ -12,6 +16,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.level.block.state.BlockState;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 /**
  * A moving part's blocks (spec v2 §4.1): vanilla block displays, one a block, each showing its block's model in the
@@ -42,6 +48,17 @@ public final class Displays {
 			return true;
 		}
 		return false;
+	}
+
+	/** Tells a display to glide from where it's drawn now to {@code pose}, over {@code ticks}. */
+	static void pose(Display.BlockDisplay display, DisplayPose pose, int ticks) {
+		DisplayAccessor accessor = (DisplayAccessor) display;
+		Vec3 t = pose.translation();
+		Quat r = pose.rotation();
+		accessor.aibuilder$setTransformation(new Transformation(new Vector3f((float) t.x(), (float) t.y(), (float) t.z()),
+				new Quaternionf((float) r.x(), (float) r.y(), (float) r.z(), (float) r.w()), new Vector3f(1, 1, 1), new Quaternionf()));
+		accessor.aibuilder$setTransformationInterpolationDuration(ticks);
+		accessor.aibuilder$setTransformationInterpolationDelay(0);
 	}
 
 	/** Takes down the build's displays: they hold nothing of the player's, so all of them go. */

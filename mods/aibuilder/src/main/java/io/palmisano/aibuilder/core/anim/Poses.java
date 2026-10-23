@@ -43,6 +43,32 @@ public final class Poses {
 		return new DisplayPose(pose.apply(corner).minus(corner), pose.r());
 	}
 
+	/**
+	 * How often the part is given a new pose: every {@link Tunables#ANIMATION_STEP_TICKS} ticks, or every 2 or every
+	 * tick when its motions (its parents' included) would turn it more than {@link Tunables#SMOOTH_TURN_DEGREES}
+	 * between two poses. The game glides a display's corner in a straight line from one pose to the next while it turns
+	 * it, so a part turning far between them draws in for a moment.
+	 */
+	public static int stepTicks(String part, Map<String, MovingPart> parts) {
+		double degrees = 0;
+		String at = part;
+		for (int depth = 0; !at.isEmpty() && depth <= Tunables.PART_DEPTH_MAX; depth++) {
+			MovingPart p = parts.get(at);
+			if (p == null) {
+				break;
+			}
+			for (Motion motion : p.motions()) {
+				degrees += stepDegrees(motion);
+			}
+			at = p.parent();
+		}
+		int ticks = Tunables.ANIMATION_STEP_TICKS;
+		while (ticks > 1 && degrees * ticks / Tunables.ANIMATION_STEP_TICKS > Tunables.SMOOTH_TURN_DEGREES) {
+			ticks /= 2;
+		}
+		return ticks;
+	}
+
 	/** The most a motion turns between two poses (one every {@link Tunables#ANIMATION_STEP_TICKS}). */
 	public static double stepDegrees(Motion motion) {
 		return switch (motion) {
