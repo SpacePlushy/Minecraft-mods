@@ -6,7 +6,7 @@ Each mod is a small, self-contained project under [`mods/`](mods/).
 | Mod | What it does | Minecraft | Status |
 |---|---|---|---|
 | [**Drone**](mods/drone/) | A rideable quadcopter that flies like a real camera drone: it tilts into moves, carries momentum, brakes, and holds altitude | 26.3 | v1 done, play-tested |
-| [**AI Builder**](mods/aibuilder/) | Press B, type anything ("castle", "a cozy cabin with a dock"), and Claude builds it in front of you | 26.3 | v1 done: prompts build for real with Claude Code on your own login, with a status panel, a self-check, signs, chests, books, banners and item frames; follow-ups refine a build ("add a moat"); a settings file, build logs, clear errors (`/aibuild test`, `/aibuild survey`, undo). v2 (in progress): builds that move ("a dragon with flapping wings"), redstone that works ("a lever that opens a piston door"), and machines from tested parts ("a working calculator") |
+| [**AI Builder**](mods/aibuilder/) | Press B, type anything ("castle", "a cozy cabin with a dock"), and Claude builds it in front of you | 26.3 | v1 done: prompts build for real with Claude Code on your own login, with a status panel, a self-check, signs, chests, books, banners and item frames; follow-ups refine a build ("add a moat"); a settings file, build logs, clear errors (`/aibuild test`, `/aibuild survey`, undo). v2 built, in review: builds that move ("a dragon with flapping wings"), redstone that works ("a lever that opens a piston door"), and machines from tested parts ("a working calculator") |
 
 ![The drone mod's quadcopters](mods/drone/docs/drone-showcase.png)
 
