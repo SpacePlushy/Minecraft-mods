@@ -41,8 +41,8 @@ public final class Pla {
 	static final int C0 = 5;
 	/** Game ticks a redstone tick takes: a torch's or a delay-1 repeater's step. */
 	private static final int STEP = 2;
-	private static final BlockSpec STONE = BlockSpec.of("stone");
-	private static final BlockSpec DUST = BlockSpec.of("redstone_wire");
+	static final BlockSpec STONE = BlockSpec.of("stone");
+	static final BlockSpec DUST = BlockSpec.of("redstone_wire");
 
 	private Pla() {
 	}
@@ -191,7 +191,18 @@ public final class Pla {
 
 	/** A repeater carrying the signal toward {@code signalGoes}: its facing names its input side, the opposite one. */
 	static BlockSpec repeater(String signalGoes) {
-		return new BlockSpec("repeater", Map.of("facing", opposite(signalGoes), "delay", "1"));
+		return repeater(signalGoes, 1);
+	}
+
+	/** The same, {@code delay} redstone ticks (1 to 4). */
+	static BlockSpec repeater(String signalGoes, int delay) {
+		return new BlockSpec("repeater", Map.of("facing", opposite(signalGoes), "delay", String.valueOf(delay)));
+	}
+
+	/** {@code part} at {@code at} on a stone just below it. */
+	static void stand(List<LocalBlock> blocks, Pos at, BlockSpec part) {
+		blocks.add(new LocalBlock(new Pos(at.x(), at.y() - 1, at.z()), STONE));
+		blocks.add(new LocalBlock(at, part));
 	}
 
 	/** A wall torch pointing {@code away} from the block it's on. */

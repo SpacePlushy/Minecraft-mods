@@ -10,10 +10,13 @@ import com.google.gson.JsonPrimitive;
 
 /** The library place_gadget makes from (spec v2 §5.3): each kind and the options it takes. Pure. */
 public final class Gadgets {
-	public static final List<String> KINDS = List.of("lever_row", "lamp_row", "adder", "digit");
+	public static final List<String> KINDS = List.of("lever_row", "lamp_row", "adder", "digit", "clock", "pulse", "toggle", "latch", "counter",
+			"piston_door");
 	/** The options each kind takes. */
-	private static final Map<String, Set<String>> OPTIONS = Map.of("lever_row", Set.of("bits", "label"), "lamp_row", Set.of("bits"), "adder",
-			Set.of("bits"), "digit", Set.of());
+	private static final Map<String, Set<String>> OPTIONS = Map.ofEntries(Map.entry("lever_row", Set.of("bits", "label")),
+			Map.entry("lamp_row", Set.of("bits")), Map.entry("adder", Set.of("bits")), Map.entry("digit", Set.of()),
+			Map.entry("clock", Set.of("period")), Map.entry("pulse", Set.of("length")), Map.entry("toggle", Set.of()),
+			Map.entry("latch", Set.of("bits")), Map.entry("counter", Set.of("bits")), Map.entry("piston_door", Set.of()));
 
 	private Gadgets() {
 	}
@@ -26,6 +29,12 @@ public final class Gadgets {
 			case "lamp_row" -> LampRow.make(bits(options, 4));
 			case "adder" -> Adder.make(bits(options, 4));
 			case "digit" -> Digit.make();
+			case "clock" -> Clock.make(period(options));
+			case "pulse" -> Pulse.make(length(options));
+			case "toggle" -> Toggle.make();
+			case "latch" -> Latch.make(bits(options, 4));
+			case "counter" -> Counter.make(bits(options, 4));
+			case "piston_door" -> PistonDoor.make();
 			default -> throw new IllegalStateException(kind);
 		};
 	}
@@ -40,6 +49,12 @@ public final class Gadgets {
 			case "lamp_row" -> "a row of " + bits + (bits == 1 ? " lamp" : " lamps");
 			case "adder" -> "an adder (" + count + ")";
 			case "digit" -> "a digit";
+			case "clock" -> "a clock (every " + period(options) + " ticks)";
+			case "pulse" -> "a pulse maker (" + length(options) + " ticks)";
+			case "toggle" -> "a toggle";
+			case "latch" -> "a latch (" + count + ")";
+			case "counter" -> "a counter (" + count + ")";
+			case "piston_door" -> "a 2 × 2 piston door";
 			default -> kind;
 		};
 	}
@@ -67,6 +82,31 @@ public final class Gadgets {
 		if (!(given instanceof JsonPrimitive p) || !p.isNumber() || p.getAsDouble() != Math.rint(p.getAsDouble()) || p.getAsDouble() < 1
 				|| p.getAsDouble() > 8) {
 			throw new IllegalArgumentException("bits must be a whole number from 1 to 8, not " + text);
+		}
+		return p.getAsInt();
+	}
+
+	/** A clock's period in ticks, 20 unless given: 12 to 64, a multiple of 4 (see {@link Clock}). */
+	static int period(JsonObject options) {
+		return whole(options, "period", 12, 64, 4, 20);
+	}
+
+	/** A pulse maker's pulse in ticks, 4 unless given: 2 to 8, even (a repeater's delay goes 2 ticks a step). */
+	static int length(JsonObject options) {
+		return whole(options, "length", 2, 8, 2, 4);
+	}
+
+	/** Option {@code name}, a whole number from {@code min} to {@code max} in steps of {@code step}, or {@code otherwise}. */
+	static int whole(JsonObject options, String name, int min, int max, int step, int otherwise) {
+		JsonElement given = options.get(name);
+		if (given == null) {
+			return otherwise;
+		}
+		String text = given.toString();
+		if (!(given instanceof JsonPrimitive p) || !p.isNumber() || p.getAsDouble() != Math.rint(p.getAsDouble()) || p.getAsDouble() < min
+				|| p.getAsDouble() > max || p.getAsInt() % step != 0) {
+			throw new IllegalArgumentException(name + " must be a whole number from " + min + " to " + max + (step > 1 ? ", a multiple of " + step : "")
+					+ ", not " + text);
 		}
 		return p.getAsInt();
 	}

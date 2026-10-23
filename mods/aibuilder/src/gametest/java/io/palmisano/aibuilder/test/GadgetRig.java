@@ -150,6 +150,7 @@ final class GadgetRig {
 			set.add("args", args);
 			calls.add(set);
 		}
+		calls.add(call("check_build", Map.of()));
 		calls.add(call("finish", Map.of("summary", "built")));
 		JsonObject script = new JsonObject();
 		script.add("calls", calls);
@@ -228,6 +229,27 @@ final class GadgetRig {
 			Set<String> on = lit(rig, rig.placed().get(i));
 			helper.assertValueEqual(on, expected, FACINGS.get(i / copies) + (i % copies == 1 ? " (the twin)" : "") + ", inputs " + value + ": lit outputs");
 		}
+	}
+
+	/** Whether output {@code name}'s buffer repeater, a block inside from its port, is giving a signal. */
+	static boolean on(Rig rig, GadgetPlacement.Placed one, String name) {
+		Port port = one.ports().stream().filter(p -> p.name().equals(name)).findFirst().orElseThrow();
+		Box box = one.box();
+		Pos at = port.at();
+		for (Pos in : List.of(new Pos(at.x() + 1, at.y(), at.z()), new Pos(at.x() - 1, at.y(), at.z()), new Pos(at.x(), at.y(), at.z() + 1),
+				new Pos(at.x(), at.y(), at.z() - 1))) {
+			if (box.contains(in)) {
+				BlockState buffer = rig.build().level().getBlockState(rig.build().world(in));
+				return buffer.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.POWERED)
+						&& buffer.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.POWERED);
+			}
+		}
+		throw new IllegalStateException("no buffer inside " + port);
+	}
+
+	/** The block at the gadget's spot {@code mark}. */
+	static BlockState at(Rig rig, GadgetPlacement.Placed one, String mark) {
+		return rig.build().level().getBlockState(rig.build().world(one.marks().get(mark)));
 	}
 
 	/** The names of the outputs whose lamps are lit. */

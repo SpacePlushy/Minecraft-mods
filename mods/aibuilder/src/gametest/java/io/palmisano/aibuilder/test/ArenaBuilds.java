@@ -131,6 +131,11 @@ final class ArenaBuilds {
 		}
 	}
 
+	/** The build has finished, its finalize pass included. */
+	static boolean done(ArenaBuild build) {
+		return build.done();
+	}
+
 	/** Passes once the build has finished, its finalize pass included, and every call in its script was accepted. */
 	static void assertDone(GameTestHelper helper, ArenaBuild build) {
 		helper.assertTrue(build.done(), "the build hasn't finished");
