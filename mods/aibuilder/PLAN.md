@@ -45,7 +45,7 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 | M4 Claude | ✅ done, play-tested | Real builds from your prompts | "small cabin", then "castle"; cancel one; undo; log out of Claude Code and read the message |
 | M5 Quality | ✅ done, play-tested | Better builds: phases, self-check, the HUD, signs, chests, books, banners and item frames; lava kept clear of wood | Builds have depth, lit interiors, working doors; the panel top left; a sign or a chest in a build reads right |
 | M6 Polish | ✅ done, play-tested | Config, refinement ("add a moat"), logs, error handling, permissions | "a stone castle", then "add a moat" next to it; edit `config/aibuilder.json`; turn the Wi-Fi off mid-build; a LAN friend is refused |
-| M7 Builds that move | 🔨 built | Moving parts: "a dragon with flapping wings", "a windmill", "a flag on a pole" | Ask for a dragon with flapping wings; then "make the wings flap faster" next to it; undo; `moving_parts: false` in the config |
+| M7 Builds that move | ✅ done: reviewed, fixed, live dragon passed | Moving parts: "a dragon with flapping wings", "a windmill", "a flag on a pole" | Ask for a dragon with flapping wings; then "make the wings flap faster" next to it; undo; `moving_parts: false` in the config |
 
 ## Good to know
 
@@ -166,3 +166,9 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   another part), the game moves them on its own and keeps them in step after a restart, `check_motion` tells Claude
   where each part goes and what it passes through, a follow-up next to a moving build changes its parts, and undo
   takes them away (undoing a follow-up gives the old motion back).
+- **2026-10-22:** M7's live run, "a dragon with flapping wings" on Frankie's login, passed first time: a crimson dragon
+  on a hoard rock whose wings flap and tail sways, with Claude checking the motion before it finished. A fresh Opus 5.5
+  review found three important gaps, all fixed test-first: a big part spread over ticks now holds together, blocks can
+  be taken out of a moving part (air with its name, or clear with its name), and undo reaches displays wherever they
+  are. Its ledger is `docs/superpowers/plans/2026-10-22-aibuilder-m7-progress.md`. Also fixed: weathered copper now
+  undoes. M8 (redstone that works) is under way.
