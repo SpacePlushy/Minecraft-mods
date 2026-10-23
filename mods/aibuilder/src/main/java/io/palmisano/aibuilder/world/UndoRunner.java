@@ -28,9 +28,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.TagValueInput;
 
 /**
- * Takes a build back (spec §10): first the item frames it hung (so none drops when its wall goes), then every position
- * that still holds the block the build left there, with the same block-entity data, gets its original back, contents
- * included; anything the player has changed since stays and is counted. Supports first, bottom-up, with the build's
+ * Takes a build back (spec §10): first the item frames it hung (so none drops when its wall goes) and its moving parts'
+ * displays (spec v2 §4.1), then every position that still holds the block the build left there, with the same
+ * block-entity data, gets its original back, contents included; anything the player has changed since stays and is
+ * counted. Supports first, bottom-up, with the build's
  * own flags, then the finalize pass. Keeps every chunk the journal touches loaded and waits for them (and for their
  * entities, which load on their own), so it works however far away the build is.
  */
@@ -94,6 +95,7 @@ public final class UndoRunner implements Tickable {
 				return false;
 			}
 			kept += ItemFrames.takeDown(level, journal.spawned());
+			Displays.takeDown(level, journal.spawned());
 			framesDown = true;
 		}
 		long deadline = System.nanoTime() + Tunables.TICK_BUDGET_NANOS;

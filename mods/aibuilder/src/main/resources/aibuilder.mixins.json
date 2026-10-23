@@ -3,7 +3,9 @@
 	"package": "io.palmisano.aibuilder.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
-		"CommandSourceStackAccessor"
+		"BlockDisplayAccessor",
+		"CommandSourceStackAccessor",
+		"DisplayAccessor"
 	],
 	"injectors": {
 		"defaultRequire": 1

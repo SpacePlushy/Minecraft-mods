@@ -3,6 +3,7 @@ package io.palmisano.aibuilder.core.tools;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -573,7 +574,8 @@ public final class ToolExecutor {
 
 	/** One part's state as the build goes: its displays so far, and its motion. Guarded by the executor. */
 	private static final class PartState {
-		final List<Pos> blocks = new ArrayList<>();
+		/** A spot given again replaces its block, as a block would: one display a spot. */
+		final Set<Pos> blocks = new LinkedHashSet<>();
 		MovingPart motion;
 	}
 
@@ -762,10 +764,17 @@ public final class ToolExecutor {
 		}
 		if (moving) {
 			int have = movingBlocks();
-			if (have + fitCount > movingBudget) {
+			Set<Pos> already = parts.containsKey(part) ? parts.get(part).blocks : Set.of();
+			int adding = 0;
+			for (int n = 0; n < fitCount; n++) {
+				if (!already.contains(blocks.get(fit[n]).pos())) {
+					adding++;
+				}
+			}
+			if (have + adding > movingBudget) {
 				return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": this build may have " + String.format(Locale.ROOT, "%,d", movingBudget)
 						+ " moving blocks (max_moving_blocks) and has " + String.format(Locale.ROOT, "%,d", have) + ", so "
-						+ String.format(Locale.ROOT, "%,d", movingBudget - have) + " left; this would add " + String.format(Locale.ROOT, "%,d", fitCount)
+						+ String.format(Locale.ROOT, "%,d", movingBudget - have) + " left; this would add " + String.format(Locale.ROOT, "%,d", adding)
 						+ ". Nothing was queued");
 			}
 		}

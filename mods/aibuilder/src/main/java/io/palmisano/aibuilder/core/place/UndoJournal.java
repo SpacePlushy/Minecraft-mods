@@ -11,15 +11,19 @@ import io.palmisano.aibuilder.core.frame.Pos;
 /**
  * What a build changed: for each position, what was there first (a block state {@code S} and block-entity data
  * {@code D}), and the block the build left with a hash of its block-entity data; and the entities it spawned (item
- * frames, spec §10). Undo restores a position only while it still holds that block with that data, so it never
- * wipes what someone changed after the build.
+ * frames, spec §10, and moving parts' displays, spec v2 §4.1). Undo restores a position only while it still holds
+ * that block with that data, so it never wipes what someone changed after the build.
  */
 public final class UndoJournal<S, D> {
 	public record Entry<S, D>(Pos pos, S original, D originalData, String writtenBlock, int writtenDataHash) {
 	}
 
-	/** An entity the build spawned: its id, where it is, and the item it was given ("" for none). */
-	public record Spawned(UUID id, Pos pos, String item) {
+	/** An entity the build spawned: its id, where it is, the item it was given ("" for none), and its kind. */
+	public record Spawned(UUID id, Pos pos, String item, String kind) {
+		/** An item frame (spec §10); the kind of everything a save from before moving parts spawned. */
+		public static final String FRAME = "item_frame";
+		/** A moving part's block display (spec v2 §4.1), standing at its block's corner. */
+		public static final String DISPLAY = "display";
 	}
 
 	private static final class Record<S, D> {

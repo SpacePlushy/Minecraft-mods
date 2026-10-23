@@ -2,10 +2,12 @@ package io.palmisano.aibuilder.world;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import io.palmisano.aibuilder.AiBuilderMod;
@@ -23,6 +25,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Rotation;
@@ -62,6 +65,8 @@ public final class PlacementJob implements Tickable {
 	private long overCap;
 	/** One id string per block, shared by every journal entry (a 350k build would otherwise hold 350k copies). */
 	private final Map<Block, String> ids = new IdentityHashMap<>();
+	/** Each moving part's displays by the block they stand at, so a spot given again shows the later block. */
+	private final Map<String, Map<BlockPos, UUID>> displays = new HashMap<>();
 
 	private final Object lock = new Object();
 	private final ArrayDeque<Placement> queue = new ArrayDeque<>(); // guarded by lock
@@ -263,12 +268,16 @@ public final class PlacementJob implements Tickable {
 	}
 
 	/**
-	 * Writes one placement, both halves of a two-block block, then its block entity's data; or hangs an item frame.
-	 * Returns how much of the tick's budget it used.
+	 * Writes one placement, both halves of a two-block block, then its block entity's data; or hangs an item frame; or
+	 * shows a moving part's block. Returns how much of the tick's budget it used.
 	 */
 	private int place(Placement placement) {
 		try {
 			BlockPos pos = Positions.toBlockPos(placement.pos());
+			if (!placement.part().isEmpty()) {
+				show(placement, pos);
+				return 1;
+			}
 			if (placement.block() == null) {
 				if (placement.data() instanceof BlockEntityData.ItemFrame frame) {
 					hang(pos, frame);
@@ -327,6 +336,33 @@ public final class PlacementJob implements Tickable {
 		settling.add(new Settling(pos, level.getGameTime() + Tunables.BLOCK_ENTITY_SETTLE_TICKS));
 	}
 
+	/**
+	 * A moving part's block (spec v2 §4.1): a display at the block's corner with the state the block would have, so
+	 * facings turn as blocks do, journaled by its id. No block changes and nothing waits for a player (a display has
+	 * no collision). A spot the part already shows takes the later block, as a block would.
+	 */
+	private void show(Placement placement, BlockPos pos) {
+		Map<BlockPos, UUID> part = displays.computeIfAbsent(placement.part(), p -> new HashMap<>());
+		for (Map.Entry<BlockPos, BlockState> entry : StateFactory.states(placement.block(), rotation, pos)) {
+			UUID shown = part.get(entry.getKey());
+			if (shown == null || !Displays.show(level, shown, entry.getValue())) {
+				Display.BlockDisplay display = Displays.spawn(level, entry.getKey(), entry.getValue());
+				if (display == null) {
+					if (failures++ == 0) {
+						AiBuilderMod.LOG.warn("Couldn't show {} at {} in a moving part", placement.block().info().id(), entry.getKey());
+					}
+					continue;
+				}
+				part.put(entry.getKey(), display.getUUID());
+				journal.addSpawned(new UndoJournal.Spawned(display.getUUID(), Positions.toPos(entry.getKey()), "", UndoJournal.Spawned.DISPLAY));
+			}
+			if (felt < Tunables.FEEL_PER_TICK && !entry.getValue().isAir()) {
+				felt++;
+				feel.placed(level, entry.getKey(), entry.getValue());
+			}
+		}
+	}
+
 	/** An item frame (spec §10): journaled by its id, so undo takes it down before the blocks it hangs on. */
 	private void hang(BlockPos pos, BlockEntityData.ItemFrame data) {
 		Direction facing = rotation.rotate(Direction.byName(data.facing()));
@@ -337,7 +373,7 @@ public final class PlacementJob implements Tickable {
 			}
 			return;
 		}
-		journal.addSpawned(new UndoJournal.Spawned(frame.getUUID(), Positions.toPos(pos), data.item()));
+		journal.addSpawned(new UndoJournal.Spawned(frame.getUUID(), Positions.toPos(pos), data.item(), UndoJournal.Spawned.FRAME));
 	}
 
 	/**

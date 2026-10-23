@@ -75,7 +75,7 @@ class UndoJournalTest {
 	@Test
 	void aJournalWithOnlyFramesIsNotEmpty() {
 		assertTrue(journal.isEmpty());
-		journal.addSpawned(new UndoJournal.Spawned(UUID.randomUUID(), p, "minecraft:diamond"));
+		journal.addSpawned(new UndoJournal.Spawned(UUID.randomUUID(), p, "minecraft:diamond", UndoJournal.Spawned.FRAME));
 		assertFalse(journal.isEmpty());
 		assertFalse(wrote("minecraft:stone", 0).isEmpty());
 	}

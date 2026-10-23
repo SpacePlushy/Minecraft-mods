@@ -29,6 +29,7 @@ import io.palmisano.aibuilder.world.UndoStore;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
@@ -362,6 +363,25 @@ public class UndoGameTest {
 		helper.assertValueEqual(loaded.builds(player).stream().map(UndoStore.StoredBuild::title).toList(), List.of("a window"),
 				"the builds that load");
 		helper.assertValueEqual(loaded.peek(player).orElseThrow().journal().entries(), window.entries(), "the window's journal");
+		helper.succeed();
+	}
+
+	/** An undo history saved before moving parts, whose entities have no kind, reads them as the item frames they are. */
+	@GameTest
+	public void anOldSaveStillReads(GameTestHelper helper) {
+		CompoundTag old;
+		try {
+			old = TagParser.parseCompoundFully("""
+					{players: [{player: [I; 1, 2, 3, 4], builds: [{dimension: "minecraft:overworld", title: "a frame", journal: {
+					  positions: [L;], states: [], state_index: [I;], written: [], written_index: [I;], hashes: [I;], data: [],
+					  entities: [{id: [I; 5, 6, 7, 8], pos: 0L, item: "minecraft:apple"}]}}]}]}""");
+		} catch (CommandSyntaxException e) {
+			throw new IllegalStateException(e);
+		}
+		UndoStore loaded = UndoStore.CODEC.parse(NbtOps.INSTANCE, old).getOrThrow();
+		List<UndoJournal.Spawned> spawned = loaded.peek(UUIDUtil.uuidFromIntArray(new int[] {1, 2, 3, 4})).orElseThrow().journal().spawned();
+		helper.assertValueEqual(spawned, List.of(new UndoJournal.Spawned(UUIDUtil.uuidFromIntArray(new int[] {5, 6, 7, 8}), new Pos(0, 0, 0),
+				"minecraft:apple", UndoJournal.Spawned.FRAME)), "what the old save spawned");
 		helper.succeed();
 	}
 

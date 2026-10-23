@@ -102,6 +102,21 @@ class MovingPartsTest {
 		assertFalse(tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[5,1,2],\"block\":\"stone\"}],\"part\":\"tail\"}")).isError());
 	}
 
+	/** A spot given again in the same part replaces its block, as a block would: it counts once, and so is one display. */
+	@Test
+	void aSpotCountsOnceInAPart() {
+		ToolExecutor tools = tools();
+		tools.movingBudget(6);
+		assertFalse(tools.call("fill", json(WING)).isError());
+		ToolResult again = tools.call("fill", json("{\"box\":[0,1,2,2,1,3],\"block\":\"stone\",\"part\":\"wing\"}"));
+		assertFalse(again.isError(), again.text());
+		assertTrue(again.text().contains("6 moving blocks in this build; 0 left"), again.text());
+		assertEquals(6, tools.parts().get("wing").blocks().size());
+		// Another part's display at the same spot is its own.
+		ToolResult tail = tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[0,1,2],\"block\":\"stone\"}],\"part\":\"tail\"}"));
+		assertTrue(tail.isError() && tail.text().contains("0 left"), tail.text());
+	}
+
 	@Test
 	void displaysDontCountAsChangedBlocks() {
 		ToolExecutor tools = tools();

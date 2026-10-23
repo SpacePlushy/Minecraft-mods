@@ -45,13 +45,14 @@ public final class UndoStore extends SavedData {
 				CompoundTag.CODEC.fieldOf("tag").forGetter(DataEntry::tag)).apply(i, DataEntry::new));
 	}
 
-	/** An entity the build spawned (an item frame), its position packed. */
+	/** An entity the build spawned, its position packed; a save from before moving parts has no kind: they are all frames. */
 	private static final Codec<UndoJournal.Spawned> SPAWNED_CODEC = RecordCodecBuilder.create(i -> i.group(
 			UUIDUtil.CODEC.fieldOf("id").forGetter(UndoJournal.Spawned::id),
 			Codec.LONG.fieldOf("pos").forGetter(s -> BlockPos.asLong(s.pos().x(), s.pos().y(), s.pos().z())),
-			Codec.STRING.fieldOf("item").forGetter(UndoJournal.Spawned::item)).apply(i, (id, pos, item) -> {
+			Codec.STRING.fieldOf("item").forGetter(UndoJournal.Spawned::item),
+			Codec.STRING.optionalFieldOf("kind", UndoJournal.Spawned.FRAME).forGetter(UndoJournal.Spawned::kind)).apply(i, (id, pos, item, kind) -> {
 				BlockPos at = BlockPos.of(pos);
-				return new UndoJournal.Spawned(id, new Pos(at.getX(), at.getY(), at.getZ()), item);
+				return new UndoJournal.Spawned(id, new Pos(at.getX(), at.getY(), at.getZ()), item, kind);
 			}));
 
 	/**

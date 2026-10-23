@@ -145,6 +145,8 @@ public final class Tunables {
 	/** Displays one build may make by default (max_moving_blocks), and at most: each is an entity, drawn and sent. */
 	public static final int MAX_MOVING_BLOCKS = 2000;
 	public static final int MAX_MOVING_BLOCKS_CEILING = 10_000;
+	/** How far a moving part's displays are drawn, in units of 64 blocks: about 256, past most render distances. */
+	public static final float DISPLAY_VIEW_RANGE = 4;
 
 	private Tunables() {
 	}
