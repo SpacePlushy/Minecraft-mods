@@ -73,6 +73,11 @@ public final class BuildCheck implements Tickable {
 		this.machines = new MachineRules(level, frame, allowed, journal, earlier);
 	}
 
+	/** What the power-up pass has started already: judged as placed, before it ran, so not again (M8 review). */
+	public void started(Set<BlockPos> started) {
+		machines.started(started);
+	}
+
 	/** Completes on the server thread with the problems, local positions. */
 	public CompletableFuture<List<Problem>> result() {
 		return result;

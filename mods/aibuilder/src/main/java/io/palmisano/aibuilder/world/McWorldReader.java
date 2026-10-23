@@ -8,6 +8,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -52,6 +53,8 @@ public final class McWorldReader implements WorldReader {
 	private final Supplier<ServerPlayer> player;
 	/** The check_build read under way, or the last one; guarded by this. */
 	private CompletableFuture<List<BuildProblems.Problem>> checking;
+	/** A test_redstone is running. */
+	private final AtomicBoolean testing = new AtomicBoolean();
 	private final int siteMinX;
 	private final int siteMinZ;
 	private final int siteSize;
@@ -215,6 +218,9 @@ public final class McWorldReader implements WorldReader {
 				MinecraftServer server = level.getServer();
 				checking = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
 					BuildCheck reading = new BuildCheck(level, frame, allowed, journal, earlier, Tunables.TICK_BUDGET_NANOS);
+					if (job != null) {
+						reading.started(job.started());
+					}
 					JobScheduler.add(reading);
 					return reading;
 				}).thenCompose(BuildCheck::result);
@@ -234,17 +240,36 @@ public final class McWorldReader implements WorldReader {
 		if (job == null || job.machines() == null) {
 			throw new IllegalArgumentException("test_redstone has no machine to try here");
 		}
-		MinecraftServer server = level.getServer();
-		CompletableFuture<RedstoneTest.Outcome> test = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
-			RedstoneTest running = new RedstoneTest(level, frame, journal, job, steps);
-			JobScheduler.add(running);
-			return running;
-		}).thenCompose(RedstoneTest::result);
-		RedstoneTest.Outcome outcome = await(test, Tunables.TEST_REDSTONE_TIMEOUT_SECONDS);
-		if (outcome.refused()) {
-			throw new IllegalArgumentException(outcome.text());
+		// One at a time (M8 review): two at once would each take the other's flips for how the levers were.
+		if (!testing.compareAndSet(false, true)) {
+			throw new IllegalArgumentException("test_redstone is already trying this build's machine: wait for that answer, then test again"
+					+ " (one test at a time)");
 		}
-		return outcome.text();
+		try {
+			MinecraftServer server = level.getServer();
+			PlacementJob machine = job;
+			CompletableFuture<RedstoneTest> started = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
+				RedstoneTest running = new RedstoneTest(level, frame, journal, machine, steps);
+				JobScheduler.add(running);
+				return running;
+			});
+			RedstoneTest.Outcome outcome;
+			try {
+				outcome = await(started.thenCompose(RedstoneTest::result), Tunables.TEST_REDSTONE_TIMEOUT_SECONDS);
+			} catch (Unreadable e) {
+				// No one reads its answer now: it stops, its levers back.
+				if (started.isDone() && !started.isCompletedExceptionally()) {
+					started.join().stop();
+				}
+				throw e;
+			}
+			if (outcome.refused()) {
+				throw new IllegalArgumentException(outcome.text());
+			}
+			return outcome.text();
+		} finally {
+			testing.set(false);
+		}
 	}
 
 	/** {@code id[prop=value,…]}, compass names and values as relative words; the state already turned back to the template. */

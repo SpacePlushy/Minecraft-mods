@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
@@ -18,16 +19,18 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.ButtonBlock;
 import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.Rotation;
-import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * test_redstone (spec v2 §5.2): a short experiment on the build's machine, in the world, over ticks. It refuses while
- * anything breaks the machine rules (spec v2 §5.5), and a step that would flip or press what isn't the build's; waits,
- * at most {@link Tunables#MACHINE_PLAYER_WAIT_TICKS}, while a player stands where one of the build's pistons would
- * push; gives the build's redstone its shape and starts what isn't started yet (the power-up pass, once a position);
- * runs the steps, reading what's asked; then puts each lever it flipped back as it was and lets the machine settle.
- * Server thread.
+ * anything breaks the machine rules (spec v2 §5.5), a step that would flip or press what isn't the build's, and a press
+ * of a button beside something that reacts to power and isn't the build's. Before it starts, before each flip or
+ * press, and before the levers go back, a player where a piston of the build would push holds it back, at most
+ * {@link Tunables#MACHINE_PLAYER_WAIT_TICKS}, the action bar saying where; still there, the test ends where it is (M8
+ * review). It gives the build's redstone its shape and starts what isn't started yet (the power-up pass, once a
+ * component); runs the steps, reading what's asked; then puts each lever it flipped back as it was and lets the
+ * machine settle. Ended early (the way stayed blocked, the build was cancelled, or its answer took too long), it puts
+ * its levers back where it safely can and leaves the rest to the build's end. Server thread.
  */
 final class RedstoneTest implements Tickable {
 	/** What the test came to: its report, or why it was refused. */
@@ -47,7 +50,10 @@ final class RedstoneTest implements Tickable {
 	/** Each lever the test flips, as it was before it was first flipped. */
 	private final Map<BlockPos, Boolean> leversBefore = new LinkedHashMap<>();
 	private Stage stage = Stage.CHECK;
-	private long playersUntil;
+	private List<BlockPos> pistons = List.of();
+	/** While a player stands where a piston would push: the game time the test gives up (0: nobody in the way). */
+	private long blockedUntil;
+	private volatile boolean stopRequested;
 	private ShapePass shapePass;
 	private PowerUp powerUp;
 	private int next;
@@ -68,9 +74,18 @@ final class RedstoneTest implements Tickable {
 		return result;
 	}
 
+	/** Ends the test at its next tick (no one is waiting for its answer any more). Any thread. */
+	void stop() {
+		stopRequested = true;
+	}
+
 	@Override
 	public boolean tick() {
 		if (result.isDone()) {
+			return true;
+		}
+		if (stopRequested || job.cancelled()) {
+			end("The build was stopped, so the test was too.");
 			return true;
 		}
 		long deadline = System.nanoTime() + Tunables.TICK_BUDGET_NANOS;
@@ -96,10 +111,11 @@ final class RedstoneTest implements Tickable {
 
 	@Override
 	public void failed(RuntimeException error) {
+		job.testWaiting(null);
 		result.completeExceptionally(error);
 	}
 
-	/** Nothing may break the machine rules, and every step's lever or button must be the build's. */
+	/** Nothing may break the machine rules; every step's lever or button must be the build's, and no button may power what isn't. */
 	private void check() {
 		List<MachineRules.Breaker> breakers = job.machines().breakers();
 		if (!breakers.isEmpty()) {
@@ -114,30 +130,37 @@ final class RedstoneTest implements Tickable {
 				refuse(local(set.lever()) + " isn't a lever the build placed: test_redstone flips only the build's own levers.");
 				return;
 			}
-			if (step instanceof RedstoneSteps.Press press && !(owned(press.button()) && block(press.button()).getBlock() instanceof ButtonBlock)) {
-				refuse(local(press.button()) + " isn't a button the build placed: test_redstone presses only the build's own buttons.");
-				return;
+			if (step instanceof RedstoneSteps.Press press) {
+				if (!(owned(press.button()) && block(press.button()).getBlock() instanceof ButtonBlock)) {
+					refuse(local(press.button()) + " isn't a button the build placed: test_redstone presses only the build's own buttons.");
+					return;
+				}
+				String near = job.machines().reactingNear(Positions.toBlockPos(frame.toWorld(press.button())));
+				if (near != null) {
+					refuse(local(press.button()) + " is a button within " + Tunables.MACHINE_POWER_REACH + " blocks of " + near + ", which isn't the"
+							+ " build's: test_redstone won't press it, as that would power it.");
+					return;
+				}
 			}
 		}
-		playersUntil = level.getGameTime() + Tunables.MACHINE_PLAYER_WAIT_TICKS;
+		pistons = job.machines().pistons();
+		blockedUntil = level.getGameTime() + Tunables.MACHINE_PLAYER_WAIT_TICKS;
 		stage = Stage.PLAYERS;
 	}
 
-	/** No player where one of the build's pistons would push: wait for them, for a while. */
+	/** No player where one of the pistons would push: wait for them, for a while. */
 	private void players() {
-		for (Pos at : journal.positions()) {
-			BlockPos pos = Positions.toBlockPos(at);
-			if (!level.isLoaded(pos)) {
-				continue;
+		BlockPos piston = MachineRules.playerInReach(level, pistons, job.occupancy());
+		if (piston != null) {
+			job.testWaiting(piston);
+			if (level.getGameTime() >= blockedUntil) {
+				job.testWaiting(null);
+				refuse("A player stands in the way of the piston at " + local(piston) + ": ask them to step aside, then test again.");
 			}
-			BlockState state = level.getBlockState(pos);
-			if (state.getBlock() instanceof PistonBaseBlock && job.machines().reach(pos, state).stream().anyMatch(job.occupancy()::occupied)) {
-				if (level.getGameTime() >= playersUntil) {
-					refuse("A player stands in the way of the piston at " + local(pos) + ": ask them to step aside, then test again.");
-				}
-				return;
-			}
+			return;
 		}
+		job.testWaiting(null);
+		blockedUntil = 0;
 		List<BlockPos> components = new ArrayList<>();
 		for (Pos at : journal.positions()) {
 			BlockPos pos = Positions.toBlockPos(at);
@@ -152,8 +175,10 @@ final class RedstoneTest implements Tickable {
 
 	private void start(long deadline) {
 		if (!powerUp.run(deadline)) {
+			job.testWaiting(powerUp.waitingFor());
 			return;
 		}
+		job.testWaiting(null);
 		if (powerUp.gaveUp()) {
 			refuse("A player stands in the way of one of the build's pistons: ask them to step aside, then test again.");
 			return;
@@ -166,10 +191,13 @@ final class RedstoneTest implements Tickable {
 		stage = Stage.STEPS;
 	}
 
-	/** Runs steps until one waits; at the end, puts the levers back. */
+	/** Runs steps until one waits; at the end, puts the levers back. A flip, a press and the put-back wait for the way to be clear. */
 	private void steps() {
 		while (next < steps.size()) {
 			RedstoneSteps.Step step = steps.get(next);
+			if ((step instanceof RedstoneSteps.Set || step instanceof RedstoneSteps.Press) && blocked()) {
+				return;
+			}
 			switch (step) {
 				case RedstoneSteps.Set set -> {
 					flip(Positions.toBlockPos(frame.toWorld(set.lever())), set.on());
@@ -203,6 +231,9 @@ final class RedstoneTest implements Tickable {
 			}
 			next++;
 		}
+		if (!leversBefore.isEmpty() && blocked()) {
+			return;
+		}
 		leversBefore.forEach(this::flip);
 		if (!leversBefore.isEmpty()) {
 			report.append(String.format(Locale.ROOT, "Put %d %s back as %s.", leversBefore.size(), leversBefore.size() == 1 ? "lever" : "levers",
@@ -210,6 +241,53 @@ final class RedstoneTest implements Tickable {
 		}
 		settleUntil = level.getGameTime() + Tunables.TEST_SETTLE_TICKS;
 		stage = Stage.SETTLE;
+	}
+
+	/**
+	 * True while a player stands where one of the pistons would push, so the next change waits; past the wait, the test
+	 * ends where it is.
+	 */
+	private boolean blocked() {
+		BlockPos piston = MachineRules.playerInReach(level, pistons, job.occupancy());
+		if (piston == null) {
+			if (blockedUntil != 0) {
+				blockedUntil = 0;
+				job.testWaiting(null);
+			}
+			return false;
+		}
+		job.testWaiting(piston);
+		if (blockedUntil == 0) {
+			blockedUntil = level.getGameTime() + Tunables.MACHINE_PLAYER_WAIT_TICKS;
+		} else if (level.getGameTime() >= blockedUntil) {
+			end("A player stands in the way of the piston at " + local(piston) + ", so the test stopped before step " + (next + 1) + ".");
+		}
+		return true;
+	}
+
+	/**
+	 * Ends the test early, for {@code why}: each lever goes back if no player is in a piston's way, else it's left to the
+	 * build's end (or the next test), which puts it back once the way is clear.
+	 */
+	private void end(String why) {
+		job.testWaiting(null);
+		boolean clear = MachineRules.playerInReach(level, pistons, job.occupancy()) == null;
+		Map<BlockPos, Boolean> left = new LinkedHashMap<>();
+		leversBefore.forEach((pos, on) -> {
+			BlockState state = level.getBlockState(pos);
+			if (level.isLoaded(pos) && state.getBlock() instanceof LeverBlock && state.getValue(LeverBlock.POWERED) != on) {
+				if (clear) {
+					flip(pos, on);
+				} else {
+					left.put(pos, on);
+				}
+			}
+		});
+		job.putBackLater(left);
+		String levers = left.isEmpty() ? "" : " Its levers stay as they are until the way is clear: "
+				+ left.keySet().stream().map(this::local).collect(Collectors.joining(", ")) + ".";
+		String done = report.isEmpty() ? "" : "\nWhat it did first:\n" + report.toString().strip();
+		refuse(why + levers + done);
 	}
 
 	/** Flips the lever to {@code on} if it isn't already, remembering how it was the first time. */

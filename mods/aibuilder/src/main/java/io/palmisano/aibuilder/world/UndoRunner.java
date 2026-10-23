@@ -68,6 +68,7 @@ public final class UndoRunner implements Tickable {
 	/** 0 before the levers go back; then the game time the machine has settled by (-1: none flipped). */
 	private long settleUntil;
 	private boolean pistonsIn;
+	private final Occupancy occupancy;
 	private boolean loggedFailure;
 
 	/** Server thread: the tickets go on here. The build's moving parts are the world's. */
@@ -77,7 +78,13 @@ public final class UndoRunner implements Tickable {
 
 	/** Server thread: the tickets go on here; the displays taken down are forgotten in {@code animations}. */
 	public UndoRunner(ServerLevel level, UndoJournal<BlockState, CompoundTag> journal, int blocksPerTick, AnimationStore animations) {
+		this(level, journal, blocksPerTick, animations, Occupancy.players(level));
+	}
+
+	/** {@code occupancy}: where players stand, which no lever undo flips may push a piston into. */
+	public UndoRunner(ServerLevel level, UndoJournal<BlockState, CompoundTag> journal, int blocksPerTick, AnimationStore animations, Occupancy occupancy) {
 		this.level = level;
+		this.occupancy = occupancy;
 		this.journal = journal;
 		this.animations = animations;
 		this.blocksPerTick = blocksPerTick;
@@ -108,8 +115,12 @@ public final class UndoRunner implements Tickable {
 			return false;
 		}
 		if (settleUntil == 0) {
-			// The build's levers back as placed, and the machine left to settle: a door someone opened closes first.
-			settleUntil = putLeversBack() > 0 ? level.getGameTime() + Tunables.UNDO_SETTLE_TICKS : -1;
+			// The build's levers back as placed, and the machine left to settle: a door someone opened closes first. Not while
+			// a player stands where a piston would push (a flip would push them): then the pistons are only pulled in, below.
+			List<BlockPos> pistons = new ArrayList<>();
+			MachineRules.addPistons(level, journal, pistons);
+			boolean clear = MachineRules.playerInReach(level, pistons, occupancy) == null;
+			settleUntil = clear && putLeversBack() > 0 ? level.getGameTime() + Tunables.UNDO_SETTLE_TICKS : -1;
 		}
 		if (level.getGameTime() < settleUntil) {
 			return false;

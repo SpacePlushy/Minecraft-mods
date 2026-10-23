@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -73,8 +74,12 @@ public final class PlacementJob implements Tickable {
 	private long overCap;
 	private volatile MachineRules machines;
 	private PowerUp powerUp;
-	/** Positions the power-up pass has done (spec v2 §5.1): never twice. */
+	/** Components the power-up pass has started (spec v2 §5.1): never twice, until a tool writes there again. */
 	private final Set<BlockPos> powered = new HashSet<>();
+	/** Levers a test had to leave flipped (a player stood in a piston's way), with how they go back once the way is clear. */
+	private final Map<BlockPos, Boolean> leverRestores = new LinkedHashMap<>();
+	/** A piston a running test waits on while a player stands in its way; null when none. */
+	private volatile BlockPos testWaitingFor;
 	private final List<BlockPos> takenOut = new ArrayList<>();
 	/** One id string per block, shared by every journal entry (a 350k build would otherwise hold 350k copies). */
 	private final Map<Block, String> ids = new IdentityHashMap<>();
@@ -152,7 +157,30 @@ public final class PlacementJob implements Tickable {
 	 * thread, before the job starts.
 	 */
 	public void machine(MachineRules rules) {
+		rules.started(powered);
 		this.machines = rules;
+	}
+
+	/** What the power-up pass has started, for check_build's rules. Server thread. */
+	Set<BlockPos> started() {
+		return powered;
+	}
+
+	/** The piston a running test waits on while a player stands in its way, or null. Server thread. */
+	void testWaiting(BlockPos piston) {
+		testWaitingFor = piston;
+	}
+
+	/** Levers a test had to leave flipped: the next power-up pass puts them back once no player is in the way. Server thread. */
+	void putBackLater(Map<BlockPos, Boolean> levers) {
+		leverRestores.putAll(levers);
+	}
+
+	/** The build was cancelled. Any thread. */
+	boolean cancelled() {
+		synchronized (lock) {
+			return cancelled;
+		}
 	}
 
 	/** The machine rules it was given; null for a bare job. */
@@ -166,12 +194,13 @@ public final class PlacementJob implements Tickable {
 
 	/** A power-up pass over what isn't started yet (a test's, before it runs): it shares the job's record of what is. */
 	PowerUp newPass() {
-		return new PowerUp(level, machines, occupancy, powered, journal.positions());
+		return new PowerUp(level, machines, occupancy, powered, leverRestores, journal.positions());
 	}
 
 	/** A piston of the build that waits to start while a player stands in its way; null when none does. Server thread. */
 	public BlockPos waitingForPlayer() {
-		return powerUp == null ? null : powerUp.waitingFor();
+		BlockPos test = testWaitingFor;
+		return test != null ? test : powerUp == null ? null : powerUp.waitingFor();
 	}
 
 	/** What broke the machine rules and was put back as it was before the build. Server thread. */
@@ -283,7 +312,7 @@ public final class PlacementJob implements Tickable {
 		if (machines != null) {
 			if (powerUp == null) {
 				takeOutRuleBreakers();
-				powerUp = new PowerUp(level, machines, occupancy, powered, journal.positions());
+				powerUp = new PowerUp(level, machines, occupancy, powered, leverRestores, journal.positions());
 			}
 			if (!powerUp.run(deadline)) {
 				return false;
@@ -470,6 +499,10 @@ public final class PlacementJob implements Tickable {
 	private boolean placeBlock(BlockPos pos, BlockState state) {
 		int known = journal.size();
 		boolean wrote = write(pos, state);
+		if (wrote) {
+			// What's written now is started afresh, whatever was here before (M8 review).
+			powered.remove(pos);
+		}
 		if (journal.size() > known) {
 			placed++;
 		}

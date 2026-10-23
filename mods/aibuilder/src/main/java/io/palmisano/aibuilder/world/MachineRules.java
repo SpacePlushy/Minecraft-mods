@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.world;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
@@ -14,19 +15,29 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CrafterBlock;
+import net.minecraft.world.level.block.DispenserBlock;
+import net.minecraft.world.level.block.DropperBlock;
 import net.minecraft.world.level.block.HoneyBlock;
+import net.minecraft.world.level.block.HopperBlock;
 import net.minecraft.world.level.block.SlimeBlock;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.piston.PistonStructureResolver;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
 /**
  * What a machine may touch (spec v2 §5.5): it moves and powers only the build's own blocks. A piston's push (what
- * vanilla's own resolver says it would move or break, and where each block goes) holds only the build's blocks, inside
- * the allowed box, and never slime or honey, which carry what they touch away; and no redstone of the build is within
- * {@link Tunables#MACHINE_POWER_REACH} blocks of something that reacts to power and isn't the build's. The build's own
- * block is one it journaled that still holds the block it wrote. Reads the world as it stands, loaded chunks only.
- * Server thread.
+ * vanilla's own resolver says it would move or break, and where each block goes) and a sticky piston's pull hold only
+ * the build's blocks, inside the allowed box, and never slime or honey, which carry what they touch away; nothing of the
+ * build that gives power by itself (dust, torches, diodes, levers…; not a door or a button, M8 review) is within
+ * {@link Tunables#MACHINE_POWER_REACH} blocks of something that reacts to power and isn't the build's; and no hopper,
+ * dropper or crafter of the build feeds a dispenser, which would fire what the dispenser rule keeps out of it. The
+ * build's own block is one it journaled that still holds the block it wrote. A piece the power-up pass has started was
+ * judged as placed, before it ran, and isn't judged again: the machine may have moved the build's blocks since. Reads
+ * the world as it stands, loaded chunks only. Server thread.
  */
 public final class MachineRules {
 	/** A component that breaks a rule: where it is, which rule, and why, in Claude's local positions. */
@@ -39,6 +50,8 @@ public final class MachineRules {
 	private final UndoJournal<BlockState, CompoundTag> journal;
 	/** The player's earlier builds here (a refinement's session among them): their blocks count as the build's own. */
 	private final List<UndoJournal<BlockState, CompoundTag>> earlier;
+	/** The positions the power-up pass has started (the job's record): judged as placed, before they ran. */
+	private Set<BlockPos> started = Set.of();
 
 	public MachineRules(ServerLevel level, LocalFrame frame, Box allowed, UndoJournal<BlockState, CompoundTag> journal,
 			List<UndoJournal<BlockState, CompoundTag>> earlier) {
@@ -49,20 +62,33 @@ public final class MachineRules {
 		this.earlier = List.copyOf(earlier);
 	}
 
-	/** The first rule the block at {@code pos} breaks, or null: a piston's push first, then the power rule. */
-	Breaker broken(BlockPos pos, BlockState state) {
-		if (!Redstone.component(state)) {
-			return null;
-		}
-		String why = state.getBlock() instanceof PistonBaseBlock ? piston(pos, state) : null;
-		if (why != null) {
-			return new Breaker(pos, BuildProblems.Kind.PISTON, why);
-		}
-		why = powersOutside(pos, state);
-		return why == null ? null : new Breaker(pos, BuildProblems.Kind.POWERS_OUTSIDE, why);
+	/** The job's record of what the power-up pass has started. Before any check. */
+	void started(Set<BlockPos> started) {
+		this.started = started;
 	}
 
-	/** Every rule breaker among the build's positions, as the world stands now. */
+	/** The first rule the block at {@code pos} breaks, or null: a piston's push or pull, a feeder, then the power rule. */
+	Breaker broken(BlockPos pos, BlockState state) {
+		if (started.contains(pos)) {
+			return null;
+		}
+		if (state.getBlock() instanceof PistonBaseBlock) {
+			String why = piston(pos, state);
+			return why == null ? null : new Breaker(pos, BuildProblems.Kind.PISTON, why);
+		}
+		String fed = feeds(pos, state);
+		if (fed != null) {
+			return new Breaker(pos, BuildProblems.Kind.FEEDS_DISPENSER, fed);
+		}
+		if (!Redstone.emits(state)) {
+			return null;
+		}
+		String near = reactingNear(pos);
+		return near == null ? null : new Breaker(pos, BuildProblems.Kind.POWERS_OUTSIDE, name(state) + ": it's within "
+				+ Tunables.MACHINE_POWER_REACH + " blocks of " + near + ", which isn't the build's");
+	}
+
+	/** Every rule breaker among the build's positions not started yet, as the world stands now. */
 	List<Breaker> breakers() {
 		List<Breaker> out = new ArrayList<>();
 		for (Pos at : journal.positions()) {
@@ -77,15 +103,16 @@ public final class MachineRules {
 		return out;
 	}
 
-	/** Why the piston's push breaks the rule, or null. One that's extended already was looked at before it moved. */
+	/** Why the piston breaks the rule, or null. One out already was looked at before it moved; a sticky one still pulls. */
 	private String piston(BlockPos pos, BlockState state) {
-		if (state.getValue(PistonBaseBlock.EXTENDED)) {
-			return null;
-		}
 		Direction facing = state.getValue(PistonBaseBlock.FACING);
+		boolean sticky = state.is(Blocks.STICKY_PISTON);
 		int reach = Tunables.PISTON_READ_REACH;
 		if (!level.hasChunksAt(pos.offset(-reach, 0, -reach), pos.offset(reach, 0, reach))) {
 			return name(state) + ": it reaches where the world isn't loaded";
+		}
+		if (state.getValue(PistonBaseBlock.EXTENDED)) {
+			return sticky ? pull(state, pos, facing) : null;
 		}
 		BlockPos head = pos.relative(facing);
 		if (!inBox(head)) {
@@ -128,7 +155,46 @@ public final class MachineRules {
 				return name(state) + ": it would break " + name(level.getBlockState(broken)) + " at " + local(broken) + ", which isn't the build's";
 			}
 		}
+		// Nothing before it to push: the head goes out, and coming back a sticky piston pulls what's then before its head.
+		return sticky && push.getToPush().isEmpty() ? pull(state, pos, facing) : null;
+	}
+
+	/** Why the block two ahead of a sticky piston, which its head pulls back, breaks the rule; null if it's air, won't move, or is the build's own. */
+	private String pull(BlockState piston, BlockPos pos, Direction facing) {
+		BlockPos spot = pos.relative(facing, 2);
+		BlockState block = level.getBlockState(spot);
+		if (block.isAir() || !PistonBaseBlock.isPushable(block, level, spot, facing.getOpposite(), false, facing)) {
+			return null;
+		}
+		if (block.getBlock() instanceof SlimeBlock || block.getBlock() instanceof HoneyBlock) {
+			return name(piston) + ": it would pull " + name(block) + " at " + local(spot) + ", and slime and honey carry away what they touch";
+		}
+		if (!owned(spot) || !inBox(spot)) {
+			return name(piston) + ": it would pull " + name(block) + " at " + local(spot) + ", which isn't the build's";
+		}
 		return null;
+	}
+
+	/** Why a hopper, dropper or crafter facing into a dispenser breaks the rule (it would feed it what the dispenser rule keeps out), or null. */
+	private String feeds(BlockPos pos, BlockState state) {
+		Direction out;
+		if (state.getBlock() instanceof HopperBlock) {
+			out = state.getValue(HopperBlock.FACING);
+		} else if (state.getBlock() instanceof DropperBlock) {
+			out = state.getValue(DispenserBlock.FACING);
+		} else if (state.getBlock() instanceof CrafterBlock && state.hasProperty(BlockStateProperties.ORIENTATION)) {
+			out = state.getValue(BlockStateProperties.ORIENTATION).front();
+		} else {
+			return null;
+		}
+		BlockPos into = pos.relative(out);
+		if (!level.isLoaded(into)) {
+			return null;
+		}
+		BlockState target = level.getBlockState(into);
+		return target.getBlock() instanceof DispenserBlock && !(target.getBlock() instanceof DropperBlock)
+				? name(state) + ": it faces into the dispenser at " + local(into) + ", which would fire what it's fed"
+				: null;
 	}
 
 	/**
@@ -136,6 +202,11 @@ public final class MachineRules {
 	 * what it breaks), where a player standing would be pushed; none when it couldn't move, or it's extended.
 	 */
 	List<BlockPos> reach(BlockPos pos, BlockState state) {
+		return pushReach(level, pos, state);
+	}
+
+	/** {@link #reach}, for a piston anywhere. */
+	static List<BlockPos> pushReach(Level level, BlockPos pos, BlockState state) {
 		if (state.getValue(PistonBaseBlock.EXTENDED)) {
 			return List.of();
 		}
@@ -155,8 +226,43 @@ public final class MachineRules {
 		return out;
 	}
 
-	/** Why the component could power something that isn't the build's, or null. */
-	private String powersOutside(BlockPos pos, BlockState state) {
+	/** The pistons of the build and of the player's earlier builds here, as they stand now: any may be driven by a change. */
+	List<BlockPos> pistons() {
+		List<BlockPos> out = new ArrayList<>();
+		addPistons(level, journal, out);
+		for (UndoJournal<BlockState, CompoundTag> build : earlier) {
+			addPistons(level, build, out);
+		}
+		return out;
+	}
+
+	/** The journal's positions written as a piston that still hold one. */
+	static void addPistons(Level level, UndoJournal<BlockState, CompoundTag> journal, List<BlockPos> out) {
+		for (Pos at : journal.positions()) {
+			String written = journal.writtenBlock(at);
+			BlockPos pos = Positions.toBlockPos(at);
+			if (written != null && written.endsWith("piston") && level.isLoaded(pos) && level.getBlockState(pos).getBlock() instanceof PistonBaseBlock) {
+				out.add(pos);
+			}
+		}
+	}
+
+	/** The first of {@code pistons} whose push would reach where a player stands, or null: one change could move them. */
+	static BlockPos playerInReach(Level level, List<BlockPos> pistons, Occupancy occupancy) {
+		for (BlockPos pos : pistons) {
+			if (!level.isLoaded(pos)) {
+				continue;
+			}
+			BlockState state = level.getBlockState(pos);
+			if (state.getBlock() instanceof PistonBaseBlock && pushReach(level, pos, state).stream().anyMatch(occupancy::occupied)) {
+				return pos;
+			}
+		}
+		return null;
+	}
+
+	/** The first block within reach of {@code pos} that reacts to power and isn't the build's, as "oak_door at (2, 1, 4)"; null if none. */
+	String reactingNear(BlockPos pos) {
 		int reach = Tunables.MACHINE_POWER_REACH;
 		for (BlockPos near : BlockPos.betweenClosed(pos.offset(-reach, -reach, -reach), pos.offset(reach, reach, reach))) {
 			if (near.equals(pos) || !level.isLoaded(near)) {
@@ -164,7 +270,7 @@ public final class MachineRules {
 			}
 			BlockState block = level.getBlockState(near);
 			if (Redstone.reacts(block) && !owned(near)) {
-				return name(state) + ": it's within " + reach + " blocks of " + name(block) + " at " + local(near) + ", which isn't the build's";
+				return name(block) + " at " + local(near);
 			}
 		}
 		return null;

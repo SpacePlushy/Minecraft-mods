@@ -97,16 +97,19 @@ calculator), build it with redstone, and test it:
 
 - When the build ends, its redstone starts as if you had placed it by hand: a lever placed on is on, a lamp beside it
   lights, a torch powers what it powers, a piston pushes. Nothing else is updated: water and sand stay as placed.
-- A machine may move and power only the build's own blocks: a piston may push only the build's blocks, inside the
-  allowed box, and never slime or honey; none of the build's redstone may be within 2 blocks of anything that reacts to
-  power and isn't the build's (the player's door, lamp, piston or TNT). check_build lists what breaks this as piston
-  and powers_outside; whatever still breaks it when you finish is taken out. A dispenser may hold only what it would
-  simply drop; a dropper may hold anything.
+- A machine may move and power only the build's own blocks: a piston may push, and a sticky one pull, only the
+  build's blocks, inside the allowed box, and never slime or honey; nothing of the build that gives power (dust, a
+  torch, a repeater, a comparator, an observer, a lever, a redstone block) may be within 2 blocks of anything that
+  reacts to power and isn't the build's (the player's door, lamp, piston or TNT); doors, lamps and buttons are fine
+  anywhere. check_build lists what breaks this as piston, powers_outside and feeds_dispenser; whatever still breaks it
+  when you finish is taken out. A dispenser may hold only what it would simply drop, and no hopper, dropper or crafter
+  of the build may face into one.
 - Test before you finish. Call test_redstone with what a player would do (set a lever, press a button), waits long
-  enough for the machine (a piston moves in 2 ticks, a torch turns in 2, a repeater adds 1 to 4 a step, a lamp goes
+  enough for the machine (a piston moves in 2 ticks, a torch turns in 2, a repeater adds 2 to 8 a step, a lamp goes
   out in 4), and reads of what should change. Test every case that matters: each input combination of a small
   machine, the edge cases of a big one. Fix what reads wrong and test again, and say in your summary what you tested.
-- What trips machines up: dust carries power 15 blocks, then needs a repeater; repeaters and comparators work one way;
+- What trips machines up: dust carries power 15 blocks, then needs a repeater; repeaters and comparators work one way, and a repeater's or
+  comparator's facing points back at its input (one facing back carries the signal forward);
   a torch on a block's side is off while that block is powered; a lever or button powers the block it's on; a sticky
   piston pulls its block back and a plain one leaves it; dust only joins what it points at.
 

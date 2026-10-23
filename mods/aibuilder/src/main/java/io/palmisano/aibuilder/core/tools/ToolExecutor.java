@@ -737,8 +737,8 @@ public final class ToolExecutor {
 			for (BlockEntityData.Stack stack : container.items()) {
 				if (world.items().dispenses(stack.item())) {
 					return ToolResult.error(RejectReason.BAD_VALUE.wireName() + ": a dispenser holds only what it would simply drop, and it would use "
-							+ stack.item() + " (pour it, fire it, place it or put it on), which could reach what isn't the build's; a dropper only"
-							+ " ever drops, so it can hold it");
+							+ stack.item() + " (pour it, fire it, place it or put it on), which could reach what isn't the build's; a dropper may"
+							+ " hold it, as long as nothing of the build feeds a dispenser");
 				}
 			}
 		}

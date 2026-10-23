@@ -46,7 +46,7 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 | M5 Quality | ✅ done, play-tested | Better builds: phases, self-check, the HUD, signs, chests, books, banners and item frames; lava kept clear of wood | Builds have depth, lit interiors, working doors; the panel top left; a sign or a chest in a build reads right |
 | M6 Polish | ✅ done, play-tested | Config, refinement ("add a moat"), logs, error handling, permissions | "a stone castle", then "add a moat" next to it; edit `config/aibuilder.json`; turn the Wi-Fi off mid-build; a LAN friend is refused |
 | M7 Builds that move | ✅ done: reviewed, fixed, live dragon passed | Moving parts: "a dragon with flapping wings", "a windmill", "a flag on a pole" | Ask for a dragon with flapping wings; then "make the wings flap faster" next to it; undo; `moving_parts: false` in the config |
-| M8 Redstone that works | 🔨 built | Machines that work when the build ends, tested by Claude: "a lever that opens a piston door", "lamps that light on a button" | Ask for a lever that opens a piston door; flip it; stand in the doorway as the build ends; undo it while it's open |
+| M8 Redstone that works | ✅ done: reviewed, fixed, live door passed | Machines that work when the build ends, tested by Claude: "a lever that opens a piston door", "lamps that light on a button" | Ask for a lever that opens a piston door; flip it; stand in the doorway as the build ends; undo it while it's open |
 
 ## Good to know
 
@@ -178,3 +178,9 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   power only the build's own blocks (check_build's piston and powers_outside, and what's left at the end is taken out);
   a player in a piston's way is waited for; `test_redstone` lets Claude flip levers, press buttons and read lamps and
   pistons; undo switches the levers back and pulls the pistons in first; a dispenser holds only what it would drop.
+  Reviewed by a fresh Opus 5.5 reviewer and fixed test-first: doors, lamps and buttons beside the player's things are
+  no longer taken out (only what gives power counts); a sticky piston's pull is checked; a player is never pushed by a
+  test or by undo; redstone written after a test still starts; observers aren't fired by tests; a machine that moved
+  its own blocks passes its checks; undo takes back comparators and dispensers the machine changed; no hopper or
+  dropper may feed a dispenser; one test at a time, stopped with its build. The live door passed first try. Its ledger
+  is `docs/superpowers/plans/2026-10-22-aibuilder-m8-progress.md`. M9 (gadgets, wiring, the calculator) is next.

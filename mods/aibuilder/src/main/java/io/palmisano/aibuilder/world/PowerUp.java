@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.world;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import io.palmisano.aibuilder.AiBuilderMod;
@@ -11,39 +12,45 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FaceAttachedHorizontalDirectionalBlock;
-import net.minecraft.world.level.block.piston.PistonBaseBlock;
+import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.redstone.ExperimentalRedstoneUtils;
 
 /**
  * The power-up pass (spec v2 §5.1): a build's redstone starts as if it had been placed by hand. Each position the
  * build changed that holds a redstone component now, in the order first changed, gets what placing it would have
- * done: its {@code onPlace}, then a neighbour update (a lever or button's also round the block it's on, as flipping it
- * does). Once each: the positions done are kept, so a later pass never repeats one (a clock powered twice would carry
- * two pulses). Nothing else gets an update, so sand and water away from the redstone stay as placed. Before it starts,
- * a player where one of the build's pistons would push holds it back, for at most
- * {@link Tunables#MACHINE_PLAYER_WAIT_TICKS} (spec v2 §5.5); then it gives up and the machine stays as it was placed.
- * On the tick budget, at least one position a tick. Server thread.
+ * done: its {@code onPlace} and a look at what powers it, and, for what gives power by itself, a neighbour update (a
+ * lever's also round the block it's on, as flipping it does). A door, a lamp or a button tells its neighbours nothing
+ * (M8 review). Once each: the components started are kept, so a later pass never repeats one (a clock powered twice
+ * would carry two pulses), and a tool's write to a position takes it off the record. Before it starts, a player where
+ * one of the pistons of the build (or of the player's earlier builds here) would push holds it back, for at most
+ * {@link Tunables#MACHINE_PLAYER_WAIT_TICKS} (spec v2 §5.5); then it gives up and the machine stays as it was. Once the
+ * way is clear, the levers a test had to leave flipped go back first. On the tick budget, at least one position a tick.
+ * Server thread.
  */
 final class PowerUp {
 	private final ServerLevel level;
-	private final MachineRules rules;
 	private final Occupancy occupancy;
-	/** Positions powered up already, this pass's added as it goes. */
+	/** Components started already, this pass's added as it goes. */
 	private final Set<BlockPos> powered;
+	/** Levers a test couldn't put back (a player stood in the way), with how they should be. */
+	private final Map<BlockPos, Boolean> putBack;
+	private final List<BlockPos> pistons;
 	private final List<BlockPos> todo = new ArrayList<>();
 	private final long giveUpAt;
 	private int next;
+	private boolean clear;
 	private BlockPos waitingFor;
 	private boolean gaveUp;
 	private boolean loggedFailure;
 	private int started;
 
-	PowerUp(ServerLevel level, MachineRules rules, Occupancy occupancy, Set<BlockPos> powered, List<Pos> positions) {
+	PowerUp(ServerLevel level, MachineRules rules, Occupancy occupancy, Set<BlockPos> powered, Map<BlockPos, Boolean> putBack, List<Pos> positions) {
 		this.level = level;
-		this.rules = rules;
 		this.occupancy = occupancy;
 		this.powered = powered;
+		this.putBack = putBack;
+		this.pistons = rules.pistons();
 		for (Pos at : positions) {
 			BlockPos pos = Positions.toBlockPos(at);
 			if (!powered.contains(pos)) {
@@ -58,8 +65,8 @@ final class PowerUp {
 		if (gaveUp) {
 			return true;
 		}
-		if (next == 0) {
-			waitingFor = blockedPiston();
+		if (!clear) {
+			waitingFor = MachineRules.playerInReach(level, pistons, occupancy);
 			if (waitingFor != null) {
 				if (level.getGameTime() < giveUpAt) {
 					return false;
@@ -68,6 +75,8 @@ final class PowerUp {
 				waitingFor = null;
 				return true;
 			}
+			clear = true;
+			leversBack();
 		}
 		do {
 			if (next < todo.size()) {
@@ -77,7 +86,7 @@ final class PowerUp {
 		return next >= todo.size();
 	}
 
-	/** A piston of the build's, still to be powered, that would push where a player stands; null when none would. */
+	/** A piston of the build's that would push where a player stands, while the pass waits; null when none would. */
 	BlockPos waitingFor() {
 		return waitingFor;
 	}
@@ -92,17 +101,14 @@ final class PowerUp {
 		return gaveUp;
 	}
 
-	private BlockPos blockedPiston() {
-		for (BlockPos pos : todo) {
-			if (!level.isLoaded(pos)) {
-				continue;
-			}
+	private void leversBack() {
+		putBack.forEach((pos, on) -> {
 			BlockState state = level.getBlockState(pos);
-			if (state.getBlock() instanceof PistonBaseBlock && rules.reach(pos, state).stream().anyMatch(occupancy::occupied)) {
-				return pos;
+			if (level.isLoaded(pos) && state.getBlock() instanceof LeverBlock lever && state.getValue(LeverBlock.POWERED) != on) {
+				lever.pull(state, level, pos, null);
 			}
-		}
-		return null;
+		});
+		putBack.clear();
 	}
 
 	/** The block a lever or button is on, which it powers as strongly as itself. */
@@ -115,7 +121,6 @@ final class PowerUp {
 	}
 
 	private void power(BlockPos pos) {
-		powered.add(pos);
 		if (!level.isLoaded(pos)) {
 			return;
 		}
@@ -124,11 +129,17 @@ final class PowerUp {
 			if (!Redstone.component(state)) {
 				return;
 			}
+			powered.add(pos);
 			started++;
 			state.onPlace(level, pos, Blocks.AIR.defaultBlockState(), false);
-			level.updateNeighborsAt(pos, state.getBlock(), ExperimentalRedstoneUtils.initialOrientation(level, null, null));
-			if (state.getBlock() instanceof FaceAttachedHorizontalDirectionalBlock) {
-				level.updateNeighborsAt(support(pos, state), state.getBlock(), ExperimentalRedstoneUtils.initialOrientation(level, null, null));
+			// It looks at what powers it, as a change beside it would make it (a comparator reads its chest, a lamp its lever),
+			// without telling its neighbours anything.
+			level.neighborChanged(pos, Blocks.AIR, ExperimentalRedstoneUtils.initialOrientation(level, null, null));
+			if (Redstone.emits(state)) {
+				level.updateNeighborsAt(pos, state.getBlock(), ExperimentalRedstoneUtils.initialOrientation(level, null, null));
+				if (state.getBlock() instanceof FaceAttachedHorizontalDirectionalBlock) {
+					level.updateNeighborsAt(support(pos, state), state.getBlock(), ExperimentalRedstoneUtils.initialOrientation(level, null, null));
+				}
 			}
 		} catch (RuntimeException e) {
 			if (!loggedFailure) {

@@ -3,6 +3,7 @@ package io.palmisano.aibuilder.test;
 import static io.palmisano.aibuilder.test.ArenaBuilds.ARENA;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -10,6 +11,7 @@ import com.mojang.logging.LogUtils;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.Pos;
+import io.palmisano.aibuilder.core.tools.RedstoneSteps;
 import io.palmisano.aibuilder.test.ArenaBuilds.ArenaBuild;
 import io.palmisano.aibuilder.world.JobScheduler;
 import io.palmisano.aibuilder.world.Occupancy;
@@ -18,11 +20,14 @@ import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CopperBulbBlock;
+import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.RedstoneLampBlock;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.AttachFace;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import org.slf4j.Logger;
 
 /** Redstone in a real world (spec v2 §5): what a machine may touch, its power-up, its tests and its undo. */
@@ -383,5 +388,262 @@ public class MachineGameTest {
 			String report = report(helper, build);
 			helper.assertFalse(report.contains("piston (") || report.contains("powers_outside"), "a machine of the build's own: " + report);
 		});
+	}
+
+	/** The build's door, trapdoor and fence gate and a lectern beside the world's door give no power: no problem, nothing taken out. */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void doorsBesideTheWorldsDoorAreFine(GameTestHelper helper) {
+		worldDoor(helper, new Pos(3, 1, 4));
+		ArenaBuild build = checked(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [1, 1, 4], "block": "oak_door", "state": {"facing": "forward", "half": "lower"}},
+				  {"pos": [2, 1, 6], "block": "oak_trapdoor", "state": {"facing": "forward"}},
+				  {"pos": [4, 1, 5], "block": "oak_fence_gate", "state": {"facing": "forward"}},
+				  {"pos": [3, 1, 2], "block": "lectern", "state": {"facing": "forward"}}]}}""");
+		helper.succeedWhen(() -> {
+			String report = report(helper, build);
+			helper.assertFalse(report.contains("powers_outside"), "a block that gives no power is a problem: " + report);
+			helper.assertValueEqual(build.job().takenOut(), List.of(), "what was taken out");
+			helper.assertTrue(build.state(1, 1, 4).is(Blocks.OAK_DOOR) && build.state(1, 2, 4).is(Blocks.OAK_DOOR), "the build's door went");
+		});
+	}
+
+	/** test_redstone won't press the build's button beside the world's door (it would open it); the button stays as built. */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void aTestWontPressAButtonBesideTheWorldsDoor(GameTestHelper helper) {
+		worldDoor(helper, new Pos(2, 1, 4));
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "stone_button", "state": {"face": "floor", "facing": "forward"}}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"press": [0, 1, 4]}, {"wait": 4}]}}""");
+		helper.succeedWhen(() -> {
+			helper.assertTrue(build.done(), "the build hasn't finished");
+			String reply = build.reply("test_redstone");
+			helper.assertTrue(reply.contains("won't press") && reply.contains("oak_door at (2, 1, 4)"), reply);
+			helper.assertFalse(build.state(2, 1, 4).getValue(DoorBlock.OPEN), "the world's door opened");
+			helper.assertValueEqual(build.job().takenOut(), List.of(), "what was taken out");
+		});
+	}
+
+	/** A dropper of the build facing into a dispenser would feed it what the dispenser rule keeps out: feeds_dispenser. */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void aDropperFeedingADispenserIsAProblem(GameTestHelper helper) {
+		ArenaBuild build = checked(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "dispenser", "state": {"facing": "forward"}},
+				  {"pos": [0, 1, 3], "block": "dropper", "state": {"facing": "forward"}}]}}""");
+		helper.succeedWhen(() -> {
+			String report = report(helper, build);
+			helper.assertTrue(report.contains("feeds_dispenser (1)") && report.contains("(0, 1, 3) dropper") && report.contains("dispenser at (0, 1, 4)"),
+					"the dropper feeding the dispenser: " + report);
+		});
+	}
+
+	/** A sticky piston pulls back what's in front of its head: with air in front, the world's planks two ahead would come. */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void aStickyPistonThatWouldPullAPlayersBlockIsAProblem(GameTestHelper helper) {
+		world(helper, new Pos(0, 1, 6), Blocks.OAK_PLANKS.defaultBlockState());
+		ArenaBuild build = checked(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "sticky_piston", "state": {"facing": "forward"}}]}}""");
+		helper.succeedWhen(() -> {
+			String report = report(helper, build);
+			helper.assertTrue(report.contains("piston (1)") && report.contains("(0, 1, 4) sticky_piston") && report.contains("pull oak_planks at (0, 1, 6)"),
+					"the sticky piston that would pull the planks: " + report);
+		});
+	}
+
+	/** A machine that moves its own blocks (a torch holds a piston out, pushing a lamp up) passes its next test and keeps its pieces. */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void aMachineThatMovedItsOwnBlocksPassesItsChecks(GameTestHelper helper) {
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "sticky_piston", "state": {"facing": "up"}},
+				  {"pos": [0, 2, 4], "block": "redstone_lamp"}, {"pos": [2, 1, 4], "block": "stone"},
+				  {"pos": [1, 1, 4], "block": "redstone_wall_torch", "state": {"facing": "left"}}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"wait": 4}, {"read": [[0, 3, 4]]}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"wait": 2}, {"read": [[0, 3, 4]]}]}}""");
+		helper.succeedWhen(() -> {
+			ArenaBuilds.assertDone(helper, build);
+			List<String> replies = build.replies("test_redstone");
+			helper.assertTrue(replies.size() == 2 && replies.get(1).contains("(0, 3, 4) redstone_lamp"), "the second test: " + replies);
+			helper.assertValueEqual(build.job().takenOut(), List.of(), "what was taken out");
+			helper.assertTrue(build.state(1, 1, 4).is(Blocks.REDSTONE_WALL_TORCH), "the torch went: " + build.state(1, 1, 4));
+		});
+	}
+
+	/** Redstone written where a test already started things (stone, then a redstone block and a lamp) still starts when the build ends. */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void redstoneWrittenWhereATestRanStillStarts(GameTestHelper helper) {
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "stone"}, {"pos": [1, 1, 4], "block": "stone"}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"wait": 1}]}},
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "redstone_block"}, {"pos": [1, 1, 4], "block": "redstone_lamp"}]}}""");
+		helper.succeedWhen(() -> {
+			ArenaBuilds.assertDone(helper, build);
+			helper.assertTrue(build.state(1, 1, 4).getValue(RedstoneLampBlock.LIT), "the lamp beside the redstone block is dark");
+		});
+	}
+
+	/** An observer watching a block that doesn't change never fires: not in a test, not when the build ends (the bulb it feeds stays off). */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void anObserverIsntFiredByTheBuildOrItsTests(GameTestHelper helper) {
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 5], "block": "stone"},
+				  {"pos": [0, 1, 4], "block": "observer", "state": {"facing": "forward"}}, {"pos": [0, 1, 3], "block": "waxed_copper_bulb"}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"wait": 6}, {"read": [[0, 1, 3]]}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"wait": 6}, {"read": [[0, 1, 3]]}]}}""");
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenIdle(10)
+				.thenExecute(() -> {
+					for (String reply : build.replies("test_redstone")) {
+						helper.assertTrue(reply.contains("(0, 1, 3) waxed_copper_bulb[lit=false"), "the bulb flipped in a test: " + reply);
+					}
+					helper.assertFalse(build.state(0, 1, 3).getValue(CopperBulbBlock.LIT), "the bulb flipped when the build ended");
+				})
+				.thenSucceed();
+	}
+
+	/** A player who steps into a piston's way during a test holds the next step back; still there, the test stops, and nothing pushed them. */
+	@GameTest(structure = ARENA, maxTicks = 3000)
+	public void aTestWaitsWhenAPlayerStepsIntoAPistonsWay(GameTestHelper helper) {
+		BlockPos inTheWay = ArenaBuilds.worldPos(helper, Facing.SOUTH, new Pos(0, 1, 6));
+		AtomicBoolean there = new AtomicBoolean(false);
+		AtomicBoolean pushed = new AtomicBoolean(false);
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "sticky_piston", "state": {"facing": "forward"}},
+				  {"pos": [0, 1, 5], "block": "stone"}, {"pos": [-1, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward"}}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"set": [-1, 1, 4], "on": true}, {"wait": 10}, {"set": [-1, 1, 4], "on": false},
+				  {"wait": 20}, {"set": [-1, 1, 4], "on": true}, {"wait": 4}]}}""", pos -> pos.equals(inTheWay) && there.get());
+		helper.onEachTick(() -> {
+			if (there.get() && !helper.getLevel().getBlockState(inTheWay).isAir()) {
+				pushed.set(true);
+			}
+		});
+		helper.startSequence()
+				.thenWaitUntil(() -> helper.assertTrue(build.state(0, 1, 6).is(Blocks.STONE), "the door didn't open"))
+				.thenWaitUntil(() -> helper.assertTrue(build.state(0, 1, 5).is(Blocks.STONE), "the door didn't close"))
+				.thenExecute(() -> there.set(true))
+				.thenWaitUntil(() -> helper.assertTrue(build.done(), "the build hasn't finished"))
+				.thenExecute(() -> {
+					helper.assertFalse(pushed.get(), "the piston pushed where the player stood");
+					String reply = build.reply("test_redstone");
+					helper.assertTrue(reply.contains("in the way of the piston at (0, 1, 4)"), reply);
+				})
+				.thenSucceed();
+	}
+
+	/** Undo with a player where a piston would push: the levers aren't flipped back (that would push them); still nothing is left. */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void undoWithAPlayerInAPistonsWayPushesNoOne(GameTestHelper helper) {
+		BlockPos inTheWay = ArenaBuilds.worldPos(helper, Facing.SOUTH, new Pos(0, 1, 6));
+		AtomicBoolean there = new AtomicBoolean(false);
+		AtomicBoolean pushed = new AtomicBoolean(false);
+		Pos lever = new Pos(-1, 1, 4);
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "sticky_piston", "state": {"facing": "forward"}},
+				  {"pos": [0, 1, 5], "block": "stone"}, {"pos": [-1, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward",
+				  "powered": "true"}}]}}""");
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		helper.onEachTick(() -> {
+			if (there.get() && !helper.getLevel().getBlockState(inTheWay).isAir()) {
+				pushed.set(true);
+			}
+		});
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenWaitUntil(() -> helper.assertTrue(build.state(0, 1, 6).is(Blocks.STONE), "the door didn't open as built"))
+				.thenExecute(() -> pull(build, lever))
+				.thenWaitUntil(() -> helper.assertTrue(build.state(0, 1, 5).is(Blocks.STONE) && build.state(0, 1, 6).isAir(), "the door didn't close"))
+				.thenExecute(() -> {
+					there.set(true);
+					UndoRunner runner = new UndoRunner(build.level(), build.journal(), Tunables.BLOCKS_PER_TICK, build.animations(),
+							pos -> pos.equals(inTheWay) && there.get());
+					JobScheduler.add(runner);
+					undo.set(runner);
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> {
+					helper.assertFalse(pushed.get(), "undo pushed where the player stood");
+					for (int z = 4; z <= 5; z++) {
+						helper.assertTrue(build.state(0, 1, z).isAir(), "left at (0, 1, " + z + "): " + build.state(0, 1, z));
+					}
+					helper.assertTrue(build.state(-1, 1, 4).isAir(), "the lever is still there: " + build.state(-1, 1, 4));
+				})
+				.thenSucceed();
+	}
+
+	/** Two tests at once (Claude may send them together): one runs, the other is refused, and the lever ends as built. */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void twoTestsAtOnceRunOneAtATime(GameTestHelper helper) {
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward"}},
+				  {"pos": [1, 1, 4], "block": "redstone_lamp"}]}}""");
+		AtomicReference<CompletableFuture<String>> shorter = new AtomicReference<>();
+		AtomicReference<CompletableFuture<String>> longer = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenExecute(() -> {
+					Pos lever = new Pos(0, 1, 4);
+					shorter.set(CompletableFuture.supplyAsync(() -> build.world().testRedstone(List.of(new RedstoneSteps.Set(lever, true), new RedstoneSteps.Wait(5)))));
+					longer.set(CompletableFuture.supplyAsync(() -> build.world().testRedstone(List.of(new RedstoneSteps.Set(lever, true), new RedstoneSteps.Wait(20)))));
+				})
+				.thenWaitUntil(() -> helper.assertTrue(shorter.get().isDone() && longer.get().isDone(), "the tests haven't finished"))
+				.thenIdle(Tunables.TEST_SETTLE_TICKS)
+				.thenExecute(() -> {
+					helper.assertFalse(build.state(0, 1, 4).getValue(LeverBlock.POWERED), "the lever wasn't put back as built");
+					helper.assertTrue(shorter.get().isCompletedExceptionally() != longer.get().isCompletedExceptionally(), "both tests ran, or neither did");
+				})
+				.thenSucceed();
+	}
+
+	/** A build cancelled while its test waits: the test stops and puts its lever back, not long after. */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void aCancelledBuildsTestStops(GameTestHelper helper) {
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward"}},
+				  {"pos": [1, 1, 4], "block": "redstone_lamp"}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"set": [0, 1, 4], "on": true}, {"wait": 400}]}}""");
+		helper.startSequence()
+				.thenWaitUntil(() -> helper.assertTrue(build.state(0, 1, 4).is(Blocks.LEVER) && build.state(0, 1, 4).getValue(LeverBlock.POWERED),
+						"the test hasn't flipped the lever"))
+				.thenExecute(build::cancel)
+				.thenIdle(30)
+				.thenExecute(() -> {
+					BlockState lever = build.state(0, 1, 4);
+					helper.assertTrue(lever.is(Blocks.LEVER) && !lever.getValue(LeverBlock.POWERED), "the cancelled build's test still holds its lever: " + lever);
+				})
+				.thenSucceed();
+	}
+
+	/** Undo of a machine whose block entities changed as it ran (a comparator reading a chest, a dispenser that fired) still takes them back. */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void undoTakesBackBlockEntitiesTheMachineChanged(GameTestHelper helper) {
+		ArenaBuild build = built(helper, """
+				{"tool": "place_block_entity", "args": {"pos": [0, 1, 4], "block": "chest", "container": {"items": [{"item": "cobblestone", "count": 32}]}}},
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 5], "block": "comparator", "state": {"facing": "back"}},
+				  {"pos": [0, 1, 6], "block": "redstone_lamp"},
+				  {"pos": [3, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward", "powered": "true"}}]}},
+				{"tool": "place_block_entity", "args": {"pos": [4, 1, 4], "block": "dispenser", "state": {"facing": "forward"},
+				  "container": {"items": [{"item": "cobblestone", "count": 5}]}}}""");
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenWaitUntil(() -> helper.assertTrue(build.state(0, 1, 6).getValue(RedstoneLampBlock.LIT), "the comparator didn't light the lamp"))
+				.thenIdle(10)
+				.thenExecute(() -> {
+					UndoRunner runner = new UndoRunner(build.level(), build.journal(), Tunables.BLOCKS_PER_TICK, build.animations());
+					JobScheduler.add(runner);
+					undo.set(runner);
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> {
+					helper.assertTrue(build.state(0, 1, 5).isAir(), "the comparator is still there: " + build.state(0, 1, 5));
+					helper.assertTrue(build.state(4, 1, 4).isAir(), "the dispenser is still there: " + build.state(4, 1, 4));
+					helper.assertTrue(build.state(0, 1, 4).isAir(), "the chest is still there: " + build.state(0, 1, 4));
+				})
+				.thenSucceed();
+	}
+
+	/** The world's oak door, both halves, at a local position. */
+	private static void worldDoor(GameTestHelper helper, Pos lower) {
+		world(helper, lower, Blocks.OAK_DOOR.defaultBlockState());
+		world(helper, new Pos(lower.x(), lower.y() + 1, lower.z()), Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
 	}
 }

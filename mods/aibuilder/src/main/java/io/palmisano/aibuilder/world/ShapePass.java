@@ -8,6 +8,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.ObserverBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
@@ -64,7 +65,8 @@ final class ShapePass {
 		}
 		try {
 			BlockState state = level.getBlockState(pos);
-			if (!state.getFluidState().isEmpty()) {
+			// An observer's shape never changes, and asking for it fires it: once a test, once at the end (M8 review).
+			if (!state.getFluidState().isEmpty() || state.getBlock() instanceof ObserverBlock) {
 				return;
 			}
 			BlockState shaped = Block.updateFromNeighbourShapes(state, level, pos);

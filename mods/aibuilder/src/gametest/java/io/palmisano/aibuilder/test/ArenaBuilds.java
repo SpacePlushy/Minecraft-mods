@@ -109,7 +109,7 @@ final class ArenaBuilds {
 		BuildHandle handle = backend.start(new BuildRequest("arena test", SizeTier.SMALL), tools, BuildEvents.NONE);
 		// A script that throws never reaches finish: end the job anyway, as BuildManager will.
 		handle.outcome().thenRun(() -> job.finish());
-		return new ArenaBuild(level, frame, job, journal, backend, handle, animations, moving);
+		return new ArenaBuild(level, frame, job, journal, backend, handle, animations, moving, world);
 	}
 
 	/** The demo house the {@code /aibuild test} command builds. */
@@ -131,7 +131,7 @@ final class ArenaBuilds {
 	}
 
 	record ArenaBuild(ServerLevel level, LocalFrame frame, PlacementJob job, UndoJournal<BlockState, CompoundTag> journal,
-			ScriptedBackend backend, BuildHandle handle, AnimationStore animations, MovingParts moving) {
+			ScriptedBackend backend, BuildHandle handle, AnimationStore animations, MovingParts moving, McWorldReader world) {
 		BlockPos world(Pos local) {
 			return Positions.toBlockPos(frame.toWorld(local));
 		}
