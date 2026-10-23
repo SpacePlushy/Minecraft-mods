@@ -1,6 +1,8 @@
 package io.palmisano.aibuilder.core.tools;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +17,7 @@ import io.palmisano.aibuilder.core.shapes.Box;
 import io.palmisano.aibuilder.core.survey.BuildProblems;
 import io.palmisano.aibuilder.core.survey.Column;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
+import io.palmisano.aibuilder.core.wire.Cell;
 
 /** A world for tool tests: grass at y 0 unless told otherwise, a protection mask to set up, fixed facts. */
 public final class FakeWorld implements WorldReader {
@@ -100,6 +103,19 @@ public final class FakeWorld implements WorldReader {
 		requests.add("solid " + local.size());
 		Set<Pos> out = new HashSet<>(local);
 		out.retainAll(solid);
+		return out;
+	}
+
+	/** What wire finds where it's set here; elsewhere air above y 0 and ground at and below it, as {@link #states}. */
+	public final Map<Pos, Cell> cells = new HashMap<>();
+
+	@Override
+	public Map<Pos, Cell> cells(Set<Pos> local) {
+		requests.add("cells " + local.size());
+		Map<Pos, Cell> out = new HashMap<>();
+		for (Pos p : local) {
+			out.put(p, cells.getOrDefault(p, p.y() > 0 ? Cell.FREE : Cell.SOLID));
+		}
 		return out;
 	}
 

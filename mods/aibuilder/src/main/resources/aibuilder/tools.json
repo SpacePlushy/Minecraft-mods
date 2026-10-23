@@ -403,6 +403,19 @@
 		}
 	},
 	{
+		"name": "wire",
+		"description": "Lay redstone from gadgets' output ports to their input ports: dust, stone under it where the ground is missing, and a repeater where the signal would run out. from: output ports' spots, one or a row (place_gadget's answer lists them); to: input ports' spots, as many, in the same order. One wire may take via points: from each point (from, each via point, to) to the next it runs along z, then along x, climbing or dropping a level a block from the start until it's at the next point's height. Without via (one wire is a row of one), each wire runs along z to a turning row of its own, along x, then along z into its port: the ports of each row share y and z, and the turning rows are 2 apart from 2 past the outputs, so the inputs must be 2 more blocks off along z than twice the wires that shift the same way. It's laid whole or not at all: refused, saying where, if any of it would be past the allowed box, in anything but air (or grass and the like), on what dust can't stand on, or touch other redstone: dust beside it or a step from it, or any other redstone beside its dust or beside what it stands on (but its two ports' buffers). To cross another wire, go over it: via points 2 above it. Each repeater adds 2 ticks to the signal's way.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"from": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3}, "minItems": 1, "maxItems": 8},
+				"to": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3}, "minItems": 1, "maxItems": 8},
+				"via": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3}, "maxItems": 8}
+			},
+			"required": ["from", "to"]
+		}
+	},
+	{
 		"name": "finish",
 		"description": "End the build. The summary is shown to the player.",
 		"input_schema": {

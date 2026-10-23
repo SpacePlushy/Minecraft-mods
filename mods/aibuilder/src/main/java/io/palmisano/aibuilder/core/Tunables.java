@@ -170,6 +170,11 @@ public final class Tunables {
 	/** How far a moving part's displays are drawn, in units of 64 blocks: about 256, past most render distances. */
 	public static final float DISPLAY_VIEW_RANGE = 4;
 
+	// wire (spec v2 §5.4): a wire's dust end to end, the wires one call lays as a row, and one wire's via points.
+	public static final int WIRE_LENGTH_MAX = 512;
+	public static final int WIRE_ROW_MAX = 8;
+	public static final int WIRE_VIA_MAX = 8;
+
 	private Tunables() {
 	}
 }

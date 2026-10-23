@@ -1,8 +1,10 @@
 package io.palmisano.aibuilder.world;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -31,6 +33,8 @@ import io.palmisano.aibuilder.core.tools.ServerHop;
 import io.palmisano.aibuilder.core.tools.WorldFacts;
 import io.palmisano.aibuilder.core.tools.RedstoneSteps;
 import io.palmisano.aibuilder.core.tools.WorldReader;
+import io.palmisano.aibuilder.core.wire.Cell;
+import net.minecraft.core.Direction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -174,6 +178,33 @@ public final class McWorldReader implements WorldReader {
 			}
 			return out;
 		});
+	}
+
+	@Override
+	public Map<Pos, Cell> cells(Set<Pos> local) {
+		return onServer(() -> {
+			Map<Pos, Cell> out = new HashMap<>();
+			for (Pos at : local) {
+				BlockPos pos = Positions.toBlockPos(frame.toWorld(at));
+				LevelChunk chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
+				out.put(at, chunk == null ? Cell.OTHER : cell(chunk.getBlockState(pos), pos));
+			}
+			return out;
+		});
+	}
+
+	/** A block as a wire sees it: dust, other redstone, free (air or what a block takes the place of, but water), ground, or else. */
+	private Cell cell(BlockState state, BlockPos pos) {
+		if (state.is(net.minecraft.world.level.block.Blocks.REDSTONE_WIRE)) {
+			return Cell.DUST;
+		}
+		if (Redstone.component(state)) {
+			return Cell.COMPONENT;
+		}
+		if (state.isAir() || state.canBeReplaced() && state.getFluidState().isEmpty()) {
+			return Cell.FREE;
+		}
+		return state.isRedstoneConductor(level, pos) && state.isFaceSturdy(level, pos, Direction.UP) ? Cell.SOLID : Cell.OTHER;
 	}
 
 	@Override

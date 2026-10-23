@@ -78,4 +78,49 @@ class PlaceGadgetTest {
 		ToolResult kind = tools.call("place_gadget", json("{\"kind\":\"teleporter\",\"at\":[0,0,2]}"));
 		assertTrue(kind.isError() && kind.text().contains("there's no gadget called"), kind.text());
 	}
+
+	private ToolExecutor leverAndLamp() {
+		ToolExecutor tools = briefed();
+		assertFalse(tools.call("place_gadget", json("{\"kind\":\"lever_row\",\"at\":[0,0,2],\"options\":{\"bits\":1}}")).isError());
+		assertFalse(tools.call("place_gadget", json("{\"kind\":\"lamp_row\",\"at\":[4,0,14],\"options\":{\"bits\":1}}")).isError());
+		return tools;
+	}
+
+	/** wire joins an output port to an input port through the queue, as any write: dust, and stone only over air. */
+	@Test
+	void aWireJoinsPortsThroughTheQueue() {
+		ToolExecutor tools = leverAndLamp();
+		int before = sink.queuedCount();
+		world.cells.put(new Pos(2, 0, 7), io.palmisano.aibuilder.core.wire.Cell.FREE);
+		ToolResult wired = tools.call("wire", json("{\"from\":[[0,1,5]],\"to\":[[4,1,13]]}"));
+		assertFalse(wired.isError(), wired.text());
+		assertTrue(wired.text().startsWith("Wired in0 (0, 1, 5) to in0 (4, 1, 13): 13 dust, 1 stone under it."), wired.text());
+		assertEquals(before + 14, sink.queuedCount());
+	}
+
+	/** A wire runs from an output port the build placed to an input port it placed: anything else is refused, saying what's there. */
+	@Test
+	void aWireRunsFromAnOutputToAnInput() {
+		ToolExecutor tools = leverAndLamp();
+		int before = sink.queuedCount();
+		ToolResult backwards = tools.call("wire", json("{\"from\":[[4,1,13]],\"to\":[[0,1,5]]}"));
+		assertTrue(backwards.isError() && backwards.text().startsWith("bad_argument: from (4, 1, 13) is the input in0 of a row of 1 lamp: a wire"
+				+ " runs from an output port to an input port"), backwards.text());
+		ToolResult nowhere = tools.call("wire", json("{\"from\":[[0,1,5]],\"to\":[[9,1,9]]}"));
+		assertTrue(nowhere.isError() && nowhere.text().startsWith("bad_argument: to (9, 1, 9) isn't a port of a gadget this build placed"),
+				nowhere.text());
+		assertEquals(before, sink.queuedCount());
+	}
+
+	/** Touching other redstone, a wire is refused whole: nothing of it is queued. */
+	@Test
+	void aWireTouchingRedstoneIsRefusedWhole() {
+		ToolExecutor tools = leverAndLamp();
+		int before = sink.queuedCount();
+		world.cells.put(new Pos(3, 1, 8), io.palmisano.aibuilder.core.wire.Cell.COMPONENT);
+		ToolResult refused = tools.call("wire", json("{\"from\":[[0,1,5]],\"to\":[[4,1,13]]}"));
+		assertTrue(refused.isError() && refused.text().startsWith("touches_redstone: (3, 1, 8) is redstone, beside the wire at (3, 1, 7)")
+				&& refused.text().contains("nothing was placed"), refused.text());
+		assertEquals(before, sink.queuedCount());
+	}
 }

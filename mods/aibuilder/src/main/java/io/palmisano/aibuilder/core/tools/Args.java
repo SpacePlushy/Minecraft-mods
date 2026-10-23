@@ -143,6 +143,23 @@ final class Args {
 		return Box.of(b[0], b[1], b[2], b[3], b[4], b[5]);
 	}
 
+	/** A list of {@code [x, y, z]} positions, or one alone. */
+	List<Pos> positions(String name) {
+		JsonArray list = array(name);
+		if (!list.isEmpty() && list.get(0).isJsonPrimitive()) {
+			return List.of(pos(name));
+		}
+		List<Pos> out = new ArrayList<>();
+		for (JsonElement e : list) {
+			if (!e.isJsonArray() || e.getAsJsonArray().size() != 3) {
+				throw new BadArgument(name + " must be a list of [x, y, z] positions");
+			}
+			JsonArray p = e.getAsJsonArray();
+			out.add(new Pos(asInt(p.get(0), name), asInt(p.get(1), name), asInt(p.get(2), name)));
+		}
+		return out;
+	}
+
 	/** A list of {@code [x, z]} points. */
 	List<int[]> points(String name) {
 		List<int[]> out = new ArrayList<>();

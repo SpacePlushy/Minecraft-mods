@@ -13,6 +13,7 @@ import java.util.Set;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.palmisano.aibuilder.core.gadgets.Gadget;
 import io.palmisano.aibuilder.core.gadgets.GadgetPlacement;
 import io.palmisano.aibuilder.core.gadgets.GadgetUse;
@@ -53,6 +54,10 @@ import io.palmisano.aibuilder.core.survey.Column;
 import io.palmisano.aibuilder.core.survey.RegionEncoder;
 import io.palmisano.aibuilder.core.survey.SurveyEncoder;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
+import io.palmisano.aibuilder.core.wire.Cell;
+import io.palmisano.aibuilder.core.wire.WirePath;
+import io.palmisano.aibuilder.core.wire.WireRows;
+import io.palmisano.aibuilder.core.wire.WireRules;
 
 /**
  * Runs Claude's tools (spec §8). The read tools look through the {@link WorldReader}; the write tools expand each
@@ -62,7 +67,8 @@ import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 public final class ToolExecutor {
 	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
 			"set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof", "staircase", "clear", "terraform",
-			"place_block_entity", "checkpoint", "check_build", "animate", "check_motion", "test_redstone", "place_gadget", "finish");
+			"place_block_entity", "checkpoint", "check_build", "animate", "check_motion", "test_redstone", "place_gadget", "wire",
+			"finish");
 	/** The write tools that can make a moving part (spec v2 §4.1), and clear, which takes a part's blocks out. */
 	private static final Set<String> MOVABLE = Set.of("set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof",
 			"staircase", "clear");
@@ -219,6 +225,7 @@ public final class ToolExecutor {
 				case "check_motion" -> checkMotion();
 				case "test_redstone" -> testRedstone(a);
 				case "terraform" -> terraform(a);
+				case "wire" -> wire(a);
 				default -> locked(name, a);
 			};
 		} catch (IllegalArgumentException e) {
@@ -632,6 +639,142 @@ public final class ToolExecutor {
 
 	private static String spot(Pos p) {
 		return "(" + p.x() + ", " + p.y() + ", " + p.z() + ")";
+	}
+
+	/** A port of one of the session's gadgets, the buffer repeater inside it, and the gadget in words. */
+	private record End(Port port, Pos buffer, String gadget) {
+	}
+
+	/**
+	 * Lays redstone from gadgets' output ports to their input ports (spec v2 §5.4), whole or not at all: a row at once
+	 * ({@link WireRows}) or one wire through via points ({@link WirePath}). Once what's queued is in, it reads what's
+	 * around the way and refuses it, saying where, if it would touch anything but its two ports ({@link WireRules}), the
+	 * other wires it lays with it included. It waits outside the lock, as terraform does.
+	 */
+	private ToolResult wire(Args a) {
+		List<Pos> from = a.positions("from");
+		List<Pos> to = a.positions("to");
+		List<Pos> via = a.has("via") ? a.positions("via") : List.of();
+		Map<Pos, End> ends;
+		ProtectionMask mask;
+		synchronized (this) {
+			if (!briefed) {
+				return ToolResult.error(BRIEF_FIRST);
+			}
+			ends = ends();
+			mask = protection();
+		}
+		List<End> outs = new ArrayList<>();
+		List<End> ins = new ArrayList<>();
+		from.forEach(p -> outs.add(end(ends, p, "from", false)));
+		to.forEach(p -> ins.add(end(ends, p, "to", true)));
+		if (via.size() > Tunables.WIRE_VIA_MAX) {
+			throw new IllegalArgumentException("a wire takes at most " + Tunables.WIRE_VIA_MAX + " via points, not " + via.size());
+		}
+		List<List<Pos>> ways = new ArrayList<>();
+		if (via.isEmpty()) {
+			for (List<Pos> points : WireRows.points(from, to)) {
+				ways.add(WirePath.trace(points));
+			}
+		} else {
+			if (from.size() != 1 || to.size() != 1) {
+				throw new IllegalArgumentException("via points shape one wire: give one port in from and one in to");
+			}
+			List<Pos> points = new ArrayList<>(from);
+			points.addAll(via);
+			points.addAll(to);
+			ways.add(WirePath.trace(points));
+		}
+		List<Set<Integer>> repeaters = new ArrayList<>();
+		ways.forEach(way -> repeaters.add(WirePath.repeaters(way)));
+		ToolResult waiting = placedFirst("wire");
+		if (waiting != null) {
+			return waiting;
+		}
+		Set<Pos> needed = new HashSet<>();
+		ways.forEach(way -> needed.addAll(WireRules.needed(way)));
+		Map<Pos, Cell> cells = world.cells(needed);
+		List<Set<Pos>> supports = new ArrayList<>();
+		try {
+			for (int i = 0; i < ways.size(); i++) {
+				supports.add(WireRules.supports(ways.get(i), cells, Set.of(outs.get(i).buffer(), ins.get(i).buffer()), allowed, mask));
+			}
+			// Then each against the others as they'll stand, their dust and their stone.
+			for (int i = 0; i < ways.size(); i++) {
+				Map<Pos, Cell> around = new HashMap<>(cells);
+				for (int j = 0; j < ways.size(); j++) {
+					if (j != i) {
+						ways.get(j).forEach(p -> around.put(p, Cell.DUST));
+						supports.get(j).forEach(p -> around.put(p, Cell.SOLID));
+					}
+				}
+				WireRules.supports(ways.get(i), around, Set.of(outs.get(i).buffer(), ins.get(i).buffer()), allowed, mask);
+			}
+		} catch (WireRules.Refused e) {
+			return ToolResult.error(e.code() + ": " + e.getMessage() + (e.code().equals(RejectReason.OUT_OF_BOUNDS.wireName()) ? " (" + describe(allowed)
+					+ ")" : "") + "; nothing was placed");
+		}
+		List<LocalBlock> blocks = new ArrayList<>();
+		for (int i = 0; i < ways.size(); i++) {
+			blocks.addAll(WirePath.blocks(ways.get(i), repeaters.get(i), supports.get(i)));
+		}
+		synchronized (this) {
+			ToolResult queued = queue(blocks, false, false, "");
+			if (queued.isError()) {
+				return queued;
+			}
+		}
+		StringBuilder answer = new StringBuilder(ways.size() == 1 ? "Wired " : "Wired " + ways.size() + ":\n");
+		for (int i = 0; i < ways.size(); i++) {
+			int r = repeaters.get(i).size();
+			int s = supports.get(i).size();
+			answer.append(i == 0 ? "" : "\n").append(outs.get(i).port().name()).append(' ').append(spot(from.get(i))).append(" to ")
+					.append(ins.get(i).port().name()).append(' ').append(spot(to.get(i))).append(": ").append(ways.get(i).size() - r).append(" dust");
+			if (r > 0) {
+				answer.append(", ").append(r).append(r == 1 ? " repeater" : " repeaters").append(" (").append(2 * r).append(" ticks)");
+			}
+			if (s > 0) {
+				answer.append(", ").append(s).append(" stone under it");
+			}
+			answer.append('.');
+		}
+		return ToolResult.ok(answer.toString());
+	}
+
+	/** Every port of the session's gadgets (the earlier builds' here too), by its spot. */
+	private Map<Pos, End> ends() {
+		Map<Pos, End> out = new HashMap<>();
+		List<GadgetUse> all = new ArrayList<>(earlierGadgets);
+		all.addAll(gadgets);
+		for (GadgetUse use : all) {
+			GadgetPlacement.Placed placed = use.placed();
+			String what = Gadgets.describe(use.kind(), JsonParser.parseString(use.options()).getAsJsonObject());
+			for (Port port : placed.ports()) {
+				Pos p = port.at();
+				Pos buffer = p;
+				for (Pos in : List.of(new Pos(p.x() + 1, p.y(), p.z()), new Pos(p.x() - 1, p.y(), p.z()), new Pos(p.x(), p.y(), p.z() + 1),
+						new Pos(p.x(), p.y(), p.z() - 1))) {
+					if (placed.box().contains(in)) {
+						buffer = in;
+					}
+				}
+				out.put(p, new End(port, buffer, what));
+			}
+		}
+		return out;
+	}
+
+	/** The port at {@code at}, an input or an output as {@code input} says. */
+	private static End end(Map<Pos, End> ends, Pos at, String name, boolean input) {
+		End end = ends.get(at);
+		if (end == null) {
+			throw new IllegalArgumentException(name + " " + spot(at) + " isn't a port of a gadget this build placed (place_gadget's answer lists each port's spot)");
+		}
+		if (end.port().input() != input) {
+			throw new IllegalArgumentException(name + " " + spot(at) + " is the " + (input ? "output " : "input ") + end.port().name() + " of " + end.gadget()
+					+ ": a wire runs from an output port to an input port");
+		}
+		return end;
 	}
 
 	/** A part's name: a short word, as Claude will use it again in animate and in later builds. */
