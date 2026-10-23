@@ -304,6 +304,41 @@ public class UndoGameTest {
 		});
 	}
 
+	/** A build's copper that weathered while it stood (a block, and a copper golem statue with its block entity) still undoes. */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void weatheredCopperStillUndoes(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		ArenaBuild build = start(helper, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "copper", "style": "test"}},
+				  {"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "copper_block"}, {"pos": [2, 1, 4], "block": "copper_golem_statue"}]}},
+				  {"tool": "finish", "args": {"summary": "copper"}}
+				]}""");
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenExecute(() -> {
+					// As random ticks would, a stage on.
+					weather(level, build.world(new Pos(0, 1, 4)), "minecraft:exposed_copper");
+					weather(level, build.world(new Pos(2, 1, 4)), "minecraft:exposed_copper_golem_statue");
+					undo.set(undo(level, build.journal()));
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> {
+					helper.assertTrue(build.state(0, 1, 4).isAir(), "the weathered copper block stayed: " + build.state(0, 1, 4));
+					helper.assertTrue(build.state(2, 1, 4).isAir(), "the weathered statue stayed: " + build.state(2, 1, 4));
+					helper.assertValueEqual(undo.get().result().join().kept(), 0, "kept");
+				})
+				.thenSucceed();
+	}
+
+	/** The block {@code id} in place of the one at {@code pos}, its properties kept where it has them, as weathering does. */
+	private static void weather(ServerLevel level, BlockPos pos, String id) {
+		BlockState now = level.getBlockState(pos);
+		Block next = BuiltInRegistries.BLOCK.getValue(net.minecraft.resources.Identifier.parse(id));
+		level.setBlockAndUpdate(pos, next.withPropertiesOf(now));
+	}
+
 	/** What /aibuild undo reads back after the world is saved and loaded: everything, builds in their order. */
 	@GameTest
 	public void journalSurvivesSaving(GameTestHelper helper) {
