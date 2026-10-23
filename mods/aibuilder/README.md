@@ -11,7 +11,8 @@ blocked doors, floating torches, low ceilings, water that would spill) and dress
 chests, a lectern with a book, banners and item frames. Lava never goes in next to anything that burns. Type a
 follow-up next to a build ("add a moat") and Claude changes that build. Ask for something that moves ("a dragon with
 flapping wings", "a windmill") and its moving pieces move on their own: wings flap, sails turn, a flag waves, even
-after a restart. Every build leaves a log, and a settings
+after a restart. Ask for something that works ("a lever that opens a piston door") and its redstone works as soon as
+the build ends: Claude tests the machine before it finishes. Every build leaves a log, and a settings
 file sets the caps, the speed and who may build. `/aibuild test` builds a demo house without Claude, `/aibuild
 survey` shows how Claude sees the land, and `/aibuild undo` takes any build back, item frames included. The plan,
 milestone by milestone, is in [`PLAN.md`](PLAN.md).
@@ -47,6 +48,7 @@ milestone by milestone, is in [`PLAN.md`](PLAN.md).
 | `/aibuild <prompt>` in chat | Same as Build, at Auto size |
 | Type another prompt near your last build | Claude changes that build ("add a moat", "make the towers taller"): it picks up its own plan where it left off and may build up to 16 blocks past what it built. The screen says **Refining: *name***; click that to make a new build there instead. Each change is its own undo |
 | `/aibuild new <prompt>` | A new build, even next to your last one |
+| Ask for something that works | Claude builds the machine with redstone and tries it (flipping its levers, reading its lamps and pistons) before it finishes. It starts working when the build ends, as if built by hand. A machine only ever moves and powers the build's own blocks: a piece that could reach your things is taken out, and chat says where. If you stand in a piston's way when the build ends, it waits for you to step aside (the action bar says where). Undoing a machine switches its levers back and pulls its pistons in first, so a door left open closes and nothing of the machine is left behind |
 | Ask for something that moves | Claude builds what moves (wings, sails, a flag, a carousel) as moving parts: they look like blocks and move on their own, in step, after a restart too. You can't stand on a moving part (the body is solid). A follow-up next to it ("make the wings flap faster") changes the motion, and undoing that puts the old motion back |
 | `/aibuild test` | Builds the demo house 3 blocks in front of you, facing the way you face, slowly enough to watch (about 10 seconds). The action bar shows the phase and the block count; chat says `Done: …` with a clickable **[Undo]** |
 | `/aibuild undo` | Takes back your newest build (repeat for older ones: the last 5, or as many as `undo_history_size` says), even after the game crashed or restarted. Anything you changed since, like a chest you filled, stays |

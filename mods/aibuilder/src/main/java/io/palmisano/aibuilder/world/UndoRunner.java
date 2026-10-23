@@ -19,6 +19,7 @@ import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.place.RestoreDecision;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
@@ -26,7 +27,10 @@ import net.minecraft.world.entity.Display;
 import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LeverBlock;
+import net.minecraft.world.level.block.piston.PistonBaseBlock;
+import net.minecraft.world.level.block.piston.PistonHeadBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.TagValueInput;
@@ -63,6 +67,7 @@ public final class UndoRunner implements Tickable {
 	private int unreached;
 	/** 0 before the levers go back; then the game time the machine has settled by (-1: none flipped). */
 	private long settleUntil;
+	private boolean pistonsIn;
 	private boolean loggedFailure;
 
 	/** Server thread: the tickets go on here. The build's moving parts are the world's. */
@@ -108,6 +113,10 @@ public final class UndoRunner implements Tickable {
 		}
 		if (level.getGameTime() < settleUntil) {
 			return false;
+		}
+		if (!pistonsIn) {
+			pistonsIn = true;
+			retractPistons();
 		}
 		if (!framesDown) {
 			// A chunk's entities load after its blocks; give them a while, then carry on without the ones still away.
@@ -193,6 +202,39 @@ public final class UndoRunner implements Tickable {
 			}
 		}
 		return flipped;
+	}
+
+	/**
+	 * Each of the build's pistons that stands extended once its levers are back (one a torch holds out, a door held
+	 * shut) goes back retracted, as placed, with the build's flags: its head goes, and a sticky piston's block comes back
+	 * into the head's spot, as its pull would bring it. Then restoring the blocks leaves nothing of the machine behind.
+	 */
+	private void retractPistons() {
+		for (Pos at : journal.positions()) {
+			BlockPos pos = Positions.toBlockPos(at);
+			if (!level.isLoaded(pos)) {
+				continue;
+			}
+			BlockState state = level.getBlockState(pos);
+			String id = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+			if (!(state.getBlock() instanceof PistonBaseBlock) || !state.getValue(PistonBaseBlock.EXTENDED) || !id.equals(journal.writtenBlock(at))) {
+				continue;
+			}
+			Direction facing = state.getValue(PistonBaseBlock.FACING);
+			BlockPos head = pos.relative(facing);
+			BlockPos ahead = head.relative(facing);
+			level.setBlock(pos, state.setValue(PistonBaseBlock.EXTENDED, false), PlacementJob.FLAGS);
+			if (!(level.getBlockState(head).getBlock() instanceof PistonHeadBlock)) {
+				continue;
+			}
+			BlockState pulled = level.isLoaded(ahead) ? level.getBlockState(ahead) : Blocks.AIR.defaultBlockState();
+			boolean pull = state.is(Blocks.STICKY_PISTON) && !pulled.isAir()
+					&& PistonBaseBlock.isPushable(pulled, level, ahead, facing.getOpposite(), false, facing);
+			level.setBlock(head, pull ? pulled : Blocks.AIR.defaultBlockState(), PlacementJob.FLAGS);
+			if (pull) {
+				level.setBlock(ahead, Blocks.AIR.defaultBlockState(), PlacementJob.FLAGS);
+			}
+		}
 	}
 
 	private boolean entitiesLoaded(Pos pos) {

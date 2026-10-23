@@ -338,6 +338,38 @@ public class MachineGameTest {
 	}
 
 	/**
+	 * Undo of a machine whose piston stands extended at rest (a door a torch holds shut): the piston goes back retracted,
+	 * pulling its block home, so once the blocks are restored nothing is left: no piston head, no moved block.
+	 */
+	@GameTest(structure = ARENA, maxTicks = 800)
+	public void undoOfAPistonHeldOutLeavesNothing(GameTestHelper helper) {
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "sticky_piston", "state": {"facing": "up"}},
+				  {"pos": [0, 2, 4], "block": "cobblestone"}, {"pos": [2, 1, 4], "block": "stone"},
+				  {"pos": [1, 1, 4], "block": "redstone_wall_torch", "state": {"facing": "left"}},
+				  {"pos": [2, 2, 4], "block": "lever", "state": {"face": "floor", "facing": "forward"}}]}}""");
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> {
+					ArenaBuilds.assertDone(helper, build);
+					helper.assertTrue(build.state(0, 3, 4).is(Blocks.COBBLESTONE), "the torch didn't push the block up: " + build.state(0, 3, 4));
+				})
+				.thenExecute(() -> {
+					UndoRunner runner = new UndoRunner(build.level(), build.journal(), Tunables.BLOCKS_PER_TICK, build.animations());
+					JobScheduler.add(runner);
+					undo.set(runner);
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> {
+					for (Pos at : List.of(new Pos(0, 1, 4), new Pos(0, 2, 4), new Pos(0, 3, 4), new Pos(1, 1, 4), new Pos(2, 1, 4), new Pos(2, 2, 4))) {
+						BlockState left = build.state(at.x(), at.y(), at.z());
+						helper.assertTrue(left.isAir(), "left at " + at + ": " + left);
+					}
+				})
+				.thenSucceed();
+	}
+
+	/**
 	 * A sticky piston that pushes the build's own block into the build's own air, its lever, and a lamp of the build's
 	 * beside them: a machine that touches only its own build is fine.
 	 */

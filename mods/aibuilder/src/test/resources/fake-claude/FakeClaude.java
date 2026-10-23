@@ -147,6 +147,28 @@ public class FakeClaude {
 				call("finish", "{\"summary\":\"A stone post with flapping wings.\"}");
 				result(false, "success", "Built a post with flapping wings.", "completed", 0);
 			}
+			case "door" -> {
+				// A lever that opens a piston door (MachineClientGameTest): a stone wall whose doorway a cobblestone block
+				// closes, held up by a sticky piston under it that a torch powers; the lever, on the torch's block, turns the
+				// torch off, and the piston pulls the block down into the ground.
+				rateLimit("allowed", false);
+				call("get_context", "{}");
+				call("submit_brief", "{\"title\":\"Test door\",\"style\":\"plain\",\"size\":{\"w\":5,\"h\":3,\"d\":1},"
+						+ "\"palette\":[{\"role\":\"primary\",\"block\":\"stone\"},{\"role\":\"door\",\"block\":\"cobblestone\"}],"
+						+ "\"phases\":[\"wall\",\"door\"]}");
+				call("fill", "{\"box\":[-2,1,5,2,2,5],\"block\":\"stone\"}");
+				call("set_blocks", "{\"blocks\":[{\"pos\":[0,1,5],\"block\":\"air\"}]}");
+				call("checkpoint", "{\"phase\":\"wall\"}");
+				call("set_blocks", "{\"blocks\":[{\"pos\":[0,-1,5],\"block\":\"sticky_piston\",\"state\":{\"facing\":\"up\"}},"
+						+ "{\"pos\":[0,0,5],\"block\":\"cobblestone\"},{\"pos\":[2,-1,5],\"block\":\"stone\"},"
+						+ "{\"pos\":[1,-1,5],\"block\":\"redstone_wall_torch\",\"state\":{\"facing\":\"left\"}},"
+						+ "{\"pos\":[2,0,5],\"block\":\"lever\",\"state\":{\"face\":\"floor\",\"facing\":\"forward\"}}]}");
+				call("checkpoint", "{\"phase\":\"door\"}");
+				call("test_redstone", "{\"steps\":[{\"wait\":6},{\"read\":[[0,1,5]]},{\"set\":[2,0,5],\"on\":true},{\"wait\":8},"
+						+ "{\"read\":[[0,1,5]]},{\"set\":[2,0,5],\"on\":false},{\"wait\":8},{\"read\":[[0,1,5]]}]}");
+				call("finish", "{\"summary\":\"A piston door on a lever.\"}");
+				result(false, "success", "Built a piston door.", "completed", 0);
+			}
 			case "echo" -> result(false, "success", prompt, "completed", 0);
 			case "slow_build" -> {
 				// The walls go in (stone, so they change what an earlier test hut left), then Claude takes its time: a build

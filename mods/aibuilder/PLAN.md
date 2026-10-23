@@ -46,6 +46,7 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 | M5 Quality | ✅ done, play-tested | Better builds: phases, self-check, the HUD, signs, chests, books, banners and item frames; lava kept clear of wood | Builds have depth, lit interiors, working doors; the panel top left; a sign or a chest in a build reads right |
 | M6 Polish | ✅ done, play-tested | Config, refinement ("add a moat"), logs, error handling, permissions | "a stone castle", then "add a moat" next to it; edit `config/aibuilder.json`; turn the Wi-Fi off mid-build; a LAN friend is refused |
 | M7 Builds that move | ✅ done: reviewed, fixed, live dragon passed | Moving parts: "a dragon with flapping wings", "a windmill", "a flag on a pole" | Ask for a dragon with flapping wings; then "make the wings flap faster" next to it; undo; `moving_parts: false` in the config |
+| M8 Redstone that works | 🔨 built | Machines that work when the build ends, tested by Claude: "a lever that opens a piston door", "lamps that light on a button" | Ask for a lever that opens a piston door; flip it; stand in the doorway as the build ends; undo it while it's open |
 
 ## Good to know
 
@@ -172,3 +173,8 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   be taken out of a moving part (air with its name, or clear with its name), and undo reaches displays wherever they
   are. Its ledger is `docs/superpowers/plans/2026-10-22-aibuilder-m7-progress.md`. Also fixed: weathered copper now
   undoes. M8 (redstone that works) is under way.
+- **2026-10-22:** M8 built from `docs/superpowers/plans/2026-10-22-aibuilder-m8-plan.md`, test-first: a build's
+  redstone starts when the build ends, as if placed by hand (sand and water still stay put); a machine may move and
+  power only the build's own blocks (check_build's piston and powers_outside, and what's left at the end is taken out);
+  a player in a piston's way is waited for; `test_redstone` lets Claude flip levers, press buttons and read lamps and
+  pistons; undo switches the levers back and pulls the pistons in first; a dispenser holds only what it would drop.

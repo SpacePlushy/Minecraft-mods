@@ -1,5 +1,14 @@
 package io.palmisano.aibuilder.test;
 
+import java.util.UUID;
+import java.util.List;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.block.LeverBlock;
+import net.minecraft.world.level.block.piston.PistonBaseBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import io.palmisano.aibuilder.world.UndoStore;
+import io.palmisano.aibuilder.world.Positions;
 import io.palmisano.aibuilder.world.AnimationStore;
 import io.palmisano.aibuilder.core.anim.Motion;
 import io.palmisano.aibuilder.AiBuilderMod;
@@ -57,6 +66,7 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 			int span = size == SizeTier.AUTO ? SizeTier.LARGE.size() : size.size();
 			viewpoints(ctx, singleplayer, feetY, span, refine.isEmpty() ? "" : "-before");
 			moments(ctx, singleplayer, feetY, span, refine.isEmpty() ? "" : "-before");
+			machine(ctx, singleplayer, feetY, span, refine.isEmpty() ? "" : "-before");
 			if (refine.isEmpty()) {
 				return;
 			}
@@ -77,6 +87,61 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 			// The refinement may build 16 blocks past the first build on every side: the views stand farther off.
 			viewpoints(ctx, singleplayer, feetY, span + 24, "-refined");
 			moments(ctx, singleplayer, feetY, span + 24, "-refined");
+			machine(ctx, singleplayer, feetY, span + 24, "-refined");
+		}
+	}
+
+	/**
+	 * A build that works (spec v2 §5.6): its first lever flipped, then flipped back, pictured from the front-left each
+	 * time. It works when every piston of the build changes and changes back; the verdict is logged. Nothing for a build
+	 * with no lever.
+	 */
+	private static void machine(ClientGameTestContext ctx, TestSingleplayerContext singleplayer, int feetY, int span, String suffix) {
+		TestServerContext server = singleplayer.getServer();
+		UUID owner = server.computeOnServer(s -> s.getPlayerList().getPlayers().getFirst().getUUID());
+		List<BlockPos> levers = server.computeOnServer(s -> UndoStore.get(s).peek(owner)
+				.map(build -> build.journal().levers().keySet().stream().map(Positions::toBlockPos).toList()).orElse(List.of()));
+		if (levers.isEmpty()) {
+			return;
+		}
+		List<BlockPos> pistons = server.computeOnServer(s -> UndoStore.get(s).peek(owner).map(build -> build.journal().positions().stream()
+				.map(Positions::toBlockPos).filter(p -> s.overworld().getBlockState(p).getBlock() instanceof PistonBaseBlock).toList()).orElse(List.of()));
+		double middleZ = Tunables.SITE_GAP + span / 2.0 - 0.5;
+		String middle = " facing 0.5 " + (feetY + span / 8) + " " + middleZ;
+		server.runCommand("tp @a " + (0.5 + Math.round(span * 0.75)) + " " + (feetY + Math.round(span * 0.36)) + " " + (0.5 - span / 5) + middle);
+		ctx.waitTicks(80);
+		singleplayer.getConnection().waitForChunksRender();
+		List<Boolean> before = extended(server, pistons);
+		ctx.takeScreenshot("aibuilder-live-machine-before" + suffix);
+		BlockPos lever = levers.getFirst();
+		server.runOnServer(s -> flip(s, lever));
+		ctx.waitTicks(40);
+		List<Boolean> flipped = extended(server, pistons);
+		ctx.takeScreenshot("aibuilder-live-machine-flipped" + suffix);
+		server.runOnServer(s -> flip(s, lever));
+		ctx.waitTicks(40);
+		List<Boolean> back = extended(server, pistons);
+		ctx.takeScreenshot("aibuilder-live-machine-back" + suffix);
+		boolean works = !pistons.isEmpty();
+		for (int i = 0; i < pistons.size(); i++) {
+			works &= before.get(i) != flipped.get(i) && back.get(i) == before.get(i);
+		}
+		AiBuilderMod.LOG.info("Live machine: lever {} of {}, {} pistons extended {} then {} then {}: {}", lever, levers.size(), pistons.size(), before,
+				flipped, back, works ? "it works" : "it doesn't work");
+	}
+
+	private static List<Boolean> extended(TestServerContext server, List<BlockPos> pistons) {
+		return server.computeOnServer(s -> pistons.stream().map(p -> {
+			BlockState state = s.overworld().getBlockState(p);
+			return state.getBlock() instanceof PistonBaseBlock && state.getValue(PistonBaseBlock.EXTENDED);
+		}).toList());
+	}
+
+	/** Flips a lever, as a player's click does. */
+	private static void flip(MinecraftServer server, BlockPos pos) {
+		BlockState state = server.overworld().getBlockState(pos);
+		if (state.getBlock() instanceof LeverBlock lever) {
+			lever.pull(state, server.overworld(), pos, null);
 		}
 	}
 
