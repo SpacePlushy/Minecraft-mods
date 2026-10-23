@@ -141,6 +141,7 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 			return;
 		}
 		FoundCalculator calculator = found.get();
+		server.runCommand("gamemode spectator @a");
 		io.palmisano.aibuilder.core.frame.Pos[] view = calculator.view();
 		io.palmisano.aibuilder.core.frame.Pos from = calculator.frame().toWorld(view[0]);
 		io.palmisano.aibuilder.core.frame.Pos at = calculator.frame().toWorld(view[1]);

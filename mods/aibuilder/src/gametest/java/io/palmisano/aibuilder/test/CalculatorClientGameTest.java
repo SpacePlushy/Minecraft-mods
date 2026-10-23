@@ -42,6 +42,8 @@ public class CalculatorClientGameTest implements FabricClientGameTest {
 			GameTestSupport.awaitChatStartingWith(ctx, "Done: ", 6000);
 			FoundCalculator calculator = server.computeOnServer(s -> FoundCalculator.of(SessionStore.get(s).get(owner).orElseThrow()).orElseThrow());
 
+			// As a spectator, so the camera stays where it's put (a player falls).
+			server.runCommand("gamemode spectator @a");
 			Pos[] view = calculator.view();
 			Pos from = calculator.frame().toWorld(view[0]);
 			Pos at = calculator.frame().toWorld(view[1]);
