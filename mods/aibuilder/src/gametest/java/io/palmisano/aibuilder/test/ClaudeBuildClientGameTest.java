@@ -129,6 +129,7 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 				aPromptWaitsForTheLastProcess(ctx, server, session);
 				GameTestSupport.awaitChatCount(ctx, "Done: ", 5, 600);
 				logsNeverHoldTheToken(ctx);
+				aFailureLineIsScrubbed(ctx, server);
 				offlineMidBuildEndsCleanly(ctx);
 				aLostSessionBuildsNewNextTime(ctx, server, owner);
 
@@ -247,6 +248,28 @@ public class ClaudeBuildClientGameTest implements FabricClientGameTest {
 		JsonObject request = lines.getFirst();
 		check(request.get("prompt").getAsString().equals("a leaky hut") && request.get("mode").getAsString().equals("new"), "the request: " + request);
 		check(lines.getLast().get("tool_calls").getAsInt() == 2 && lines.getLast().get("output_tokens").getAsLong() == 200, "the totals: " + lines.getLast());
+	}
+
+	/**
+	 * A failure line that quotes Claude Code holds neither the build's token nor a key (spec §16; the minors' review):
+	 * the fake stops with both in its error text, and chat shows it scrubbed. Nothing was placed, so nothing to undo.
+	 */
+	private static void aFailureLineIsScrubbed(ClientGameTestContext ctx, TestServerContext server) {
+		Path tokenFile = FabricLoader.getInstance().getGameDir().resolve("aibuilder-test-token");
+		try {
+			Files.deleteIfExists(tokenFile);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+		TestHooks.claudeEnvironment = Map.of("FAKE_CLAUDE_SCENARIO", "leak_stop", "FAKE_CLAUDE_TOKEN_FILE", tokenFile.toString());
+		int stopped = GameTestSupport.count("Claude Code stopped: ");
+		GameTestSupport.runPlayerCommand(ctx, "aibuild new a stopped hut");
+		GameTestSupport.awaitChatCount(ctx, "Claude Code stopped: ", stopped + 1, 600);
+		String token = read(tokenFile).strip();
+		check(token.length() >= 32, "the fake never wrote its token: " + token);
+		String line = GameTestSupport.chat().stream().filter(l -> l.startsWith("Claude Code stopped: ")).reduce((a, b) -> b).orElseThrow();
+		check(!line.contains(token) && !line.contains("sk-ant-api03-FAKE") && line.contains("[redacted]"), "the failure line: " + line);
+		server.waitFor(s -> !BuildManager.of(s).lastProcessRunning());
 	}
 
 	/**

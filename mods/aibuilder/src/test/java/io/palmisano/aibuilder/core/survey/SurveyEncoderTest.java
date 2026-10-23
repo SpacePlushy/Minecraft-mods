@@ -53,7 +53,6 @@ class SurveyEncoderTest {
 				""", text);
 	}
 
-	/** A drop with nothing within reach below: marked, and left out of the floor's numbers. */
 	/** "=" joins a key to its block in the palette, so it's never a key. */
 	@Test
 	void equalsIsNeverAKey() {
@@ -63,6 +62,7 @@ class SurveyEncoderTest {
 		assertFalse(row.substring(5).contains("="), row);
 	}
 
+	/** A drop with nothing within reach below: marked, and left out of the floor's numbers. */
 	@Test
 	void noFloorColumnsAreMarkedAndLeftOutOfTheStats() {
 		Column drop = new Column(Column.NONE, Column.NONE, Column.NONE, "minecraft:air", 0, 0, false, 0, "");

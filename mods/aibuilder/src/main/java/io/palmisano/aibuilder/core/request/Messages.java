@@ -186,6 +186,17 @@ public final class Messages {
 		return "A build is already running: /aibuild cancel stops it.";
 	}
 
+	/**
+	 * What a player is told while something runs: an undo, which can't be stopped; their own build, which /aibuild cancel
+	 * stops; anyone else's, named (where several may build, only its owner stops it).
+	 */
+	public static String busy(boolean undoing, boolean yours, String owner) {
+		if (undoing) {
+			return undoing();
+		}
+		return yours ? busy() : (owner.isEmpty() ? "Someone else's build" : owner + "'s build") + " is running: only they can stop it.";
+	}
+
 	public static String undoing() {
 		return "An undo is still running.";
 	}

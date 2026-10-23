@@ -238,6 +238,15 @@ public class FakeClaude {
 				call("finish", "{\"summary\":" + quote("Nothing built; the token was " + token + " and a key " + FAKE_KEY) + "}");
 				result(false, "success", "Done with " + token, "completed", 0);
 			}
+			case "leak_stop" -> {
+				// A failure line that quotes Claude Code (spec §16): the token and a key in its text never reach chat.
+				String tokenFile = System.getenv("FAKE_CLAUDE_TOKEN_FILE");
+				if (tokenFile != null) {
+					Files.writeString(Path.of(tokenFile), token);
+				}
+				call("get_context", "{}");
+				result(true, "error_during_execution", "Stopped: the token was " + token + " and a key " + FAKE_KEY, "error", 1);
+			}
 			case "refine" -> {
 				// What a refinement is given: the session it resumes and the box get_context now gives.
 				String context = call("get_context", "{}");

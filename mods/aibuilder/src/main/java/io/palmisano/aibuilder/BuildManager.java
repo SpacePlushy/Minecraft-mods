@@ -235,9 +235,10 @@ public final class BuildManager {
 		return !lastBackend.isDone();
 	}
 
-	/** What a player who asks while {@link #busy()} is told. */
-	private String busyLine() {
-		return undo != null ? Messages.undoing() : Messages.busy();
+	/** What a player who asks while {@link #busy()} is told: whose build it is, when it isn't theirs. */
+	private String busyLine(ServerPlayer player) {
+		UUID owner = build != null ? build.owner : starting != null ? starting.owner : null;
+		return Messages.busy(undo != null, owner == null || owner.equals(player.getUUID()), owner == null ? "" : name(owner));
 	}
 
 	/**
@@ -289,7 +290,7 @@ public final class BuildManager {
 			return;
 		}
 		if (busy()) {
-			reply(player, busyLine());
+			reply(player, busyLine(player));
 			return;
 		}
 		AiBuilderConfig cfg = config();
@@ -480,7 +481,7 @@ public final class BuildManager {
 			return Outcome.REFUSED;
 		}
 		if (busy()) {
-			reply(player, busyLine());
+			reply(player, busyLine(player));
 			return Outcome.BUSY;
 		}
 		AiBuilderConfig cfg = config();
@@ -515,8 +516,9 @@ public final class BuildManager {
 			return Outcome.DONE;
 		}
 		if (build == null) {
-			reply(player, Messages.nothingToCancel());
-			return Outcome.NOTHING;
+			// An undo can't be stopped, but it is running: saying nothing is would be wrong while its blocks go back.
+			reply(player, undo != null ? Messages.undoing() : Messages.nothingToCancel());
+			return undo != null ? Outcome.BUSY : Outcome.NOTHING;
 		}
 		if (!build.owner.equals(player.getUUID())) {
 			// Where several players may build (a server's allowed_players), a build is its owner's to stop.
@@ -539,7 +541,7 @@ public final class BuildManager {
 			return Outcome.REFUSED;
 		}
 		if (busy()) {
-			reply(player, busyLine());
+			reply(player, busyLine(player));
 			return Outcome.BUSY;
 		}
 		// Left in the history until the undo has finished, so a crash half-way loses nothing.
@@ -877,8 +879,8 @@ public final class BuildManager {
 			switch (HudUpdate.decide(player.isAlive(), player.level() == level, hudShown)) {
 				case SEND -> {
 					PhaseProgress progress = sink.progress();
-					ServerPlayNetworking.send(player, new BuildStatusPayload(new BuildStatus(title.isEmpty() ? Messages.hudUntitled() : title,
-							progress.phases(), progress.current(), job.placed(), budget.used(), budget.max(), note)));
+					ServerPlayNetworking.send(player, new BuildStatusPayload(BuildStatus.showing(title, Messages.hudUntitled(), progress.phases(),
+							progress.current(), job.placed(), budget.used(), budget.max(), note)));
 					hudShown = true;
 				}
 				case CLEAR -> {
@@ -992,8 +994,9 @@ public final class BuildManager {
 				line = Messages.failed(reason(error));
 				outcome = "failed";
 			} else if (failure != null) {
-				// The backend's reason is the player's whole line (spec §12.2's messages word for word).
-				line = failure;
+				// The backend's reason is the player's whole line (spec §12.2's messages word for word). It may quote Claude
+				// Code (its last words, its error line): scrubbed, as the summary is.
+				line = logging == null ? failure : logging.scrub().apply(failure);
 				outcome = "failed";
 			} else if (stoppedBy == BuildOutcome.CAPPED) {
 				line = Messages.capped(stopReason, job.placed());

@@ -119,4 +119,16 @@ class MessagesTest {
 			assertTrue(!line.contains("abcdefgh") && line.contains("a castle [redacted]"), line);
 		}
 	}
+
+	/**
+	 * What a player is told while something runs: an undo can't be stopped; a build's owner can stop it; anyone else is
+	 * told whose it is, as their cancel would be (the minors' review).
+	 */
+	@Test
+	void theBusyLineNamesTheBuildsOwnerToOthers() {
+		assertEquals("A build is already running: /aibuild cancel stops it.", Messages.busy(false, true, "Frankie"));
+		assertEquals("Frankie's build is running: only they can stop it.", Messages.busy(false, false, "Frankie"));
+		assertEquals("Someone else's build is running: only they can stop it.", Messages.busy(false, false, ""));
+		assertEquals("An undo is still running.", Messages.busy(true, false, "Frankie"));
+	}
 }

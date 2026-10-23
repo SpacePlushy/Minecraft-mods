@@ -71,11 +71,13 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   places a few hundred blocks per tick rather than thousands at once.
 - **Block updates.** Placing a block normally pokes its neighbors: water flows, sand falls, fences connect. The
   mod places with the pokes off and tidies the shapes once at the end.
-- **Networking (payloads).** Client and server talk only in packets. The mod adds two small ones: your prompt
-  (client to server) and the status (server to client, M5).
-- **Mixins.** Patches that change the game's own code as it loads. The mod has one, and only reads with it (who
-  sent a command, so a command block can't speak for the player); the tests have one more (vsync off, so they run
-  while the Mac is locked). Nothing changes how the game plays, which keeps the mod sturdy across game updates.
+- **Networking (payloads).** Client and server talk only in packets. The mod adds three small ones: your prompt
+  (client to server), the status (server to client, M5) and the screen's mode line (the screen asks, the server
+  answers with the build a prompt would change).
+- **Mixins.** Patches that change the game's own code as it loads. The mod has two: one only reads (who sent a
+  command, so a command block can't speak for the player), and the client's stops a clicked /aibuild (a book's or a
+  sign's link can't send a prompt through your login); the tests have one more (vsync off, so they run while the Mac
+  is locked). Nothing else in the game changes, which keeps the mod sturdy across game updates.
 - **Chunk tickets.** How the server decides which 16×16 chunks stay loaded. The mod holds a temporary one over
   the site while it builds.
 - **GameTests.** Automated tests that run inside a real game world, headless or with a window.

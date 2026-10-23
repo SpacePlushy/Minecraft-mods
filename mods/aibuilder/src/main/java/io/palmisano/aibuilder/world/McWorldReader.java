@@ -239,7 +239,8 @@ public final class McWorldReader implements WorldReader {
 
 	/**
 	 * Read over ticks on the server (BuildCheck), waited for here. One at a time: a call while a check is still reading
-	 * (a retry after a timeout) waits on that one instead of starting another over the same build.
+	 * (a retry after a timeout) waits on that one instead of starting another over the same build; it reads what was
+	 * placed since it began too before it answers.
 	 */
 	@Override
 	public List<BuildProblems.Problem> check() {

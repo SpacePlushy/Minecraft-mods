@@ -432,6 +432,38 @@ public class UndoGameTest {
 		helper.succeed();
 	}
 
+	/**
+	 * A player whose saved entry can't be read at all (here its id isn't one) costs only them: the store still reads,
+	 * without an error (the game would log it as broken), and the other player's build is whole (the minors' review).
+	 */
+	@GameTest
+	public void aPlayerWhoseBuildsCantBeReadIsSkipped(GameTestHelper helper) {
+		UndoJournal<BlockState, CompoundTag> window = new UndoJournal<>();
+		window.beforeWrite(new Pos(5, 5, 5), Blocks.AIR.defaultBlockState(), null);
+		window.afterWrite(new Pos(5, 5, 5), "minecraft:glass", 0);
+		UUID first = UUID.randomUUID();
+		UUID second = UUID.randomUUID();
+		UndoStore store = new UndoStore();
+		store.push(first, new UndoStore.StoredBuild(Level.OVERWORLD, "the first's window", window));
+		store.push(second, new UndoStore.StoredBuild(Level.OVERWORLD, "the second's window", window));
+		String saved = UndoStore.CODEC.encodeStart(NbtOps.INSTANCE, store).getOrThrow().toString();
+		String brokenText = saved.replaceFirst("player:\\[I;[^\\]]*\\]", "player:\"nobody\"");
+		helper.assertFalse(brokenText.equals(saved), "no player's id to break in " + saved);
+		CompoundTag broken;
+		try {
+			broken = TagParser.parseCompoundFully(brokenText);
+		} catch (CommandSyntaxException e) {
+			throw new IllegalStateException(e);
+		}
+		UndoStore loaded = UndoStore.CODEC.parse(NbtOps.INSTANCE, broken).result().orElse(null);
+		helper.assertTrue(loaded != null, "the store didn't read whole");
+		List<String> titles = new ArrayList<>();
+		loaded.builds(first).forEach(build -> titles.add(build.title()));
+		loaded.builds(second).forEach(build -> titles.add(build.title()));
+		helper.assertValueEqual(titles.size(), 1, "the builds that load: " + titles);
+		helper.succeed();
+	}
+
 	private static ArenaBuild start(GameTestHelper helper, String script) {
 		return ArenaBuilds.start(helper, Facing.SOUTH, script, Occupancy.players(helper.getLevel()), Tunables.BLOCKS_PER_TICK);
 	}
