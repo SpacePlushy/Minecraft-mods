@@ -94,7 +94,7 @@ public class UndoGameTest {
 						BlockState now = level.getBlockState(Positions.toBlockPos(pos));
 						helper.assertTrue(now == build.journal().original(pos), "not restored at " + pos + ": " + now);
 					}
-					helper.assertValueEqual(undo.get().result().join(), new UndoRunner.UndoResult(build.journal().size(), 0), "undo result");
+					helper.assertValueEqual(undo.get().result().join(), new UndoRunner.UndoResult(build.journal().size(), 0, 0), "undo result");
 				})
 				.thenSucceed();
 	}
@@ -212,7 +212,7 @@ public class UndoGameTest {
 				})
 				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
 				.thenExecute(() -> {
-					helper.assertValueEqual(undo.get().result().join(), new UndoRunner.UndoResult(2, 0), "undo result");
+					helper.assertValueEqual(undo.get().result().join(), new UndoRunner.UndoResult(2, 0, 0), "undo result");
 					helper.assertTrue(build.state(1, 1, 4).isAir(), "not undone at (1, 1, 4): " + build.state(1, 1, 4));
 				})
 				.thenSucceed();
@@ -356,7 +356,7 @@ public class UndoGameTest {
 		second.beforeWrite(new Pos(5, 5, 5), Blocks.AIR.defaultBlockState(), null);
 		second.afterWrite(new Pos(5, 5, 5), "minecraft:glass", 0);
 		// A refinement's changes to an earlier build's moving parts (spec v2 §4.4).
-		second.reshown(UUID.randomUUID(), Blocks.STONE.defaultBlockState());
+		second.reshown(UUID.randomUUID(), new Pos(30, 64, -9), Blocks.STONE.defaultBlockState());
 		second.reanimated(UUID.randomUUID(), new MovingPart("wing", new Vec3(0.5, 3, 4), List.of(new Motion.Swing("forward", -30, 40, 40, 0.25)), "body"));
 
 		UUID player = UUID.randomUUID();

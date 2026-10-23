@@ -1057,6 +1057,9 @@ public final class BuildManager {
 				if (error != null) {
 					// The build stays in the history, so the player can try again.
 					tell(owner, Component.literal(Messages.failed(reason(error))));
+				} else if (result.unreached() > 0) {
+					// Some of its moving blocks were where the world didn't load in time: it stays, to undo again.
+					tell(owner, Component.literal(Messages.undoneButUnreached(result.restored(), result.kept(), result.unreached())));
 				} else {
 					UndoStore.get(server).remove(owner, stored);
 					// The player's newest build is the session's newest (every build updates or ends it).

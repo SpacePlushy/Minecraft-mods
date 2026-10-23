@@ -132,6 +132,13 @@ public final class Messages {
 		return "The machine wasn't started: someone stood in a piston's way. Flip one of its levers to start it.";
 	}
 
+	/** An undo that couldn't reach some moving blocks (their chunks didn't load in time): the build stays to undo again. */
+	public static String undoneButUnreached(int restored, int kept, int unreached) {
+		return undone(restored, kept) + " " + String.format(Locale.ROOT, "%,d", unreached) + (unreached == 1 ? " moving block" : " moving blocks")
+				+ " couldn't be reached (the world there didn't load in time): /aibuild undo again to take "
+				+ (unreached == 1 ? "it" : "them") + " away.";
+	}
+
 	public static String stoppedBeforeStart() {
 		return "Stopped before Claude started.";
 	}

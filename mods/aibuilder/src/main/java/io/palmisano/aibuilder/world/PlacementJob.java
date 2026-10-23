@@ -409,7 +409,7 @@ public final class PlacementJob implements Tickable {
 			UUID shown = part.get(entry.getKey());
 			BlockState before = shown == null ? null : Displays.show(level, shown, entry.getValue());
 			if (before != null && !made.contains(shown) && before != entry.getValue()) {
-				journal.reshown(shown, before);
+				journal.reshown(shown, Positions.toPos(entry.getKey()), before);
 			}
 			if (before == null) {
 				if (entry.getValue().isAir()) {

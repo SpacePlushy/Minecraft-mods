@@ -3,13 +3,13 @@ package io.palmisano.aibuilder.world;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 import io.palmisano.aibuilder.core.blocks.PlacementPass;
 
@@ -22,6 +22,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Display;
 import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
@@ -38,7 +39,8 @@ import net.minecraft.world.level.storage.TagValueInput;
  * entities, which load on their own), so it works however far away the build is.
  */
 public final class UndoRunner implements Tickable {
-	public record UndoResult(int restored, int kept) {
+	/** {@code unreached}: moving blocks whose chunks' entities didn't load in time; the build stays to undo again. */
+	public record UndoResult(int restored, int kept, int unreached) {
 	}
 
 	private final ServerLevel level;
@@ -57,6 +59,7 @@ public final class UndoRunner implements Tickable {
 	private int next;
 	private int restored;
 	private int kept;
+	private int unreached;
 	private boolean loggedFailure;
 
 	/** Server thread: the tickets go on here. The build's moving parts are the world's. */
@@ -77,6 +80,7 @@ public final class UndoRunner implements Tickable {
 		Set<ChunkPos> touched = new LinkedHashSet<>();
 		order.forEach(p -> touched.add(ChunkPos.containing(Positions.toBlockPos(p))));
 		journal.spawned().forEach(s -> frameChunks.add(ChunkPos.containing(Positions.toBlockPos(s.pos()))));
+		journal.reshown().forEach(r -> frameChunks.add(ChunkPos.containing(Positions.toBlockPos(r.pos()))));
 		touched.addAll(frameChunks);
 		this.chunks = touched;
 		this.loaded = BuildTickets.load(level, chunks);
@@ -104,14 +108,13 @@ public final class UndoRunner implements Tickable {
 				return false;
 			}
 			kept += ItemFrames.takeDown(level, journal.spawned());
-			Displays.takeDown(level, journal.spawned());
-			Set<UUID> displays = journal.spawned().stream().filter(s -> s.kind().equals(UndoJournal.Spawned.DISPLAY)).map(UndoJournal.Spawned::id)
-					.collect(Collectors.toSet());
-			if (!displays.isEmpty()) {
-				animations.forget(displays);
-			}
+			takeDownDisplays();
 			// A refinement's changes to an earlier build's parts: the blocks they showed, the motions they had.
-			journal.reshown().forEach(r -> Displays.show(level, r.display(), r.before()));
+			for (UndoJournal.Reshown<BlockState> r : journal.reshown()) {
+				if (Displays.show(level, r.display(), r.before()) == null && !entitiesLoaded(r.pos())) {
+					unreached++;
+				}
+			}
 			journal.reanimated().forEach(r -> animations.restore(r.build(), r.before()));
 			framesDown = true;
 		}
@@ -129,7 +132,7 @@ public final class UndoRunner implements Tickable {
 			return false;
 		}
 		BuildTickets.unload(level, chunks);
-		result.complete(new UndoResult(restored, kept));
+		result.complete(new UndoResult(restored, kept, unreached));
 		return true;
 	}
 
@@ -137,6 +140,35 @@ public final class UndoRunner implements Tickable {
 	public void failed(RuntimeException error) {
 		BuildTickets.unload(level, chunks);
 		result.completeExceptionally(error);
+	}
+
+	/**
+	 * Takes the build's displays down, and forgets in the moving builds those taken down and those already gone (not
+	 * there though their chunk's entities are loaded). One whose chunk's entities didn't load in time is kept, and
+	 * counted: the build stays to undo again.
+	 */
+	private void takeDownDisplays() {
+		Set<UUID> gone = new HashSet<>();
+		for (UndoJournal.Spawned s : journal.spawned()) {
+			if (!s.kind().equals(UndoJournal.Spawned.DISPLAY)) {
+				continue;
+			}
+			if (level.getEntity(s.id()) instanceof Display.BlockDisplay display) {
+				display.discard();
+				gone.add(s.id());
+			} else if (entitiesLoaded(s.pos())) {
+				gone.add(s.id());
+			} else {
+				unreached++;
+			}
+		}
+		if (!gone.isEmpty()) {
+			animations.forget(gone);
+		}
+	}
+
+	private boolean entitiesLoaded(Pos pos) {
+		return level.areEntitiesLoaded(ChunkPos.containing(Positions.toBlockPos(pos)).pack());
 	}
 
 	/** A position given back what it held before a build, block entity data included, with the build's own flags. */

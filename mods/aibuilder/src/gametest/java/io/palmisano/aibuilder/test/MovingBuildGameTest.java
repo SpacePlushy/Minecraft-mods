@@ -5,6 +5,7 @@ import static io.palmisano.aibuilder.test.ArenaBuilds.ARENA;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -29,7 +30,9 @@ import io.palmisano.aibuilder.mixin.DisplayAccessor;
 import io.palmisano.aibuilder.test.ArenaBuilds.ArenaBuild;
 import io.palmisano.aibuilder.world.AnimationEngine;
 import io.palmisano.aibuilder.world.AnimationStore;
+import io.palmisano.aibuilder.world.BuildTickets;
 import io.palmisano.aibuilder.world.Displays;
+import io.palmisano.aibuilder.world.Positions;
 import io.palmisano.aibuilder.world.JobScheduler;
 import io.palmisano.aibuilder.world.Occupancy;
 import io.palmisano.aibuilder.world.UndoRunner;
@@ -38,6 +41,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.TagParser;
@@ -404,6 +410,51 @@ public class MovingBuildGameTest {
 			ArenaBuilds.assertDone(helper, build);
 			helper.assertValueEqual(byCorner(helper, build).size(), 42, "displays");
 		});
+	}
+
+	/**
+	 * A refinement that only showed another block on an earlier build's display, far away in a chunk that has since
+	 * unloaded: undo loads that chunk, waits for its entities and shows the block back (M7 review).
+	 */
+	@GameTest(maxTicks = 2400)
+	public void undoReachesAReshownDisplayFarAway(GameTestHelper helper) {
+		ServerLevel level = helper.getLevel();
+		BlockPos far = helper.absolutePos(BlockPos.ZERO).offset(2000, 0, 0);
+		Set<ChunkPos> chunks = Set.of(ChunkPos.containing(far));
+		long chunk = ChunkPos.containing(far).pack();
+		AtomicReference<UUID> id = new AtomicReference<>();
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		UndoJournal<BlockState, CompoundTag> journal = new UndoJournal<>();
+		AtomicReference<java.util.concurrent.CompletableFuture<Void>> loading = new AtomicReference<>(BuildTickets.load(level, chunks));
+		helper.startSequence()
+				.thenWaitUntil(() -> helper.assertTrue(loading.get().isDone() && level.areEntitiesLoaded(chunk), "the far chunk isn't loaded"))
+				.thenExecute(() -> {
+					Display.BlockDisplay display = new Display.BlockDisplay(EntityTypes.BLOCK_DISPLAY, level);
+					display.setPos(far.getX(), far.getY(), far.getZ());
+					((BlockDisplayAccessor) display).aibuilder$setBlockState(Blocks.OBSIDIAN.defaultBlockState());
+					helper.assertTrue(level.addFreshEntity(display), "the display wasn't added");
+					id.set(display.getUUID());
+					// As a refinement that showed obsidian where an earlier build's display showed stone.
+					journal.reshown(display.getUUID(), Positions.toPos(far), Blocks.STONE.defaultBlockState());
+					BuildTickets.unload(level, chunks);
+				})
+				.thenWaitUntil(() -> helper.assertFalse(level.areEntitiesLoaded(chunk), "the far chunk's entities are still loaded"))
+				.thenExecute(() -> {
+					UndoRunner runner = new UndoRunner(level, journal, Tunables.BLOCKS_PER_TICK, new AnimationStore());
+					JobScheduler.add(runner);
+					undo.set(runner);
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> loading.set(BuildTickets.load(level, chunks)))
+				.thenWaitUntil(() -> helper.assertTrue(loading.get().isDone() && level.areEntitiesLoaded(chunk), "the far chunk didn't load again"))
+				.thenExecute(() -> {
+					Display.BlockDisplay display = (Display.BlockDisplay) level.getEntity(id.get());
+					helper.assertTrue(display != null, "the display is gone");
+					helper.assertValueEqual(state(display), Blocks.STONE.defaultBlockState(), "what the display shows after the undo");
+					display.discard();
+					BuildTickets.unload(level, chunks);
+				})
+				.thenSucceed();
 	}
 
 	/** A saved moving build that can't be read (a facing that isn't one) costs only itself. */

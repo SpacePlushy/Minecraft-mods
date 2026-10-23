@@ -1,6 +1,5 @@
 package io.palmisano.aibuilder.world;
 
-import java.util.List;
 import java.util.UUID;
 
 import com.mojang.math.Transformation;
@@ -8,7 +7,6 @@ import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.anim.DisplayPose;
 import io.palmisano.aibuilder.core.anim.Quat;
 import io.palmisano.aibuilder.core.anim.Vec3;
-import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.mixin.BlockDisplayAccessor;
 import io.palmisano.aibuilder.mixin.DisplayAccessor;
 import net.minecraft.core.BlockPos;
@@ -60,14 +58,5 @@ public final class Displays {
 				new Quaternionf((float) r.x(), (float) r.y(), (float) r.z(), (float) r.w()), new Vector3f(1, 1, 1), new Quaternionf()));
 		accessor.aibuilder$setTransformationInterpolationDuration(ticks);
 		accessor.aibuilder$setTransformationInterpolationDelay(0);
-	}
-
-	/** Takes down the build's displays: they hold nothing of the player's, so all of them go. */
-	static void takeDown(ServerLevel level, List<UndoJournal.Spawned> spawned) {
-		for (UndoJournal.Spawned s : spawned) {
-			if (s.kind().equals(UndoJournal.Spawned.DISPLAY) && level.getEntity(s.id()) instanceof Display.BlockDisplay display) {
-				display.discard();
-			}
-		}
 	}
 }

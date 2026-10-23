@@ -27,8 +27,11 @@ public final class UndoJournal<S, D> {
 		public static final String DISPLAY = "display";
 	}
 
-	/** A display an earlier build made that this one showed another block on (a refinement): undo shows {@code before} again. */
-	public record Reshown<S>(UUID display, S before) {
+	/**
+	 * A display an earlier build made, standing at {@code pos}, that this one showed another block on (a refinement):
+	 * undo loads its chunk and shows {@code before} again.
+	 */
+	public record Reshown<S>(UUID display, Pos pos, S before) {
 	}
 
 	/** The motion a part of an earlier build had before this one gave it another (a refinement): undo gives it back. */
@@ -52,7 +55,7 @@ public final class UndoJournal<S, D> {
 
 	private final Map<Pos, Record<S, D>> records = new LinkedHashMap<>();
 	private final List<Spawned> spawned = new ArrayList<>();
-	private final Map<UUID, S> reshown = new LinkedHashMap<>();
+	private final Map<UUID, Reshown<S>> reshown = new LinkedHashMap<>();
 	private final Map<PartOf, MovingPart> reanimated = new LinkedHashMap<>();
 
 	public static <S, D> UndoJournal<S, D> of(List<Entry<S, D>> entries) {
@@ -70,21 +73,19 @@ public final class UndoJournal<S, D> {
 			journal.afterWrite(e.pos(), e.writtenBlock(), e.writtenDataHash());
 		}
 		spawned.forEach(journal::addSpawned);
-		reshown.forEach(r -> journal.reshown(r.display(), r.before()));
+		reshown.forEach(r -> journal.reshown(r.display(), r.pos(), r.before()));
 		reanimated.forEach(r -> journal.reanimated(r.build(), r.before()));
 		return journal;
 	}
 
 	/** An earlier build's display showing another block now; the first block it showed before this build wins. */
-	public void reshown(UUID display, S before) {
-		reshown.putIfAbsent(display, before);
+	public void reshown(UUID display, Pos pos, S before) {
+		reshown.putIfAbsent(display, new Reshown<>(display, pos, before));
 	}
 
 	/** In the order they were first shown another block. */
 	public List<Reshown<S>> reshown() {
-		List<Reshown<S>> out = new ArrayList<>(reshown.size());
-		reshown.forEach((display, before) -> out.add(new Reshown<>(display, before)));
-		return out;
+		return List.copyOf(reshown.values());
 	}
 
 	/** An earlier part's motion before this build gave it another; the first wins, as for blocks. */

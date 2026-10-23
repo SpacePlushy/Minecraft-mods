@@ -56,7 +56,11 @@ public final class UndoStore extends SavedData {
 	/** An earlier build's display a refinement showed another block on, and the block it showed before. */
 	private static final Codec<UndoJournal.Reshown<BlockState>> RESHOWN_CODEC = RecordCodecBuilder.create(i -> i.group(
 			UUIDUtil.CODEC.fieldOf("display").forGetter(r -> r.display()),
-			BlockState.CODEC.fieldOf("before").forGetter(r -> r.before())).apply(i, UndoJournal.Reshown::new));
+			Codec.LONG.fieldOf("pos").forGetter(r -> BlockPos.asLong(r.pos().x(), r.pos().y(), r.pos().z())),
+			BlockState.CODEC.fieldOf("before").forGetter(r -> r.before())).apply(i, (display, pos, before) -> {
+				BlockPos at = BlockPos.of(pos);
+				return new UndoJournal.Reshown<>(display, new Pos(at.getX(), at.getY(), at.getZ()), before);
+			}));
 
 	/** An earlier build's part a refinement gave another motion, and the motion it had. */
 	private static final Codec<UndoJournal.Reanimated> REANIMATED_CODEC = RecordCodecBuilder.create(i -> i.group(
