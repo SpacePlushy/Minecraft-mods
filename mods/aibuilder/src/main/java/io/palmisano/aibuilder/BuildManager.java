@@ -77,6 +77,7 @@ import io.palmisano.aibuilder.world.AnimationEngine;
 import io.palmisano.aibuilder.world.AnimationStore;
 import io.palmisano.aibuilder.world.BuildTickets;
 import io.palmisano.aibuilder.world.JobScheduler;
+import io.palmisano.aibuilder.world.MachineRules;
 import io.palmisano.aibuilder.world.McBlockCatalog;
 import io.palmisano.aibuilder.world.McBuildSink;
 import io.palmisano.aibuilder.world.McWorldReader;
@@ -101,6 +102,7 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -665,7 +667,9 @@ public final class BuildManager {
 		if (player != null) {
 			// Before the brief (and during a retry) the backend's note; then the phase and the count.
 			String note = build.note;
-			player.sendOverlayMessage(Component.literal(note.isEmpty() ? Messages.progress(build.sink.phase(), build.job.placed()) : note));
+			BlockPos blocked = build.job.waitingForPlayer();
+			player.sendOverlayMessage(Component.literal(blocked != null ? Messages.stepAside(Positions.toPos(blocked))
+					: note.isEmpty() ? Messages.progress(build.sink.phase(), build.job.placed()) : note));
 			build.hud(player);
 		}
 	}
@@ -796,6 +800,7 @@ public final class BuildManager {
 			long cap = cfg.sizeLimit(request.size());
 			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level), blocksPerTick,
 					Tunables.TICK_BUDGET_NANOS, cap);
+			job.machine(new MachineRules(level, frame, allowed, journal));
 			chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(allowed.min())), Positions.toBlockPos(frame.toWorld(allowed.max())));
 			BuildTickets.hold(level, chunks);
 			JobScheduler.add(job);
@@ -1025,6 +1030,12 @@ public final class BuildManager {
 				tell(owner, Component.literal(Messages.summary(logging == null ? summary : logging.scrub().apply(summary))));
 			}
 			tell(owner, undoable ? withUndo(line) : Component.literal(line));
+			if (!job.takenOut().isEmpty()) {
+				tell(owner, Component.literal(Messages.takenOut(job.takenOut().stream().map(Positions::toPos).toList())));
+			}
+			if (!job.machineStarted()) {
+				tell(owner, Component.literal(Messages.machineNotStarted()));
+			}
 			if (build == this) {
 				build = null;
 			}

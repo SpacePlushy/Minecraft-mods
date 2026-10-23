@@ -28,6 +28,7 @@ import io.palmisano.aibuilder.core.tools.ToolResult;
 import io.palmisano.aibuilder.world.AnimationStore;
 import io.palmisano.aibuilder.world.BuildTickets;
 import io.palmisano.aibuilder.world.JobScheduler;
+import io.palmisano.aibuilder.world.MachineRules;
 import io.palmisano.aibuilder.world.McBlockCatalog;
 import io.palmisano.aibuilder.world.McBuildSink;
 import io.palmisano.aibuilder.world.McWorldReader;
@@ -87,6 +88,7 @@ final class ArenaBuilds {
 		UndoJournal<BlockState, CompoundTag> journal = new UndoJournal<>();
 		PlacementJob job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, occupancy, blocksPerTick,
 				Tunables.TICK_BUDGET_NANOS, maxChanged);
+		job.machine(new MachineRules(level, frame, ALLOWED, journal));
 		Set<ChunkPos> chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(ALLOWED.min())),
 				Positions.toBlockPos(frame.toWorld(ALLOWED.max())));
 		BuildTickets.hold(level, chunks);

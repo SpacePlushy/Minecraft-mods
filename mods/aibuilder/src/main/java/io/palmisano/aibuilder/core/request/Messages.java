@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Locale;
 
 import io.palmisano.aibuilder.core.agent.Scrub;
+import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.tools.Brief;
 
 /** The chat lines the player sees about a prompt and a build. */
@@ -112,6 +113,23 @@ public final class Messages {
 	/** At one of the mod's caps; {@code limit} is the budget's own words ("the 150 tool-call limit"). */
 	public static String capped(String limit, int placed) {
 		return "Stopped at " + limit + ": " + blocks(placed) + " placed.";
+	}
+
+	/** The action bar while the build's machine waits for a player in a piston's way (spec v2 §5.5). */
+	public static String stepAside(Pos piston) {
+		return "Step out of the way of the piston at " + piston.x() + " " + piston.y() + " " + piston.z() + " so the machine can start";
+	}
+
+	/** Redstone of the build's that could have moved or powered something that isn't the build's, put back as it was. */
+	public static String takenOut(List<Pos> where) {
+		String at = String.join(", ", where.stream().limit(5).map(p -> p.x() + " " + p.y() + " " + p.z()).toList())
+				+ (where.size() > 5 ? " and " + (where.size() - 5) + " more" : "");
+		return "Took out " + where.size() + (where.size() == 1 ? " redstone piece" : " redstone pieces")
+				+ " that could have moved or powered something that isn't the build's: at " + at + ".";
+	}
+
+	public static String machineNotStarted() {
+		return "The machine wasn't started: someone stood in a piston's way. Flip one of its levers to start it.";
 	}
 
 	public static String stoppedBeforeStart() {

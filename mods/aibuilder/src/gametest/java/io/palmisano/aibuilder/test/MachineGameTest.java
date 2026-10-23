@@ -2,6 +2,9 @@ package io.palmisano.aibuilder.test;
 
 import static io.palmisano.aibuilder.test.ArenaBuilds.ARENA;
 
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import com.mojang.logging.LogUtils;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.frame.Facing;
@@ -9,8 +12,12 @@ import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.test.ArenaBuilds.ArenaBuild;
 import io.palmisano.aibuilder.world.Occupancy;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
+import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LeverBlock;
+import net.minecraft.world.level.block.RedstoneLampBlock;
+import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.slf4j.Logger;
 
@@ -31,6 +38,22 @@ public class MachineGameTest {
 		String report = build.reply("check_build");
 		LOGGER.info("check_build: {}", report);
 		return report;
+	}
+
+	/** A build of these calls, facing south, that ends; a spot is taken where {@code occupancy} says. */
+	private static ArenaBuild built(GameTestHelper helper, String calls, Occupancy occupancy) {
+		return ArenaBuilds.start(helper, Facing.SOUTH, "{\"calls\": [{\"tool\": \"submit_brief\", \"args\": {\"title\": \"machine\", \"style\": \"test\"}},"
+				+ calls + ",{\"tool\": \"finish\", \"args\": {\"summary\": \"built\"}}]}", occupancy, Tunables.BLOCKS_PER_TICK);
+	}
+
+	private static ArenaBuild built(GameTestHelper helper, String calls) {
+		return built(helper, calls, Occupancy.players(helper.getLevel()));
+	}
+
+	/** Flips the lever at a local position, as a player's click does. */
+	private static void pull(ArenaBuild build, Pos lever) {
+		BlockPos pos = build.world(lever);
+		((LeverBlock) Blocks.LEVER).pull(build.level().getBlockState(pos), build.level(), pos, null);
 	}
 
 	/** A block of the world's (the player's, or the ground), there before the build, at a local position. */
@@ -89,6 +112,105 @@ public class MachineGameTest {
 			helper.assertTrue(report.contains("powers_outside (1)") && report.contains("(0, 1, 4) lever") && report.contains("tnt at (2, 1, 4)"),
 					"the lever beside the TNT: " + report);
 		});
+	}
+
+	/** A lever placed on, with a lamp beside it: the lamp is lit once the build ends, as if it were built by hand. */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void aLeverOnLightsItsLampOnceTheBuildEnds(GameTestHelper helper) {
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward",
+				  "powered": "true"}}, {"pos": [1, 1, 4], "block": "redstone_lamp"}]}}""");
+		helper.succeedWhen(() -> {
+			ArenaBuilds.assertDone(helper, build);
+			helper.assertTrue(build.state(1, 1, 4).getValue(RedstoneLampBlock.LIT), "the lamp beside the lever that's on is dark");
+		});
+	}
+
+	/** A torch on the front of a block lights its lamp until the lever on the block is on: a NOT gate, working as by hand. */
+	@GameTest(structure = ARENA, maxTicks = 600)
+	public void aTorchNotGateReadsRight(GameTestHelper helper) {
+		Pos lever = new Pos(0, 2, 4);
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "stone"},
+				  {"pos": [0, 2, 4], "block": "lever", "state": {"face": "floor", "facing": "forward"}},
+				  {"pos": [0, 1, 5], "block": "redstone_wall_torch", "state": {"facing": "forward"}}, {"pos": [0, 1, 6], "block": "redstone_lamp"}]}}""");
+		helper.startSequence()
+				.thenWaitUntil(() -> {
+					ArenaBuilds.assertDone(helper, build);
+					helper.assertTrue(build.state(0, 1, 6).getValue(RedstoneLampBlock.LIT), "the lamp is dark with the lever off");
+				})
+				.thenExecute(() -> pull(build, lever))
+				.thenWaitUntil(() -> helper.assertFalse(build.state(0, 1, 6).getValue(RedstoneLampBlock.LIT), "the lamp is lit with the lever on"))
+				.thenExecute(() -> pull(build, lever))
+				.thenWaitUntil(() -> helper.assertTrue(build.state(0, 1, 6).getValue(RedstoneLampBlock.LIT), "the lamp is dark with the lever off again"))
+				.thenSucceed();
+	}
+
+	/**
+	 * The pass touches only redstone and what's beside it: the build's water, with open sides, stays still, and its sand
+	 * stays where it was placed. (Sand over air falls at any build's end, as it would for a player: the shape pass.)
+	 */
+	@GameTest(structure = ARENA, maxTicks = 600)
+	public void waterAndSandStayPut(GameTestHelper helper) {
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward",
+				  "powered": "true"}}, {"pos": [1, 1, 4], "block": "redstone_lamp"}, {"pos": [5, 1, 4], "block": "stone"}, {"pos": [5, 2, 4], "block": "sand"},
+				  {"pos": [-5, 1, 4], "block": "water"}]}}""");
+		helper.startSequence()
+				.thenWaitUntil(() -> {
+					ArenaBuilds.assertDone(helper, build);
+					helper.assertTrue(build.state(1, 1, 4).getValue(RedstoneLampBlock.LIT), "the lamp is dark: no pass ran");
+				})
+				.thenIdle(40)
+				.thenExecute(() -> {
+					helper.assertTrue(build.state(5, 2, 4).is(Blocks.SAND), "the sand moved: " + build.state(5, 2, 4));
+					for (Pos beside : new Pos[] {new Pos(-6, 1, 4), new Pos(-4, 1, 4), new Pos(-5, 1, 3), new Pos(-5, 1, 5)}) {
+						helper.assertTrue(build.state(beside.x(), beside.y(), beside.z()).isAir(), "the water flowed to " + beside);
+					}
+				})
+				.thenSucceed();
+	}
+
+	/** A player where a piston of the build would push: the machine waits to start until they've stepped out of the way. */
+	@GameTest(structure = ARENA, maxTicks = 600)
+	public void thePowerUpWaitsForAPlayerInAPistonsWay(GameTestHelper helper) {
+		BlockPos inTheWay = ArenaBuilds.worldPos(helper, Facing.SOUTH, new Pos(0, 1, 6));
+		AtomicBoolean stillThere = new AtomicBoolean(true);
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "sticky_piston", "state": {"facing": "forward"}},
+				  {"pos": [0, 1, 5], "block": "stone"}, {"pos": [-1, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward",
+				  "powered": "true"}}]}}""", pos -> pos.equals(inTheWay) && stillThere.get());
+		helper.startSequence()
+				.thenWaitUntil(() -> helper.assertTrue(build.job().waitingForPlayer() != null, "the machine isn't waiting for the player"))
+				.thenIdle(10)
+				.thenExecute(() -> {
+					helper.assertFalse(build.state(0, 1, 4).getValue(PistonBaseBlock.EXTENDED), "the piston pushed toward the player");
+					helper.assertFalse(build.done(), "the build ended while the player was in the way");
+					stillThere.set(false);
+				})
+				.thenWaitUntil(() -> {
+					ArenaBuilds.assertDone(helper, build);
+					helper.assertTrue(build.state(0, 1, 4).getValue(PistonBaseBlock.EXTENDED), "the piston didn't start once the way was clear");
+				})
+				.thenSucceed();
+	}
+
+	/** A lever of the build beside the world's TNT is taken out before anything is powered: the TNT stays as it was. */
+	@GameTest(structure = ARENA, maxTicks = 600)
+	public void aRuleBreakerIsTakenOut(GameTestHelper helper) {
+		world(helper, new Pos(1, 1, 4), Blocks.TNT.defaultBlockState());
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward",
+				  "powered": "true"}}]}}""");
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenIdle(20)
+				.thenExecute(() -> {
+					helper.assertTrue(build.state(0, 1, 4).isAir(), "the lever beside the TNT is still there: " + build.state(0, 1, 4));
+					helper.assertTrue(build.state(1, 1, 4).is(Blocks.TNT), "the TNT went: " + build.state(1, 1, 4));
+					helper.assertValueEqual(build.job().takenOut(), List.of(build.world(new Pos(0, 1, 4))), "what was taken out");
+				})
+				.thenSucceed();
 	}
 
 	/**

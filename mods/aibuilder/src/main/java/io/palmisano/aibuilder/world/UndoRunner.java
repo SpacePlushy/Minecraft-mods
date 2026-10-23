@@ -139,6 +139,16 @@ public final class UndoRunner implements Tickable {
 		result.completeExceptionally(error);
 	}
 
+	/** A position given back what it held before a build, block entity data included, with the build's own flags. */
+	static void putBack(ServerLevel level, BlockPos pos, BlockState original, CompoundTag data) {
+		level.setBlock(pos, original, PlacementJob.FLAGS);
+		if (data != null && level.getBlockEntity(pos) instanceof BlockEntity restored) {
+			restored.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), data));
+			restored.setChanged();
+			level.sendBlockUpdated(pos, original, original, Block.UPDATE_CLIENTS);
+		}
+	}
+
 	private void restore(Pos at) {
 		BlockPos pos = Positions.toBlockPos(at);
 		try {
@@ -158,12 +168,7 @@ public final class UndoRunner implements Tickable {
 				kept++;
 				return;
 			}
-			level.setBlock(pos, original, PlacementJob.FLAGS);
-			if (data != null && level.getBlockEntity(pos) instanceof BlockEntity restoredEntity) {
-				restoredEntity.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), data));
-				restoredEntity.setChanged();
-				level.sendBlockUpdated(pos, original, original, Block.UPDATE_CLIENTS);
-			}
+			putBack(level, pos, original, data);
 			restored++;
 			restoredPositions.add(pos);
 		} catch (RuntimeException e) {

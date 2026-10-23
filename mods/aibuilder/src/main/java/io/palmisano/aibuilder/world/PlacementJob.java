@@ -70,6 +70,11 @@ public final class PlacementJob implements Tickable {
 	private final long maxChanged;
 	private volatile boolean capReached;
 	private long overCap;
+	private volatile MachineRules machines;
+	private PowerUp powerUp;
+	/** Positions the power-up pass has done (spec v2 §5.1): never twice. */
+	private final Set<BlockPos> powered = new HashSet<>();
+	private final List<BlockPos> takenOut = new ArrayList<>();
 	/** One id string per block, shared by every journal entry (a 350k build would otherwise hold 350k copies). */
 	private final Map<Block, String> ids = new IdentityHashMap<>();
 	/** Each moving part's displays by the block they stand at, so a spot given again shows the later block. */
@@ -138,6 +143,30 @@ public final class PlacementJob implements Tickable {
 	 */
 	public void knownDisplays(Map<String, Map<BlockPos, UUID>> earlier) {
 		earlier.forEach((part, displays) -> shown.computeIfAbsent(part, p -> new HashMap<>()).putAll(displays));
+	}
+
+	/**
+	 * The build's redstone starts once everything is in (spec v2 §5.1): first what breaks the machine rules (spec v2
+	 * §5.5) is put back as it was, then the power-up pass. Without rules (a test's bare job) there's neither. Any
+	 * thread, before the job starts.
+	 */
+	public void machine(MachineRules rules) {
+		this.machines = rules;
+	}
+
+	/** A piston of the build that waits to start while a player stands in its way; null when none does. Server thread. */
+	public BlockPos waitingForPlayer() {
+		return powerUp == null ? null : powerUp.waitingFor();
+	}
+
+	/** What broke the machine rules and was put back as it was before the build. Server thread. */
+	public List<BlockPos> takenOut() {
+		return List.copyOf(takenOut);
+	}
+
+	/** False when the power-up pass gave up waiting for a player, and the machine stays as placed. Server thread. */
+	public boolean machineStarted() {
+		return powerUp == null || !powerUp.gaveUp();
 	}
 
 	/** Who hears of the displays it makes. Any thread, before the job starts. */
@@ -235,6 +264,15 @@ public final class PlacementJob implements Tickable {
 		if (!shapePass.run(deadline) || !settling.isEmpty()) {
 			// The last block entities settle before the build counts as done.
 			return false;
+		}
+		if (machines != null) {
+			if (powerUp == null) {
+				takeOutRuleBreakers();
+				powerUp = new PowerUp(level, machines, occupancy, powered, journal.positions());
+			}
+			if (!powerUp.run(deadline)) {
+				return false;
+			}
 		}
 		if (failures > 0) {
 			AiBuilderMod.LOG.warn("{} placements failed in one build; the first was logged", failures);
@@ -448,6 +486,16 @@ public final class PlacementJob implements Tickable {
 			settling.add(new Settling(pos, level.getGameTime() + Tunables.BLOCK_ENTITY_SETTLE_TICKS));
 		}
 		return true;
+	}
+
+	/** What would move or power something that isn't the build's, put back as it was before the build, as undo would. */
+	private void takeOutRuleBreakers() {
+		for (MachineRules.Breaker breaker : machines.breakers()) {
+			Pos at = Positions.toPos(breaker.pos());
+			UndoRunner.putBack(level, breaker.pos(), journal.original(at), journal.originalData(at));
+			takenOut.add(breaker.pos());
+			AiBuilderMod.LOG.info("Took out {} at {}: {}", breaker.kind(), breaker.pos(), breaker.detail());
+		}
 	}
 
 	/**

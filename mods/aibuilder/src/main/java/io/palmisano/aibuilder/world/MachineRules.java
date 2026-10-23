@@ -28,7 +28,7 @@ import net.minecraft.world.level.block.state.BlockState;
  * block is one it journaled that still holds the block it wrote. Reads the world as it stands, loaded chunks only.
  * Server thread.
  */
-final class MachineRules {
+public final class MachineRules {
 	/** A component that breaks a rule: where it is, which rule, and why, in Claude's local positions. */
 	record Breaker(BlockPos pos, BuildProblems.Kind kind, String detail) {
 	}
@@ -38,7 +38,7 @@ final class MachineRules {
 	private final Box allowed;
 	private final UndoJournal<BlockState, CompoundTag> journal;
 
-	MachineRules(ServerLevel level, LocalFrame frame, Box allowed, UndoJournal<BlockState, CompoundTag> journal) {
+	public MachineRules(ServerLevel level, LocalFrame frame, Box allowed, UndoJournal<BlockState, CompoundTag> journal) {
 		this.level = level;
 		this.frame = frame;
 		this.allowed = allowed;
@@ -125,6 +125,30 @@ final class MachineRules {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * The spots a retracted piston's push moves something into or through (its head, each pushed block's next spot,
+	 * what it breaks), where a player standing would be pushed; none when it couldn't move, or it's extended.
+	 */
+	List<BlockPos> reach(BlockPos pos, BlockState state) {
+		if (state.getValue(PistonBaseBlock.EXTENDED)) {
+			return List.of();
+		}
+		Direction facing = state.getValue(PistonBaseBlock.FACING);
+		int reach = Tunables.PISTON_READ_REACH;
+		if (!level.hasChunksAt(pos.offset(-reach, 0, -reach), pos.offset(reach, 0, reach))) {
+			return List.of();
+		}
+		PistonStructureResolver push = new PistonStructureResolver(level, pos, facing, true);
+		if (!push.resolve()) {
+			return List.of();
+		}
+		List<BlockPos> out = new ArrayList<>();
+		out.add(pos.relative(facing));
+		push.getToPush().forEach(moved -> out.add(moved.relative(facing)));
+		out.addAll(push.getToDestroy());
+		return out;
 	}
 
 	/** Why the component could power something that isn't the build's, or null. */
