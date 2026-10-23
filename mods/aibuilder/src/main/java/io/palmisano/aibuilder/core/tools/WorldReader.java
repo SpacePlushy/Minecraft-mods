@@ -43,6 +43,13 @@ public interface WorldReader {
 	/** Which of these local positions hold a solid block now (check_motion: what a moving part would pass through). */
 	Set<Pos> solid(Set<Pos> local);
 
+	/**
+	 * test_redstone (spec v2 §5.2): the steps run on the build's machine in the world, and the report. A step the
+	 * machine can't take (a lever that isn't the build's, a rule broken, a player in the way) is refused with an
+	 * IllegalArgumentException saying why.
+	 */
+	String testRedstone(List<RedstoneSteps.Step> steps);
+
 	/** The build looked over as it stands now (spec §8): its problems, at local positions. */
 	List<BuildProblems.Problem> check();
 

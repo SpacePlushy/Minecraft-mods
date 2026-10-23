@@ -73,22 +73,22 @@ final class ArenaBuilds {
 
 	static ArenaBuild start(GameTestHelper helper, Facing facing, String scriptJson, Occupancy occupancy, int blocksPerTick, long maxChanged) {
 		// Each test build's own store, never the world's: the game's own engine moves only what's in the world's.
-		return run(helper, frame(helper, facing), scriptJson, occupancy, blocksPerTick, maxChanged, new AnimationStore(), null);
+		return run(helper, frame(helper, facing), scriptJson, occupancy, blocksPerTick, maxChanged, new AnimationStore(), null, List.of());
 	}
 
 	/** A refinement of {@code earlier} (spec v2 §4.4): its frame and store, joining its moving build, its parts known to the tools. */
 	static ArenaBuild refine(GameTestHelper helper, ArenaBuild earlier, String scriptJson) {
 		return run(helper, earlier.frame(), scriptJson, Occupancy.players(helper.getLevel()), Tunables.BLOCKS_PER_TICK,
-				SizeTier.SMALL.maxChangedBlocks(), earlier.animations(), earlier.moving().key().id());
+				SizeTier.SMALL.maxChangedBlocks(), earlier.animations(), earlier.moving().key().id(), List.of(earlier.journal()));
 	}
 
 	private static ArenaBuild run(GameTestHelper helper, LocalFrame frame, String scriptJson, Occupancy occupancy, int blocksPerTick, long maxChanged,
-			AnimationStore animations, UUID refining) {
+			AnimationStore animations, UUID refining, List<UndoJournal<BlockState, CompoundTag>> earlier) {
 		ServerLevel level = helper.getLevel();
 		UndoJournal<BlockState, CompoundTag> journal = new UndoJournal<>();
 		PlacementJob job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, occupancy, blocksPerTick,
 				Tunables.TICK_BUDGET_NANOS, maxChanged);
-		job.machine(new MachineRules(level, frame, ALLOWED, journal));
+		job.machine(new MachineRules(level, frame, ALLOWED, journal, earlier));
 		Set<ChunkPos> chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(ALLOWED.min())),
 				Positions.toBlockPos(frame.toWorld(ALLOWED.max())));
 		BuildTickets.hold(level, chunks);
@@ -99,7 +99,8 @@ final class ArenaBuilds {
 				: MovingParts.refining(level, frame, animations, job, journal, refining);
 		McBuildSink sink = new McBuildSink(job, brief -> {
 		}, summary -> job.finish(), moving::animate);
-		McWorldReader world = new McWorldReader(level, frame, ALLOWED, SizeTier.SMALL, () -> null, List.of(), journal, AiBuilderConfig.DEFAULT);
+		McWorldReader world = new McWorldReader(level, frame, ALLOWED, SizeTier.SMALL, () -> null, earlier, journal, AiBuilderConfig.DEFAULT);
+		world.machine(job);
 		ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Validator.DEFAULT_BANNED), frame, ALLOWED, SizeTier.SMALL,
 				SizeTier.SMALL.maxChangedBlocks(), sink, new Budget(Tunables.MAX_TOOL_CALLS), world);
 		tools.refiningParts(moving.earlierParts());
@@ -151,6 +152,11 @@ final class ArenaBuilds {
 
 		List<String> errors() {
 			return backend.errors().stream().map(ToolResult::text).toList();
+		}
+
+		/** Every answer to a call of {@code tool}, in order. */
+		List<String> replies(String tool) {
+			return backend.replies().stream().filter(r -> r.tool().equals(tool)).map(r -> r.result().text()).toList();
 		}
 
 		/** The last answer to a call of {@code tool}, or "" if there was none. */

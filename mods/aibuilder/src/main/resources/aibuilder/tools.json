@@ -378,6 +378,17 @@
 		}
 	},
 	{
+		"name": "test_redstone",
+		"description": "Try the build's machine in the world, over game ticks (20 a second): steps run in order. {\"set\": [x, y, z], \"on\": true} flips a lever the build placed on or off; {\"press\": [x, y, z]} presses a button it placed; {\"wait\": ticks} lets the machine run; {\"read\": [[x, y, z], …]} says what's at each spot and its state (a lamp lit, a dust's power, a repeater powered, a piston extended, a door open, a torch lit). At most 64 steps, 400 ticks of waiting in all and 32 spots a read, all inside the allowed box. It waits for what's queued, then gives the build's redstone its shape and starts it as if placed by hand (each piece once), and afterwards puts every lever it flipped back as it was. It refuses while check_build would list a piston or powers_outside problem. A machine isn't done until it's been tested for every case that matters: each input combination of a small one, the edge cases of a big one.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"steps": {"type": "array", "items": {"type": "object"}, "minItems": 1, "maxItems": 64}
+			},
+			"required": ["steps"]
+		}
+	},
+	{
 		"name": "finish",
 		"description": "End the build. The summary is shown to the player.",
 		"input_schema": {

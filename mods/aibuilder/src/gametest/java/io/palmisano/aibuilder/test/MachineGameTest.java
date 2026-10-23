@@ -22,6 +22,7 @@ import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.RedstoneLampBlock;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.AttachFace;
 import org.slf4j.Logger;
 
 /** Redstone in a real world (spec v2 §5): what a machine may touch, its power-up, its tests and its undo. */
@@ -244,6 +245,96 @@ public class MachineGameTest {
 					helper.assertTrue(build.state(-1, 1, 4).isAir(), "the lever is still there: " + build.state(-1, 1, 4));
 				})
 				.thenSucceed();
+	}
+
+	/** test_redstone flips the build's lever, reads its lamp dark then lit, and puts the lever back afterwards. */
+	@GameTest(structure = ARENA, maxTicks = 800)
+	public void testRedstoneFlipsALeverReadsALampAndPutsItBack(GameTestHelper helper) {
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward"}},
+				  {"pos": [1, 1, 4], "block": "redstone_lamp"}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"read": [[1, 1, 4]]}, {"set": [0, 1, 4], "on": true}, {"wait": 4},
+				  {"read": [[1, 1, 4]]}]}}""");
+		helper.succeedWhen(() -> {
+			ArenaBuilds.assertDone(helper, build);
+			String reply = build.reply("test_redstone");
+			int dark = reply.indexOf("(1, 1, 4) redstone_lamp[lit=false]");
+			int lit = reply.indexOf("(1, 1, 4) redstone_lamp[lit=true]");
+			helper.assertTrue(dark >= 0 && lit > dark, "not dark, then lit: " + reply);
+			helper.assertFalse(build.state(0, 1, 4).getValue(LeverBlock.POWERED), "the lever wasn't put back");
+		});
+	}
+
+	/** test_redstone flips only the build's own levers: one of the world's is refused, and stays as it was. */
+	@GameTest(structure = ARENA, maxTicks = 800)
+	public void onlyTheBuildsOwnLeversFlip(GameTestHelper helper) {
+		world(helper, new Pos(4, 1, 4), Blocks.LEVER.defaultBlockState().setValue(LeverBlock.FACE, AttachFace.FLOOR));
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "redstone_lamp"}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"set": [4, 1, 4], "on": true}]}}""");
+		helper.succeedWhen(() -> {
+			helper.assertTrue(build.done(), "the build hasn't finished");
+			String reply = build.reply("test_redstone");
+			helper.assertTrue(reply.contains("(4, 1, 4)") && reply.contains("isn't a lever the build placed"), reply);
+			helper.assertFalse(build.state(4, 1, 4).getValue(LeverBlock.POWERED), "the world's lever was flipped");
+		});
+	}
+
+	/** A refinement's test sees the whole machine: the first build's lever lights the lamp the refinement added. */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void aRefinementsTestSeesTheWholeMachine(GameTestHelper helper) {
+		ArenaBuild first = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward"}},
+				  {"pos": [1, 1, 4], "block": "redstone_wire"}, {"pos": [2, 1, 4], "block": "redstone_wire"}]}}""");
+		AtomicReference<ArenaBuild> second = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, first))
+				.thenExecute(() -> second.set(ArenaBuilds.refine(helper, first, """
+						{"calls": [
+						  {"tool": "submit_brief", "args": {"title": "a lamp at the end", "style": "test"}},
+						  {"tool": "set_blocks", "args": {"blocks": [{"pos": [3, 1, 4], "block": "redstone_lamp"}]}},
+						  {"tool": "test_redstone", "args": {"steps": [{"set": [0, 1, 4], "on": true}, {"wait": 6}, {"read": [[3, 1, 4]]}]}},
+						  {"tool": "finish", "args": {"summary": "a lamp the lever lights"}}
+						]}""")))
+				.thenWaitUntil(() -> {
+					ArenaBuilds.assertDone(helper, second.get());
+					String reply = second.get().reply("test_redstone");
+					helper.assertTrue(reply.contains("(3, 1, 4) redstone_lamp[lit=true]"), "the lamp at the end of the earlier dust: " + reply);
+				})
+				.thenSucceed();
+	}
+
+	/** A machine is started once: the first test starts it, the second has nothing left to start (a clock would double). */
+	@GameTest(structure = ARENA, maxTicks = 800)
+	public void aMachineIsStartedOnce(GameTestHelper helper) {
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward"}},
+				  {"pos": [1, 1, 4], "block": "redstone_lamp"}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"read": [[1, 1, 4]]}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"read": [[1, 1, 4]]}]}}""");
+		helper.succeedWhen(() -> {
+			ArenaBuilds.assertDone(helper, build);
+			List<String> replies = build.replies("test_redstone");
+			helper.assertValueEqual(replies.size(), 2, "tests");
+			helper.assertTrue(replies.get(0).contains("Started 2 redstone pieces"), replies.get(0));
+			helper.assertFalse(replies.get(1).contains("Started"), replies.get(1));
+		});
+	}
+
+	/** A player where a piston of the build would push: the test waits for them, then refuses, and nothing moved. */
+	@GameTest(structure = ARENA, maxTicks = 3000)
+	public void aTestWaitsForAPlayerInAPistonsWay(GameTestHelper helper) {
+		BlockPos inTheWay = ArenaBuilds.worldPos(helper, Facing.SOUTH, new Pos(0, 1, 6));
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "sticky_piston", "state": {"facing": "forward"}},
+				  {"pos": [0, 1, 5], "block": "stone"}, {"pos": [-1, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward"}}]}},
+				{"tool": "test_redstone", "args": {"steps": [{"set": [-1, 1, 4], "on": true}, {"wait": 4}]}}""", pos -> pos.equals(inTheWay));
+		helper.succeedWhen(() -> {
+			helper.assertTrue(build.done(), "the build hasn't finished");
+			String reply = build.reply("test_redstone");
+			helper.assertTrue(reply.contains("in the way of the piston at (0, 1, 4)"), reply);
+			helper.assertFalse(build.state(0, 1, 4).getValue(PistonBaseBlock.EXTENDED), "the piston pushed toward the player");
+		});
 	}
 
 	/**

@@ -155,6 +155,20 @@ public final class PlacementJob implements Tickable {
 		this.machines = rules;
 	}
 
+	/** The machine rules it was given; null for a bare job. */
+	MachineRules machines() {
+		return machines;
+	}
+
+	Occupancy occupancy() {
+		return occupancy;
+	}
+
+	/** A power-up pass over what isn't started yet (a test's, before it runs): it shares the job's record of what is. */
+	PowerUp newPass() {
+		return new PowerUp(level, machines, occupancy, powered, journal.positions());
+	}
+
 	/** A piston of the build that waits to start while a player stands in its way; null when none does. Server thread. */
 	public BlockPos waitingForPlayer() {
 		return powerUp == null ? null : powerUp.waitingFor();

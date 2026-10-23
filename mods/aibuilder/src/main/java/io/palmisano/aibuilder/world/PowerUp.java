@@ -37,6 +37,7 @@ final class PowerUp {
 	private BlockPos waitingFor;
 	private boolean gaveUp;
 	private boolean loggedFailure;
+	private int started;
 
 	PowerUp(ServerLevel level, MachineRules rules, Occupancy occupancy, Set<BlockPos> powered, List<Pos> positions) {
 		this.level = level;
@@ -81,6 +82,11 @@ final class PowerUp {
 		return waitingFor;
 	}
 
+	/** How many redstone components it has started. */
+	int started() {
+		return started;
+	}
+
 	/** It waited for a player as long as it may and didn't start the machine. */
 	boolean gaveUp() {
 		return gaveUp;
@@ -118,6 +124,7 @@ final class PowerUp {
 			if (!Redstone.component(state)) {
 				return;
 			}
+			started++;
 			state.onPlace(level, pos, Blocks.AIR.defaultBlockState(), false);
 			level.updateNeighborsAt(pos, state.getBlock(), ExperimentalRedstoneUtils.initialOrientation(level, null, null));
 			if (state.getBlock() instanceof FaceAttachedHorizontalDirectionalBlock) {

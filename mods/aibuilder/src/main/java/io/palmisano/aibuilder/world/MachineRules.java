@@ -37,12 +37,16 @@ public final class MachineRules {
 	private final LocalFrame frame;
 	private final Box allowed;
 	private final UndoJournal<BlockState, CompoundTag> journal;
+	/** The player's earlier builds here (a refinement's session among them): their blocks count as the build's own. */
+	private final List<UndoJournal<BlockState, CompoundTag>> earlier;
 
-	public MachineRules(ServerLevel level, LocalFrame frame, Box allowed, UndoJournal<BlockState, CompoundTag> journal) {
+	public MachineRules(ServerLevel level, LocalFrame frame, Box allowed, UndoJournal<BlockState, CompoundTag> journal,
+			List<UndoJournal<BlockState, CompoundTag>> earlier) {
 		this.level = level;
 		this.frame = frame;
 		this.allowed = allowed;
 		this.journal = journal;
+		this.earlier = List.copyOf(earlier);
 	}
 
 	/** The first rule the block at {@code pos} breaks, or null: a piston's push first, then the power rule. */
@@ -166,10 +170,19 @@ public final class MachineRules {
 		return null;
 	}
 
-	/** The build's own: journaled, and still the block the build wrote there. */
-	private boolean owned(BlockPos pos) {
+	/** The build's own: journaled by it or an earlier build of the player's here, and still the block written there. */
+	boolean owned(BlockPos pos) {
 		Pos at = Positions.toPos(pos);
-		return journal.has(at) && BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString().equals(journal.writtenBlock(at));
+		String now = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString();
+		if (journal.has(at) && now.equals(journal.writtenBlock(at))) {
+			return true;
+		}
+		for (UndoJournal<BlockState, CompoundTag> build : earlier) {
+			if (build.has(at) && now.equals(build.writtenBlock(at))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean inBox(BlockPos pos) {

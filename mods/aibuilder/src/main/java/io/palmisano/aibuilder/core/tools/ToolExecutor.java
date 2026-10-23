@@ -56,7 +56,7 @@ import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 public final class ToolExecutor {
 	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
 			"set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof", "staircase", "clear", "terraform",
-			"place_block_entity", "checkpoint", "check_build", "animate", "check_motion", "finish");
+			"place_block_entity", "checkpoint", "check_build", "animate", "check_motion", "test_redstone", "finish");
 	/** The write tools that can make a moving part (spec v2 §4.1), and clear, which takes a part's blocks out. */
 	private static final Set<String> MOVABLE = Set.of("set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof",
 			"staircase", "clear");
@@ -197,6 +197,7 @@ public final class ToolExecutor {
 				case "checkpoint" -> checkpoint(a);
 				case "check_build" -> checkBuild();
 				case "check_motion" -> checkMotion();
+				case "test_redstone" -> testRedstone(a);
 				case "terraform" -> terraform(a);
 				default -> locked(name, a);
 			};
@@ -454,6 +455,13 @@ public final class ToolExecutor {
 		}
 		ToolResult waiting = placedFirst("check_motion");
 		return waiting != null ? waiting : ToolResult.ok(MotionCheck.report(blocks, motions, frame.facing(), world::solid));
+	}
+
+	/** Tries the build's machine in the world (spec v2 §5.2), once what's queued is in. */
+	private ToolResult testRedstone(Args a) {
+		List<RedstoneSteps.Step> steps = RedstoneSteps.parse(a.array("steps"), allowed);
+		ToolResult waiting = placedFirst("test_redstone");
+		return waiting != null ? waiting : ToolResult.ok(world.testRedstone(steps));
 	}
 
 	/** Waits for what's queued; null once it's all in, else the answer that blocks are still going in (half a build looks half right). */

@@ -62,14 +62,15 @@ public final class BuildCheck implements Tickable {
 	private int next;
 	private int ticks;
 
-	/** Server thread. */
-	public BuildCheck(ServerLevel level, LocalFrame frame, Box allowed, UndoJournal<BlockState, CompoundTag> journal, long budgetNanos) {
+	/** Server thread. {@code earlier}: the player's earlier builds here, whose blocks a machine may move as its own. */
+	public BuildCheck(ServerLevel level, LocalFrame frame, Box allowed, UndoJournal<BlockState, CompoundTag> journal,
+			List<UndoJournal<BlockState, CompoundTag>> earlier, long budgetNanos) {
 		this.level = level;
 		this.frame = frame;
 		this.allowed = allowed;
 		this.journal = journal;
 		this.budgetNanos = budgetNanos;
-		this.machines = new MachineRules(level, frame, allowed, journal);
+		this.machines = new MachineRules(level, frame, allowed, journal, earlier);
 	}
 
 	/** Completes on the server thread with the problems, local positions. */

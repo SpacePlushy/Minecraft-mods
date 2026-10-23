@@ -121,6 +121,12 @@ public final class Tunables {
 	public static final int MACHINE_PLAYER_WAIT_TICKS = 600;
 	/** How long undo lets a build's machine settle after putting its levers back, before taking the blocks back. */
 	public static final int UNDO_SETTLE_TICKS = 40;
+	/** test_redstone's limits (spec v2 §5.2), the time a machine gets to settle after it, and how long its call may take. */
+	public static final int TEST_STEPS_MAX = 64;
+	public static final int TEST_WAIT_MAX = 400;
+	public static final int TEST_READ_MAX = 32;
+	public static final int TEST_SETTLE_TICKS = 20;
+	public static final int TEST_REDSTONE_TIMEOUT_SECONDS = 90;
 	/** check_build's look over the build (read over ticks), after terraform's wait for placement: inside the MCP timeout. */
 	public static final int CHECK_BUILD_TIMEOUT_SECONDS = 60;
 	/** How long check_build waits for the light engine to catch up with what was placed before it reads light. */

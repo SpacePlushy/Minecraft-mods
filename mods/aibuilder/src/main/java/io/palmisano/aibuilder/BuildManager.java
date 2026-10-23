@@ -800,7 +800,8 @@ public final class BuildManager {
 			long cap = cfg.sizeLimit(request.size());
 			job = new PlacementJob(level, StateFactory.rotation(frame.facing()), journal, Occupancy.players(level), blocksPerTick,
 					Tunables.TICK_BUDGET_NANOS, cap);
-			job.machine(new MachineRules(level, frame, allowed, journal));
+			job.machine(new MachineRules(level, frame, allowed, journal, earlier));
+			world.machine(job);
 			chunks = BuildTickets.covering(Positions.toBlockPos(frame.toWorld(allowed.min())), Positions.toBlockPos(frame.toWorld(allowed.max())));
 			BuildTickets.hold(level, chunks);
 			JobScheduler.add(job);

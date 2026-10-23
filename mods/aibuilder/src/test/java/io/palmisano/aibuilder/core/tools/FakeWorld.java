@@ -103,6 +103,16 @@ public final class FakeWorld implements WorldReader {
 		return out;
 	}
 
+	/** What test_redstone answers, and the steps it was asked to run. */
+	public String redstone = "after 0 ticks: nothing to read";
+	public final List<List<RedstoneSteps.Step>> tested = new ArrayList<>();
+
+	@Override
+	public String testRedstone(List<RedstoneSteps.Step> steps) {
+		tested.add(steps);
+		return redstone;
+	}
+
 	/** What check_build finds. */
 	public List<BuildProblems.Problem> problems = List.of();
 

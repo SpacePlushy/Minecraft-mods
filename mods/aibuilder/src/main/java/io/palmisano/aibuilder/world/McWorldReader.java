@@ -28,6 +28,7 @@ import io.palmisano.aibuilder.core.survey.Column;
 import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 import io.palmisano.aibuilder.core.tools.ServerHop;
 import io.palmisano.aibuilder.core.tools.WorldFacts;
+import io.palmisano.aibuilder.core.tools.RedstoneSteps;
 import io.palmisano.aibuilder.core.tools.WorldReader;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -62,6 +63,10 @@ public final class McWorldReader implements WorldReader {
 	 * Server thread. {@code player} gives the build's owner, or null when they're offline; {@code journal} is this
 	 * build's own, for check_build; {@code config} says whether player-made blocks are protected and what's banned.
 	 */
+	private volatile PlacementJob job;
+	/** The player's earlier builds here: theirs to change, and a machine's to move as its own. */
+	private final List<UndoJournal<BlockState, CompoundTag>> earlier;
+
 	public McWorldReader(ServerLevel level, LocalFrame frame, Box allowed, SizeTier tier, Supplier<ServerPlayer> player,
 			List<UndoJournal<BlockState, CompoundTag>> earlier, UndoJournal<BlockState, CompoundTag> journal, AiBuilderConfig config) {
 		this.level = level;
@@ -69,6 +74,7 @@ public final class McWorldReader implements WorldReader {
 		this.allowed = allowed;
 		this.player = player;
 		this.journal = journal;
+		this.earlier = List.copyOf(earlier);
 		this.items = new McItemCatalog(level.registryAccess(), Set.copyOf(config.bannedBlocks()));
 		// The whole allowed box and past it, a refinement's grown one too: protection and the lava rule hold to its edge.
 		SiteSquare square = SiteSquare.around(allowed, tier, Tunables.SITE_MARGIN);
@@ -208,7 +214,7 @@ public final class McWorldReader implements WorldReader {
 			if (checking == null || checking.isDone()) {
 				MinecraftServer server = level.getServer();
 				checking = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
-					BuildCheck reading = new BuildCheck(level, frame, allowed, journal, Tunables.TICK_BUDGET_NANOS);
+					BuildCheck reading = new BuildCheck(level, frame, allowed, journal, earlier, Tunables.TICK_BUDGET_NANOS);
 					JobScheduler.add(reading);
 					return reading;
 				}).thenCompose(BuildCheck::result);
@@ -216,6 +222,29 @@ public final class McWorldReader implements WorldReader {
 			check = checking;
 		}
 		return await(check, Tunables.CHECK_BUILD_TIMEOUT_SECONDS);
+	}
+
+	/** The build's job, whose machine test_redstone tries (spec v2 §5.2). Before the build starts. */
+	public void machine(PlacementJob job) {
+		this.job = job;
+	}
+
+	@Override
+	public String testRedstone(List<RedstoneSteps.Step> steps) {
+		if (job == null || job.machines() == null) {
+			throw new IllegalArgumentException("test_redstone has no machine to try here");
+		}
+		MinecraftServer server = level.getServer();
+		CompletableFuture<RedstoneTest.Outcome> test = ServerHop.submit(server, server::isSameThread, server::isStopped, () -> {
+			RedstoneTest running = new RedstoneTest(level, frame, journal, job, steps);
+			JobScheduler.add(running);
+			return running;
+		}).thenCompose(RedstoneTest::result);
+		RedstoneTest.Outcome outcome = await(test, Tunables.TEST_REDSTONE_TIMEOUT_SECONDS);
+		if (outcome.refused()) {
+			throw new IllegalArgumentException(outcome.text());
+		}
+		return outcome.text();
 	}
 
 	/** {@code id[prop=value,…]}, compass names and values as relative words; the state already turned back to the template. */
@@ -242,7 +271,7 @@ public final class McWorldReader implements WorldReader {
 		return ticks < 23_000 ? "night" : "sunrise";
 	}
 
-	private static Rotation inverse(Rotation rotation) {
+	static Rotation inverse(Rotation rotation) {
 		return switch (rotation) {
 			case CLOCKWISE_90 -> Rotation.COUNTERCLOCKWISE_90;
 			case COUNTERCLOCKWISE_90 -> Rotation.CLOCKWISE_90;
