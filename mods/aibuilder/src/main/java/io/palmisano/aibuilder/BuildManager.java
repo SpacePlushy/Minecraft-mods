@@ -791,6 +791,7 @@ public final class BuildManager {
 			ToolExecutor tools = new ToolExecutor(new Validator(McBlockCatalog.get(), Set.copyOf(cfg.bannedBlocks())), frame, allowed, request.size(),
 					cap, sink, budget, world);
 			tools.siteGap(cfg.siteGap());
+			tools.movingBudget(cfg.maxMovingBlocks());
 			if (refines != null) {
 				tools.refining(refines.title().isBlank() ? Messages.untitledBuild() : refines.title(), refines.changed());
 			}

@@ -140,6 +140,11 @@ public final class Tunables {
 	public static final int PARTS_PER_BUILD_MAX = 32;
 	/** How many parts deep a part may ride (a wing on a body on a ship). */
 	public static final int PART_DEPTH_MAX = 4;
+	/** A part's pivot may be this far outside the allowed box (a dragon circling a tower beside it). */
+	public static final int PIVOT_REACH = 16;
+	/** Displays one build may make by default (max_moving_blocks), and at most: each is an entity, drawn and sent. */
+	public static final int MAX_MOVING_BLOCKS = 2000;
+	public static final int MAX_MOVING_BLOCKS_CEILING = 10_000;
 
 	private Tunables() {
 	}

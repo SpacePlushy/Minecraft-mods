@@ -115,6 +115,24 @@ final class Args {
 		return out;
 	}
 
+	/** A list of {@code length} numbers, fractions allowed, each within ±{@link Tunables#ARGUMENT_LIMIT}. */
+	double[] numbers(String name, int length) {
+		JsonArray a = array(name);
+		if (a.size() != length) {
+			throw new BadArgument(name + " must be a list of " + length + " numbers");
+		}
+		double[] out = new double[length];
+		for (int i = 0; i < length; i++) {
+			JsonElement e = a.get(i);
+			if (!e.isJsonPrimitive() || !e.getAsJsonPrimitive().isNumber() || !Double.isFinite(e.getAsDouble())
+					|| Math.abs(e.getAsDouble()) > Tunables.ARGUMENT_LIMIT) {
+				throw new BadArgument(name + " must be a list of " + length + " numbers");
+			}
+			out[i] = e.getAsDouble();
+		}
+		return out;
+	}
+
 	Pos pos(String name) {
 		int[] p = ints(name, 3);
 		return new Pos(p[0], p[1], p[2]);

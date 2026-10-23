@@ -65,6 +65,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"blocks": {
 					"type": "array",
 					"items": {
@@ -87,6 +88,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
 				"block": {"type": "string"},
 				"state": {"type": "object"},
@@ -102,6 +104,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"from": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"to": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"block": {"type": "string"},
@@ -116,6 +119,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"points": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}},
 				"y": {"type": "integer"},
 				"height": {"type": "integer"},
@@ -132,6 +136,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"center": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"radius": {"type": "integer", "minimum": 0},
 				"height": {"type": "integer", "minimum": 1},
@@ -149,6 +154,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"center": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"radius": {"type": "integer", "minimum": 0},
 				"block": {"type": "string"},
@@ -165,6 +171,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"base_center": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"radius": {"type": "integer", "minimum": 0},
 				"height": {"type": "integer", "minimum": 1},
@@ -181,6 +188,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"from": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"to": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
 				"rise": {"type": "integer", "minimum": 0},
@@ -198,6 +206,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
 				"style": {"type": "string", "enum": ["gable", "hip", "flat"]},
 				"stairs": {"type": "string", "description": "A stairs block id, e.g. spruce_stairs."},
@@ -215,6 +224,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: make these blocks a moving part with this name (lowercase, like left_wing): displays that look exactly like the blocks but can move, with no collision, and that animate gives their motion. Keep the solid body as ordinary blocks (leave part out). The same name adds to the same part. Doors, beds and tall plants can't move."},
 				"style": {"type": "string", "enum": ["straight", "spiral"]},
 				"block": {"type": "string", "description": "A stairs block id."},
 				"from": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
@@ -342,6 +352,20 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {}
+		}
+	},
+	{
+		"name": "animate",
+		"description": "Give a moving part its motion, replacing any it had; build the part first (part on a write tool). pivot: the point it turns about, in block units where a whole number is a block's centre and .5 the face between two (a wing's hinge at its shoulder, [0.5, 8, 4]); within 16 blocks of the allowed box. motions, 1 to 8, applied in order: {\"swing\": {\"axis\", \"from\", \"to\", \"period\", \"phase\"?}} turns back and forth between two angles in degrees (-180 to 180), from at the start and to half a period later; {\"spin\": {\"axis\", \"period\", \"phase\"?}} turns a full turn each period (a negative period turns the other way); {\"bob\": {\"direction\", \"distance\", \"period\", \"phase\"?}} moves back and forth up to distance blocks (at most 16). Axes and directions are forward, back, left, right, up or down. A positive angle turns clockwise as you look along the axis: about forward, the part's top moves to the right; about up, a part in front of the pivot moves to the left. period: ticks for one cycle (20 ticks a second), 10 to 2,400; phase: 0 to 1, to put parts out of step (a tail a little behind the wings). parent: another part this one rides with, so wings flap on a body that circles a tower (at most 4 deep, never itself). A spin about a pivot outside the part carries it round in a circle. The game draws a pose every 4 ticks and glides between them.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"part": {"type": "string"},
+				"pivot": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+				"motions": {"type": "array", "items": {"type": "object"}, "minItems": 1, "maxItems": 8},
+				"parent": {"type": "string"}
+			},
+			"required": ["part", "pivot", "motions"]
 		}
 	},
 	{

@@ -16,6 +16,8 @@ public class RecordingSink implements BuildSink {
 	public volatile Runnable onAwait = () -> {
 	};
 	public volatile boolean capReached;
+	/** Each part's motion, as animate gave it. */
+	public final List<io.palmisano.aibuilder.core.anim.MovingPart> animated = new CopyOnWriteArrayList<>();
 	public volatile long pending;
 
 	@Override
@@ -47,6 +49,11 @@ public class RecordingSink implements BuildSink {
 	@Override
 	public void awaitPlaced() {
 		onAwait.run();
+	}
+
+	@Override
+	public void animate(io.palmisano.aibuilder.core.anim.MovingPart part) {
+		animated.add(part);
 	}
 
 	@Override

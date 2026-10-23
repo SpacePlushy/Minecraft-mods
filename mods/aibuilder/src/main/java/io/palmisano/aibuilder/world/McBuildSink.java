@@ -1,12 +1,15 @@
 package io.palmisano.aibuilder.world;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.anim.MovingPart;
 import io.palmisano.aibuilder.core.place.Placement;
 import io.palmisano.aibuilder.core.tools.Brief;
 import io.palmisano.aibuilder.core.tools.BuildSink;
@@ -17,6 +20,7 @@ public final class McBuildSink implements BuildSink {
 	private final PlacementJob job;
 	private final Consumer<Brief> onBrief;
 	private final Consumer<String> onFinish;
+	private final Map<String, MovingPart> parts = new ConcurrentHashMap<>();
 	/** Written by the backend's thread, read by the status line. */
 	private volatile PhaseProgress phases = PhaseProgress.of(List.of());
 
@@ -45,6 +49,16 @@ public final class McBuildSink implements BuildSink {
 	@Override
 	public void queue(List<Placement> batch) {
 		job.enqueue(batch);
+	}
+
+	/** Each moving part's motion so far, by name. Any thread. */
+	public Map<String, MovingPart> parts() {
+		return Map.copyOf(parts);
+	}
+
+	@Override
+	public void animate(MovingPart part) {
+		parts.put(part.name(), part);
 	}
 
 	/** Blocks the backend's thread until the job has placed everything queued, or for at most the checkpoint timeout. */

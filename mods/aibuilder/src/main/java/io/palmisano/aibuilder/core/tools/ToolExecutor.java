@@ -8,9 +8,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.palmisano.aibuilder.core.Tunables;
+import io.palmisano.aibuilder.core.anim.Motion;
+import io.palmisano.aibuilder.core.anim.MovingPart;
+import io.palmisano.aibuilder.core.anim.Vec3;
 import io.palmisano.aibuilder.core.blocks.BlockEntityData;
 import io.palmisano.aibuilder.core.blocks.Footprint;
 import io.palmisano.aibuilder.core.blocks.BlockInfo;
@@ -50,7 +54,10 @@ import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 public final class ToolExecutor {
 	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
 			"set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof", "staircase", "clear", "terraform",
-			"place_block_entity", "checkpoint", "check_build", "finish");
+			"place_block_entity", "checkpoint", "check_build", "animate", "finish");
+	/** The write tools that can make a moving part (spec v2 §4.1). */
+	private static final Set<String> MOVABLE = Set.of("set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof",
+			"staircase");
 	private static final int REJECTION_LINES = 10;
 	private static final BlockSpec AIR = BlockSpec.of("minecraft:air");
 	private static final String BRIEF_FIRST = "Call submit_brief first: title, style, size, palette and phases, before placing any block.";
@@ -73,6 +80,9 @@ public final class ToolExecutor {
 	private ProtectionMask protection;
 	private FireRule fire;
 	private boolean briefed;
+	private int movingBudget = Tunables.MAX_MOVING_BLOCKS;
+	/** The build's moving parts, by name, in the order they were begun. */
+	private final Map<String, PartState> parts = new LinkedHashMap<>();
 	private int siteGap = Tunables.SITE_GAP;
 	/** The build a refinement changes, and its changes so far; "" and null for a new build. */
 	private String refining = "";
@@ -111,6 +121,18 @@ public final class ToolExecutor {
 	/** The build's caps; the Claude Code backend adds output tokens to it as they stream in. */
 	public Budget budget() {
 		return budget;
+	}
+
+	/** The displays this build may make (the config's max_moving_blocks). */
+	public synchronized void movingBudget(int blocks) {
+		movingBudget = blocks;
+	}
+
+	/** The build's moving parts: each one's displays (local positions) and its motion (null until animated). */
+	public synchronized Map<String, PartInfo> parts() {
+		Map<String, PartInfo> out = new LinkedHashMap<>();
+		parts.forEach((name, state) -> out.put(name, new PartInfo(List.copyOf(state.blocks), state.motion)));
+		return out;
 	}
 
 	/** How far in front of the player a new build's origin is (the config's site_gap), for get_context. */
@@ -308,7 +330,7 @@ public final class ToolExecutor {
 		}
 		List<LocalBlock> blocks = terraform(a, target);
 		synchronized (this) {
-			return queue(blocks, false, false);
+			return queue(blocks, false, false, "");
 		}
 	}
 
@@ -403,8 +425,22 @@ public final class ToolExecutor {
 	}
 
 	private ToolResult write(String name, Args a) {
+		if (name.equals("animate")) {
+			return animate(a);
+		}
+		String part = a.has("part") ? partName(a.string("part")) : "";
+		if (!part.isEmpty() && !MOVABLE.contains(name)) {
+			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + name + " can't make a moving part");
+		}
+		if (!part.isEmpty() && name.equals("fill") && a.optString("mode", "solid").equalsIgnoreCase("replace")) {
+			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": a moving part can't be a replace fill: it changes no block, so"
+					+ " there's nothing for it to replace");
+		}
+		if (!part.isEmpty() && !parts.containsKey(part) && parts.size() >= Tunables.PARTS_PER_BUILD_MAX) {
+			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": a build has at most " + Tunables.PARTS_PER_BUILD_MAX + " moving parts");
+		}
 		if (name.equals("set_blocks")) {
-			return setBlocks(a);
+			return setBlocks(a, part);
 		}
 		if (name.equals("place_block_entity")) {
 			return placeBlockEntity(a);
@@ -434,7 +470,111 @@ public final class ToolExecutor {
 			case "staircase" -> staircase(a);
 			default -> throw new IllegalStateException(name);
 		};
-		return queue(blocks, false, name.equals("clear") && a.optBool("include_protected", false));
+		return queue(blocks, false, name.equals("clear") && a.optBool("include_protected", false), part);
+	}
+
+	/** A part's name: a short word, as Claude will use it again in animate and in later builds. */
+	private static String partName(String name) {
+		if (!name.matches("[a-z][a-z0-9_]{0,31}")) {
+			throw new IllegalArgumentException("part must be a short name in lowercase letters, digits and _ (like left_wing), not \"" + name + "\"");
+		}
+		return name;
+	}
+
+	/**
+	 * Gives a moving part its motion, replacing any it had (spec v2 §4.2): about a pivot within reach of the box,
+	 * 1 to 8 motions, riding with a parent part if one is named (never itself, at most 4 deep).
+	 */
+	private ToolResult animate(Args a) {
+		String name = a.string("part");
+		PartState state = parts.get(name);
+		if (state == null) {
+			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + noPart(name));
+		}
+		double[] p = a.numbers("pivot", 3);
+		Vec3 pivot = new Vec3(p[0], p[1], p[2]);
+		int reach = Tunables.PIVOT_REACH;
+		if (p[0] < allowed.min().x() - reach || p[0] > allowed.max().x() + reach || p[1] < allowed.min().y() - reach
+				|| p[1] > allowed.max().y() + reach || p[2] < allowed.min().z() - reach || p[2] > allowed.max().z() + reach) {
+			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": the pivot " + describe(pivot) + " is too far from the build: keep it"
+					+ " within " + reach + " blocks of the allowed box " + describe(allowed));
+		}
+		JsonArray given = a.array("motions");
+		if (given.isEmpty() || given.size() > Tunables.MOTIONS_PER_PART_MAX) {
+			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": motions must be a list of 1 to " + Tunables.MOTIONS_PER_PART_MAX
+					+ " motions");
+		}
+		List<Motion> motions = new ArrayList<>();
+		for (JsonElement e : given) {
+			motions.add(Motion.parse(e.isJsonObject() ? e.getAsJsonObject() : null));
+		}
+		String parent = a.optString("parent", "");
+		if (!parent.isEmpty()) {
+			if (!parts.containsKey(parent)) {
+				return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + noPart(parent));
+			}
+			// Up the chain from the parent: never back to this part, and at most PART_DEPTH_MAX parts in all.
+			int depth = 1;
+			for (String at = parent; !at.isEmpty(); at = parts.containsKey(at) && parts.get(at).motion != null ? parts.get(at).motion.parent() : "") {
+				if (at.equals(name)) {
+					return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + name + " can't ride " + parent + ", which rides " + name
+							+ ": a part can't ride itself");
+				}
+				if (++depth > Tunables.PART_DEPTH_MAX) {
+					return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": parts ride at most " + Tunables.PART_DEPTH_MAX + " deep");
+				}
+			}
+		}
+		MovingPart part = new MovingPart(name, pivot, motions, parent);
+		state.motion = part;
+		sink.animate(part);
+		return ToolResult.ok(describe(part));
+	}
+
+	private static String noPart(String name) {
+		return "there's no part called \"" + name + "\": build it first, with \"part\": \"" + name + "\" on a write tool";
+	}
+
+	/** A part's motion in words, as animate answers and get_context lists it. */
+	static String describe(MovingPart part) {
+		StringBuilder out = new StringBuilder(part.name()).append(" moves about the pivot ").append(describe(part.pivot())).append(": ");
+		List<String> each = new ArrayList<>();
+		for (Motion m : part.motions()) {
+			each.add(switch (m) {
+				case Motion.Swing s -> "swings about " + s.axis() + " from " + number(s.from()) + "° to " + number(s.to()) + "° every "
+						+ s.period() + " ticks";
+				case Motion.Spin s -> "spins about " + s.axis() + (s.period() < 0 ? " the other way" : "") + " once every " + Math.abs(s.period())
+						+ " ticks";
+				case Motion.Bob b -> "bobs " + b.direction() + " by up to " + number(b.distance()) + " blocks every " + b.period() + " ticks";
+			} + (phaseOf(m) == 0 ? "" : " (phase " + number(phaseOf(m)) + ")"));
+		}
+		out.append(String.join(", then ", each));
+		if (!part.parent().isEmpty()) {
+			out.append("; it rides with ").append(part.parent());
+		}
+		return out.append('.').toString();
+	}
+
+	private static double phaseOf(Motion m) {
+		return switch (m) {
+			case Motion.Swing s -> s.phase();
+			case Motion.Spin s -> s.phase();
+			case Motion.Bob b -> b.phase();
+		};
+	}
+
+	private static String number(double n) {
+		return n == Math.rint(n) ? String.valueOf((long) n) : String.format(Locale.ROOT, "%.2f", n).replaceAll("0+$", "");
+	}
+
+	private static String describe(Vec3 p) {
+		return "[" + number(p.x()) + ", " + number(p.y()) + ", " + number(p.z()) + "]";
+	}
+
+	/** One part's state as the build goes: its displays so far, and its motion. Guarded by the executor. */
+	private static final class PartState {
+		final List<Pos> blocks = new ArrayList<>();
+		MovingPart motion;
 	}
 
 	/**
@@ -504,7 +644,7 @@ public final class ToolExecutor {
 		};
 	}
 
-	private ToolResult setBlocks(Args a) {
+	private ToolResult setBlocks(Args a, String part) {
 		var entries = a.array("blocks");
 		if (entries.size() > Tunables.SET_BLOCKS_MAX) {
 			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": set_blocks takes at most "
@@ -516,7 +656,7 @@ public final class ToolExecutor {
 			Args entry = new Args(e.isJsonObject() ? e.getAsJsonObject() : null);
 			blocks.add(new LocalBlock(entry.pos("pos"), entry.block("block")));
 		}
-		return queue(blocks, true, false);
+		return queue(blocks, true, false, part);
 	}
 
 	/**
@@ -539,7 +679,7 @@ public final class ToolExecutor {
 						default -> "a banner (white_banner, red_wall_banner…)";
 					});
 		}
-		return queue(List.of(new LocalBlock(pos, spec, null, data)), true, false);
+		return queue(List.of(new LocalBlock(pos, spec, null, data)), true, false, "");
 	}
 
 	/** An entity, so no block changes: only the box, what's protected and the queue's limit apply. */
@@ -565,8 +705,11 @@ public final class ToolExecutor {
 	 * reports each rejected entry by its index; {@code includeProtected} (a clear that asked for it) may remove
 	 * player-made blocks, never unbreakable ones.
 	 */
-	private ToolResult queue(List<LocalBlock> blocks, boolean perEntry, boolean includeProtected) {
-		if (sink.capReached()) {
+	private ToolResult queue(List<LocalBlock> blocks, boolean perEntry, boolean includeProtected, String part) {
+		// A moving part's displays change no block (spec v2 §4.1): not the changed-blocks cap, not the lava rule, no
+		// claims on protected spots; the moving budget instead.
+		boolean moving = !part.isEmpty();
+		if (!moving && sink.capReached()) {
 			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": this build has reached its limit of "
 					+ String.format(Locale.ROOT, "%,d", maxChangedBlocks) + " changed blocks; call finish");
 		}
@@ -599,7 +742,10 @@ public final class ToolExecutor {
 				problem = RejectReason.PROTECTED.wireName()
 						+ ": it looks player-made, so it stays: build around it (include_protected is only for when the player asked to remove it)";
 			} else if (v instanceof Validation.Valid valid) {
-				problem = otherHalf(Footprint.others(valid.block(), block.pos()), mask, perEntry, includeProtected);
+				List<Pos> others = Footprint.others(valid.block(), block.pos());
+				problem = !moving ? otherHalf(others, mask, perEntry, includeProtected)
+						: others.isEmpty() ? null : RejectReason.BAD_ARGUMENT.wireName() + ": a door, bed or tall plant can't be in a moving part (it's two"
+								+ " blocks); build it as blocks";
 			}
 			if (problem != null) {
 				reject(lines, grouped, perEntry, i, problem);
@@ -614,12 +760,26 @@ public final class ToolExecutor {
 			return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": " + String.format(Locale.ROOT, "%,d", waiting)
 					+ " blocks are still waiting to be placed; call checkpoint, then go on; nothing was queued");
 		}
-		FireRule fire = fire();
+		if (moving) {
+			int have = movingBlocks();
+			if (have + fitCount > movingBudget) {
+				return ToolResult.error(RejectReason.TOO_MANY.wireName() + ": this build may have " + String.format(Locale.ROOT, "%,d", movingBudget)
+						+ " moving blocks (max_moving_blocks) and has " + String.format(Locale.ROOT, "%,d", have) + ", so "
+						+ String.format(Locale.ROOT, "%,d", movingBudget - have) + " left; this would add " + String.format(Locale.ROOT, "%,d", fitCount)
+						+ ". Nothing was queued");
+			}
+		}
+		FireRule fire = moving ? null : fire();
 		List<Placement> batch = new ArrayList<>(fitCount);
 		List<Pos> claimed = new ArrayList<>(fitCount);
 		for (int n = 0; n < fitCount; n++) {
 			LocalBlock block = blocks.get(fit[n]);
 			ResolvedBlock resolved = ((Validation.Valid) checked.get(block.block())).block();
+			if (moving) {
+				batch.add(new Placement(frame.toWorld(block.pos()), resolved, null, null, part));
+				parts.computeIfAbsent(part, p -> new PartState()).blocks.add(block.pos());
+				continue;
+			}
 			FireRule.Kind kind = FireRule.Kind.of(resolved.info());
 			List<Pos> others = Footprint.others(resolved, block.pos());
 			// A block of two goes in whole or not at all: both halves pass before either is remembered.
@@ -641,7 +801,12 @@ public final class ToolExecutor {
 		if (!batch.isEmpty()) {
 			sink.queue(batch);
 		}
-		StringBuilder text = new StringBuilder("Queued ").append(blocks(batch.size())).append('.');
+		StringBuilder text = new StringBuilder("Queued ").append(blocks(batch.size()));
+		if (moving) {
+			text.append(" into the moving part ").append(part).append(" (").append(String.format(Locale.ROOT, "%,d", movingBlocks()))
+					.append(" moving blocks in this build; ").append(String.format(Locale.ROOT, "%,d", movingBudget - movingBlocks())).append(" left)");
+		}
+		text.append('.');
 		if (rejected > 0) {
 			text.append(" Rejected ").append(String.format(Locale.ROOT, "%,d", rejected)).append(':');
 			lines.stream().limit(REJECTION_LINES).forEach(line -> text.append('\n').append(line));
@@ -650,6 +815,10 @@ public final class ToolExecutor {
 			}
 		}
 		return new ToolResult(text.toString(), batch.isEmpty() && rejected > 0, List.copyOf(lines));
+	}
+
+	private int movingBlocks() {
+		return parts.values().stream().mapToInt(state -> state.blocks.size()).sum();
 	}
 
 	/** Which entries a later entry for the same spot replaces. */
