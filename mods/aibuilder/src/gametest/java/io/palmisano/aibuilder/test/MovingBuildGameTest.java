@@ -177,11 +177,13 @@ public class MovingBuildGameTest {
 					AnimationStore.MovingBuild moving = build.animations().builds().getFirst();
 					AnimationEngine engine = engine(helper, build.animations(), () -> true, Tunables.TICK_BUDGET_NANOS);
 					long start = moving.key().start();
-					engine.tick(start + 8);
-					List<Transformation> early = assertPosed(helper, build, moving, start + 8);
-					engine.tick(start + 20);
-					List<Transformation> later = assertPosed(helper, build, moving, start + 20);
-					helper.assertFalse(early.equals(later), "the wing didn't move");
+					tickAStep(engine, start + 8);
+					long early = assertPosed(helper, build, moving, start + 8);
+					List<Transformation> earlyPoses = transformations(build, moving);
+					tickAStep(engine, start + 20);
+					long later = assertPosed(helper, build, moving, start + 20);
+					helper.assertTrue(later > early, "posed for " + early + " then " + later);
+					helper.assertFalse(earlyPoses.equals(transformations(build, moving)), "the wing didn't move");
 				})
 				.thenSucceed();
 	}
@@ -197,11 +199,12 @@ public class MovingBuildGameTest {
 					AtomicBoolean running = new AtomicBoolean(true);
 					AnimationEngine engine = engine(helper, build.animations(), running::get, Tunables.TICK_BUDGET_NANOS);
 					long start = moving.key().start();
-					engine.tick(start + 8);
+					tickAStep(engine, start + 8);
 					List<Transformation> posed = transformations(build, moving);
+					helper.assertFalse(posed.stream().allMatch(pose -> pose.equals(Transformation.IDENTITY)), "the wing was never posed");
 					running.set(false);
-					engine.tick(start + 12);
-					engine.tick(start + 16);
+					tickAStep(engine, start + 12);
+					tickAStep(engine, start + 16);
 					helper.assertValueEqual(transformations(build, moving), posed, "the frozen wing");
 				})
 				.thenSucceed();
@@ -219,7 +222,7 @@ public class MovingBuildGameTest {
 					helper.assertValueEqual(loaded.builds(), build.animations().builds(), "the moving builds read back");
 					AnimationStore.MovingBuild moving = loaded.builds().getFirst();
 					long now = moving.key().start() + 28;
-					engine(helper, loaded, () -> true, Tunables.TICK_BUDGET_NANOS).tick(now);
+					tickAStep(engine(helper, loaded, () -> true, Tunables.TICK_BUDGET_NANOS), now);
 					assertPosed(helper, build, moving, now);
 				})
 				.thenSucceed();
@@ -241,16 +244,39 @@ public class MovingBuildGameTest {
 				.thenExecute(() -> {
 					AnimationStore.MovingBuild moving = build.animations().builds().getFirst();
 					helper.assertValueEqual(moving.parts().getFirst().displays().size(), 64, "displays");
-					AnimationEngine engine = engine(helper, build.animations(), () -> true, 1);
-					long start = moving.key().start() + 40;
-					for (int t = 0; t < 63; t++) {
-						engine.tick(start + t);
+					long[] ticks = poseOneARound(build, moving, engine(helper, build.animations(), () -> true, 1), moving.key().start() + 40);
+					helper.assertTrue(ticks[1] >= 0, "not every display was posed");
+					helper.assertTrue(ticks[1] - ticks[0] >= 63, "64 displays posed in " + (ticks[1] - ticks[0] + 1) + " ticks with no time to spare");
+				})
+				.thenSucceed();
+	}
+
+	/**
+	 * A part posed over many ticks (no time to spare) holds together: every display of a round is posed for the same
+	 * time, so the part never comes apart into slices a tick apart (M7 review).
+	 */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void aSpreadPartHoldsTogether(GameTestHelper helper) {
+		ArenaBuild build = start(helper, Facing.SOUTH, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "a tilting deck", "style": "test"}},
+				  {"tool": "fill", "args": {"box": [-3, 1, 4, 4, 1, 11], "block": "oak_planks", "part": "deck"}},
+				  {"tool": "animate", "args": {"part": "deck", "pivot": [0.5, 1, 7.5],
+				    "motions": [{"swing": {"axis": "up", "from": 10, "to": 30, "period": 40}}]}},
+				  {"tool": "finish", "args": {"summary": "a deck of 64 planks"}}
+				]}""");
+		helper.startSequence()
+				.thenWaitUntil(() -> moving(helper, build))
+				.thenExecute(() -> {
+					AnimationStore.MovingBuild moving = build.animations().builds().getFirst();
+					long from = moving.key().start() + 40;
+					long[] ticks = poseOneARound(build, moving, engine(helper, build.animations(), () -> true, 1), from);
+					helper.assertTrue(ticks[1] >= 0, "not every display was posed");
+					boolean together = false;
+					for (long at = from; at <= ticks[1] + 4L * Tunables.ANIMATION_STEP_TICKS && !together; at++) {
+						together = fits(build, moving, at);
 					}
-					long posed = transformations(build, moving).stream().filter(pose -> !pose.equals(Transformation.IDENTITY)).count();
-					helper.assertTrue(posed < 64, "all 64 posed in 63 ticks with no time to spare");
-					engine.tick(start + 63);
-					helper.assertTrue(transformations(build, moving).stream().noneMatch(pose -> pose.equals(Transformation.IDENTITY)),
-							"not every display was posed in 64 ticks");
+					helper.assertTrue(together, "no one time fits every display: the deck came apart");
 				})
 				.thenSucceed();
 	}
@@ -265,7 +291,7 @@ public class MovingBuildGameTest {
 					AnimationStore.MovingBuild moving = build.animations().builds().getFirst();
 					UUID killed = moving.parts().getFirst().displays().getFirst().id();
 					build.level().getEntity(killed).discard();
-					engine(helper, build.animations(), () -> true, Tunables.TICK_BUDGET_NANOS).tick(moving.key().start() + 8);
+					tickAStep(engine(helper, build.animations(), () -> true, Tunables.TICK_BUDGET_NANOS), moving.key().start() + 8);
 					List<AnimationStore.PartDisplay> left = build.animations().builds().getFirst().parts().getFirst().displays();
 					helper.assertValueEqual(left.size(), 2, "displays left");
 					helper.assertFalse(left.stream().anyMatch(d -> d.id().equals(killed)), "the killed display is still there");
@@ -443,16 +469,58 @@ public class MovingBuildGameTest {
 				.map(d -> DisplayAccessor.aibuilder$transformation(build.level().getEntity(d.id()).getEntityData())).toList();
 	}
 
-	/** Each display of the first part draws with what Poses gives for one step after {@code now}, gliding over a step. */
-	private static List<Transformation> assertPosed(GameTestHelper helper, ArenaBuild build, AnimationStore.MovingBuild moving, long now) {
+	/** Ticks the engine through one step from {@code from}: every part comes due once in it, wherever its turn falls. */
+	private static void tickAStep(AnimationEngine engine, long from) {
+		for (long t = from; t < from + Tunables.ANIMATION_STEP_TICKS; t++) {
+			engine.tick(t);
+		}
+	}
+
+	/** Ticks until every display of the first part is posed: the ticks the first and the last were posed in (-1: never). */
+	private static long[] poseOneARound(ArenaBuild build, AnimationStore.MovingBuild moving, AnimationEngine engine, long from) {
+		int size = moving.parts().getFirst().displays().size();
+		long first = -1;
+		for (long t = from; t < from + size + 4L * Tunables.ANIMATION_STEP_TICKS; t++) {
+			engine.tick(t);
+			long posed = transformations(build, moving).stream().filter(pose -> !pose.equals(Transformation.IDENTITY)).count();
+			if (posed > 0 && first < 0) {
+				first = t;
+			}
+			if (posed == size) {
+				return new long[] {first, t};
+			}
+		}
+		return new long[] {first, -1};
+	}
+
+	/**
+	 * Each display of the first part draws with what Poses gives for one time, the same for all, within a few steps after
+	 * {@code after}, and glides to it over a step; that time.
+	 */
+	private static long assertPosed(GameTestHelper helper, ArenaBuild build, AnimationStore.MovingBuild moving, long after) {
+		AnimationStore.Part part = moving.parts().getFirst();
+		int step = Poses.stepTicks(part.motion().name(), moving.motions());
+		for (long at = after; at <= after + 3L * step; at++) {
+			if (fits(build, moving, at)) {
+				for (AnimationStore.PartDisplay d : part.displays()) {
+					DisplayAccessor display = (DisplayAccessor) build.level().getEntity(d.id());
+					helper.assertValueEqual(display.aibuilder$transformationInterpolationDuration(), step, "the glide at " + d.block());
+				}
+				return at;
+			}
+		}
+		helper.assertTrue(false, "no one time after " + after + " fits every display of " + part.motion().name() + ": " + transformations(build, moving));
+		return -1;
+	}
+
+	/** Whether every display of the first part draws with what Poses gives for the time {@code at}. */
+	private static boolean fits(ArenaBuild build, AnimationStore.MovingBuild moving, long at) {
 		AnimationStore.Part part = moving.parts().getFirst();
 		Map<String, MovingPart> motions = moving.motions();
 		Facing facing = moving.key().frame().facing();
-		int step = Poses.stepTicks(part.motion().name(), motions);
-		Rigid pose = Poses.rigid(part.motion().name(), motions, now + step - moving.key().start(), facing);
+		Rigid pose = Poses.rigid(part.motion().name(), motions, at - moving.key().start(), facing);
 		for (AnimationStore.PartDisplay d : part.displays()) {
-			Display.BlockDisplay display = (Display.BlockDisplay) build.level().getEntity(d.id());
-			Transformation drawn = DisplayAccessor.aibuilder$transformation(display.getEntityData());
+			Transformation drawn = DisplayAccessor.aibuilder$transformation(build.level().getEntity(d.id()).getEntityData());
 			DisplayPose expected = Poses.display(pose, d.block(), facing);
 			Vector3fc t = drawn.translation();
 			Quaternionfc r = drawn.leftRotation();
@@ -460,10 +528,11 @@ public class MovingBuildGameTest {
 					&& Math.abs(t.z() - expected.translation().z()) < 1e-4 && Math.abs(r.w() - expected.rotation().w()) < 1e-4
 					&& Math.abs(r.x() - expected.rotation().x()) < 1e-4 && Math.abs(r.y() - expected.rotation().y()) < 1e-4
 					&& Math.abs(r.z() - expected.rotation().z()) < 1e-4;
-			helper.assertTrue(close, "the display at " + d.block() + " draws with " + t + " " + r + ", not " + expected);
-			helper.assertValueEqual(((DisplayAccessor) display).aibuilder$transformationInterpolationDuration(), step, "its glide");
+			if (!close) {
+				return false;
+			}
 		}
-		return transformations(build, moving);
+		return true;
 	}
 
 	private static ArenaBuild start(GameTestHelper helper, Facing facing, String script) {
