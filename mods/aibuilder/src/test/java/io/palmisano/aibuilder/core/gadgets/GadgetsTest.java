@@ -143,6 +143,18 @@ class GadgetsTest {
 	}
 
 	/**
+	 * A latch settles once hold has reached its first bit, the last it gets to: through its buffer, a bus repeater a bit
+	 * and the lock, 2 ticks each; then D and q's buffer, 2 more each (the v2 pull request's review).
+	 */
+	@Test
+	void aLatchSettlesOnceHoldHasReachedItsFirstBit() {
+		for (int bits = 1; bits <= 8; bits++) {
+			int hold = 2 * (1 + bits + 1);
+			assertTrue(Gadgets.make("latch", options("{\"bits\": " + bits + "}")).settleTicks() >= hold + 4, bits + " bits");
+		}
+	}
+
+	/**
 	 * Every port of every kind, at its smallest and largest options, has a repeater one step inside it taking the signal
 	 * in from the port or giving it out to it, as a wire may arrive at strength 1 (M9 review: the adder's inputs had a dust
 	 * there, which a weak wire leaves at 0).

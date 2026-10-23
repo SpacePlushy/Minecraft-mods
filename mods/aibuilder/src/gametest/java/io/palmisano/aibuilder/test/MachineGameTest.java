@@ -18,9 +18,11 @@ import io.palmisano.aibuilder.world.Occupancy;
 import io.palmisano.aibuilder.world.UndoRunner;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CopperBulbBlock;
+import net.minecraft.world.level.block.DispenserBlock;
 import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.RedstoneLampBlock;
@@ -434,6 +436,46 @@ public class MachineGameTest {
 			helper.assertTrue(report.contains("feeds_dispenser (1)") && report.contains("(0, 1, 3) dropper") && report.contains("dispenser at (0, 1, 4)"),
 					"the dropper feeding the dispenser: " + report);
 		});
+	}
+
+	/**
+	 * A dispenser of the build that a dropper not of the build faces into (the world's here: it may hold anything) would
+	 * be fed what the dispenser rule keeps out: feeds_dispenser (the v2 pull request's review).
+	 */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void aDispenserFedByADropperThatIsntTheBuildsIsAProblem(GameTestHelper helper) {
+		world(helper, new Pos(0, 1, 3), Blocks.DROPPER.defaultBlockState().setValue(DispenserBlock.FACING, Direction.SOUTH));
+		ArenaBuild build = checked(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "dispenser", "state": {"facing": "forward"}}]}}""");
+		helper.succeedWhen(() -> {
+			String report = report(helper, build);
+			helper.assertTrue(report.contains("feeds_dispenser (1)") && report.contains("(0, 1, 4) dispenser") && report.contains("dropper at (0, 1, 3)"),
+					"the world's dropper feeding the build's dispenser: " + report);
+		});
+	}
+
+	/** A refinement's dispenser in front of the first build's dropper, whatever that holds: feeds_dispenser (the v2 pull request's review). */
+	@GameTest(structure = ARENA, maxTicks = 1200)
+	public void aRefinementsDispenserFedByAnEarlierDropperIsAProblem(GameTestHelper helper) {
+		ArenaBuild first = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 3], "block": "dropper", "state": {"facing": "forward"}}]}}""");
+		AtomicReference<ArenaBuild> second = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, first))
+				.thenExecute(() -> second.set(ArenaBuilds.refine(helper, first, """
+						{"calls": [
+						  {"tool": "submit_brief", "args": {"title": "a dispenser", "style": "test"}},
+						  {"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "dispenser", "state": {"facing": "forward"}}]}},
+						  {"tool": "check_build", "args": {}},
+						  {"tool": "finish", "args": {"summary": "a dispenser in front of the dropper"}}
+						]}""")))
+				.thenWaitUntil(() -> {
+					ArenaBuilds.assertDone(helper, second.get());
+					String report = second.get().reply("check_build");
+					helper.assertTrue(report.contains("feeds_dispenser (1)") && report.contains("(0, 1, 4) dispenser") && report.contains("dropper at (0, 1, 3)"),
+							"the first build's dropper feeding the refinement's dispenser: " + report);
+				})
+				.thenSucceed();
 	}
 
 	/** A sticky piston pulls back what's in front of its head: with air in front, the world's planks two ahead would come. */

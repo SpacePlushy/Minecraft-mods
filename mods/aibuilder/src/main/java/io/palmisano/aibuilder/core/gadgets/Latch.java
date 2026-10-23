@@ -11,7 +11,7 @@ import io.palmisano.aibuilder.core.shapes.LocalBlock;
  * A latch (spec v2 §5.3), one bit every 4 blocks: d's buffer, a data repeater D, dust and q's buffer straight back.
  * {@code hold}, at the front right of the last bit, climbs two steps to a bus 2 above the data lines that runs left over
  * them, a repeater before each bit; at each bit the bus steps down twice to a repeater locking D from its right side.
- * While hold is on, every D keeps what it had. Pure.
+ * While hold is on, every D keeps what it had. It settles once hold has reached bit 0, the last it gets to. Pure.
  */
 final class Latch {
 	private Latch() {
@@ -48,6 +48,9 @@ final class Latch {
 		Pla.stand(blocks, new Pos(h, 3, 3), Pla.DUST);
 		ports.add(new Port("hold", true, new Pos(h, 1, -1), "while on, the outputs keep what they had"));
 		ports.addAll(outputs);
-		return new Gadget("latch", new Pos(h + 1, 4, 6), blocks, ports, Map.of(), 12);
+		// hold reaches bit 0 through its buffer, a bus repeater a bit and the lock, 2 ticks each; D and q's buffer follow,
+		// 2 each, and 4 to spare.
+		int settle = 2 * (1 + bits + 1) + 4 + 4;
+		return new Gadget("latch", new Pos(h + 1, 4, 6), blocks, ports, Map.of(), settle);
 	}
 }

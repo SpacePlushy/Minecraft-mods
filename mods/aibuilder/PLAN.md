@@ -198,4 +198,7 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   redstone; clearing a gadget's whole box forgets it, so it can go elsewhere; `wire` refuses redstone beside a block
   next to its dust (a lever's post powers the dust beside it); the calculator recipe gives its spots, levels the site
   first, decorates before testing and tests in two calls. Its minors are deferred in the ledger,
-  `docs/superpowers/plans/2026-10-22-aibuilder-m9-progress.md`.
+  `docs/superpowers/plans/2026-10-22-aibuilder-m9-progress.md`. Greptile's review of the v2 pull request found four
+  more, each fixed test-first: a part spread over ticks still came apart mid-glide (each display now aims a round on
+  from its own turn); a part an undo made still again stayed where it had moved to; a big latch's settle was too short
+  for hold to reach its first bit; and a dispenser of the build could be fed by someone else's dropper.

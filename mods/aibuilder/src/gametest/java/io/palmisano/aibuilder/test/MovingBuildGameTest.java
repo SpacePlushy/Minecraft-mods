@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.test;
 
 import static io.palmisano.aibuilder.test.ArenaBuilds.ARENA;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +56,7 @@ import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.phys.AABB;
+import org.joml.Quaternionf;
 import org.joml.Quaternionfc;
 import org.joml.Vector3fc;
 
@@ -173,6 +175,15 @@ public class MovingBuildGameTest {
 			  {"tool": "finish", "args": {"summary": "a post with a flapping wing"}}
 			]}""";
 
+	/** The same post and wing, the wing standing still: a part with no motion. */
+	private static final String STILL = """
+			{"calls": [
+			  {"tool": "submit_brief", "args": {"title": "a still wing", "style": "test"}},
+			  {"tool": "fill", "args": {"box": [0, 1, 4, 0, 3, 4], "block": "stone"}},
+			  {"tool": "fill", "args": {"box": [1, 3, 4, 3, 3, 4], "block": "gray_wool", "part": "wing"}},
+			  {"tool": "finish", "args": {"summary": "a post with a wing"}}
+			]}""";
+
 	/** The wing's displays are told the pose Poses gives for one step ahead, in a build facing east. */
 	@GameTest(structure = ARENA, maxTicks = 400)
 	public void theWingMovesOverTime(GameTestHelper helper) {
@@ -259,31 +270,59 @@ public class MovingBuildGameTest {
 	}
 
 	/**
-	 * A part posed over many ticks (no time to spare) holds together: every display of a round is posed for the same
-	 * time, so the part never comes apart into slices a tick apart (M7 review).
+	 * A part the engine has to spread over ticks (no time to spare: a display a tick) moves as one (M7 review, then the
+	 * v2 pull request's review): glided as the client glides a display, from wherever it is when told straight to its
+	 * new pose, the part's displays are turned alike at every tick, none standing while another moves on.
 	 */
 	@GameTest(structure = ARENA, maxTicks = 400)
 	public void aSpreadPartHoldsTogether(GameTestHelper helper) {
 		ArenaBuild build = start(helper, Facing.SOUTH, """
 				{"calls": [
-				  {"tool": "submit_brief", "args": {"title": "a tilting deck", "style": "test"}},
-				  {"tool": "fill", "args": {"box": [-3, 1, 4, 4, 1, 11], "block": "oak_planks", "part": "deck"}},
-				  {"tool": "animate", "args": {"part": "deck", "pivot": [0.5, 1, 7.5],
-				    "motions": [{"swing": {"axis": "up", "from": 10, "to": 30, "period": 40}}]}},
-				  {"tool": "finish", "args": {"summary": "a deck of 64 planks"}}
+				  {"tool": "submit_brief", "args": {"title": "a fast arm", "style": "test"}},
+				  {"tool": "fill", "args": {"box": [1, 3, 4, 3, 3, 4], "block": "oak_planks", "part": "arm"}},
+				  {"tool": "animate", "args": {"part": "arm", "pivot": [0.5, 3, 4],
+				    "motions": [{"swing": {"axis": "forward", "from": 0, "to": 90, "period": 40}}]}},
+				  {"tool": "finish", "args": {"summary": "an arm of 3 planks"}}
 				]}""");
 		helper.startSequence()
 				.thenWaitUntil(() -> moving(helper, build))
 				.thenExecute(() -> {
 					AnimationStore.MovingBuild moving = build.animations().builds().getFirst();
+					// Fast, but not so fast that it's posed more often: a round of its 3 displays takes 3 ticks of the 4.
+					helper.assertValueEqual(Poses.stepTicks("arm", moving.motions()), Tunables.ANIMATION_STEP_TICKS, "the arm's step");
+					AnimationEngine engine = engine(helper, build.animations(), () -> true, 1);
+					List<AnimationStore.PartDisplay> displays = moving.parts().getFirst().displays();
+					List<List<Glide>> glides = new ArrayList<>();
+					displays.forEach(d -> glides.add(new ArrayList<>()));
 					long from = moving.key().start() + 40;
-					long[] ticks = poseOneARound(build, moving, engine(helper, build.animations(), () -> true, 1), from);
-					helper.assertTrue(ticks[1] >= 0, "not every display was posed");
-					boolean together = false;
-					for (long at = from; at <= ticks[1] + 4L * Tunables.ANIMATION_STEP_TICKS && !together; at++) {
-						together = fits(build, moving, at);
+					long until = from + 80;
+					for (long t = from; t < until; t++) {
+						engine.tick(t);
+						for (int k = 0; k < displays.size(); k++) {
+							Display.BlockDisplay display = (Display.BlockDisplay) build.level().getEntity(displays.get(k).id());
+							Quaternionf to = new Quaternionf(DisplayAccessor.aibuilder$transformation(display.getEntityData()).leftRotation());
+							List<Glide> mine = glides.get(k);
+							if (!to.equals(mine.isEmpty() ? new Quaternionf() : mine.getLast().to())) {
+								mine.add(new Glide(t, to, ((DisplayAccessor) display).aibuilder$transformationInterpolationDuration()));
+							}
+						}
 					}
-					helper.assertTrue(together, "no one time fits every display: the deck came apart");
+					// From the third step on (the first round starts from rest): how far apart the displays are turned, tick by tick.
+					double worst = 0;
+					long worstAt = from;
+					for (long t = from + 2L * Tunables.ANIMATION_STEP_TICKS; t < until; t++) {
+						for (int a = 0; a < displays.size(); a++) {
+							for (int b = a + 1; b < displays.size(); b++) {
+								double apart = degrees(turnedAt(glides.get(a), t), turnedAt(glides.get(b), t));
+								if (apart > worst) {
+									worst = apart;
+									worstAt = t;
+								}
+							}
+						}
+					}
+					helper.assertTrue(worst < 5, "the arm's displays were turned " + Math.round(worst) + "° apart " + (worstAt - from)
+							+ " ticks in: the arm came apart as it glided");
 				})
 				.thenSucceed();
 	}
@@ -365,6 +404,52 @@ public class MovingBuildGameTest {
 					helper.assertValueEqual(displays.size(), 3, "displays after the undo");
 					helper.assertValueEqual(state(displays.get(first.world(new Pos(2, 3, 4)))).getBlock(), Blocks.WOOL.pick(DyeColor.GRAY),
 							"the stripe after the undo");
+				})
+				.thenSucceed();
+	}
+
+	/**
+	 * A refinement that sets moving a part that stood still: undoing it gives the part back its stillness, and the engine
+	 * puts its displays back at rest, as built, instead of leaving them where they had got to (the v2 pull request's
+	 * review).
+	 */
+	@GameTest(structure = ARENA, maxTicks = 800)
+	public void undoingARefinementPutsAStillPartBackAtRest(GameTestHelper helper) {
+		ArenaBuild first = start(helper, Facing.SOUTH, STILL);
+		AtomicReference<ArenaBuild> second = new AtomicReference<>();
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		AnimationEngine engine = engine(helper, first.animations(), () -> true, Tunables.TICK_BUDGET_NANOS);
+		helper.startSequence()
+				.thenWaitUntil(() -> {
+					ArenaBuilds.assertDone(helper, first);
+					helper.assertValueEqual(first.animations().builds().size(), 1, "moving builds");
+				})
+				.thenExecute(() -> second.set(ArenaBuilds.refine(helper, first, """
+						{"calls": [
+						  {"tool": "submit_brief", "args": {"title": "a flapping wing", "style": "test"}},
+						  {"tool": "animate", "args": {"part": "wing", "pivot": [0.5, 3, 4],
+						    "motions": [{"swing": {"axis": "forward", "from": 20, "to": 60, "period": 40}}]}},
+						  {"tool": "finish", "args": {"summary": "the wing flaps"}}
+						]}""")))
+				.thenWaitUntil(() -> {
+					ArenaBuilds.assertDone(helper, second.get());
+					moving(helper, first);
+				})
+				.thenExecute(() -> {
+					AnimationStore.MovingBuild moving = first.animations().builds().getFirst();
+					tickAStep(engine, moving.key().start() + 40);
+					helper.assertFalse(transformations(first, moving).contains(Transformation.IDENTITY), "the wing didn't move: " + transformations(first, moving));
+					UndoRunner runner = new UndoRunner(first.level(), second.get().journal(), Tunables.BLOCKS_PER_TICK, first.animations());
+					JobScheduler.add(runner);
+					undo.set(runner);
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> {
+					AnimationStore.MovingBuild moving = first.animations().builds().getFirst();
+					helper.assertValueEqual(moving.parts().getFirst().motion().motions(), List.of(), "the wing's motion after the undo");
+					tickAStep(engine, moving.key().start() + 80);
+					helper.assertValueEqual(transformations(first, moving), List.of(Transformation.IDENTITY, Transformation.IDENTITY, Transformation.IDENTITY),
+							"the wing after the undo");
 				})
 				.thenSucceed();
 	}
@@ -585,6 +670,37 @@ public class MovingBuildGameTest {
 			}
 		}
 		return true;
+	}
+
+	/** A display's glide as the client makes it: told at {@code told}, from wherever it is then straight to {@code to} over {@code ticks}. */
+	private record Glide(long told, Quaternionf to, int ticks) {
+	}
+
+	/** How a display is turned at {@code t} after these glides, from rest: each starts where the one before had got to. */
+	private static Quaternionf turnedAt(List<Glide> glides, long t) {
+		Quaternionf from = new Quaternionf();
+		Glide last = null;
+		for (Glide glide : glides) {
+			if (glide.told() > t) {
+				break;
+			}
+			if (last != null) {
+				from = along(from, last, glide.told());
+			}
+			last = glide;
+		}
+		return last == null ? from : along(from, last, t);
+	}
+
+	/** Where a glide from {@code from} has got to at {@code t}. */
+	private static Quaternionf along(Quaternionf from, Glide glide, long t) {
+		float done = glide.ticks() <= 0 ? 1 : Math.clamp((float) (t - glide.told()) / glide.ticks(), 0f, 1f);
+		return new Quaternionf(from).slerp(glide.to(), done);
+	}
+
+	/** The angle between two turns, in degrees. */
+	private static double degrees(Quaternionf a, Quaternionf b) {
+		return Math.toDegrees(2 * Math.acos(Math.min(1, Math.abs(a.dot(b)))));
 	}
 
 	private static ArenaBuild start(GameTestHelper helper, Facing facing, String script) {

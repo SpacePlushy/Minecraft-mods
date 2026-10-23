@@ -103,7 +103,7 @@ calculator), build it with redstone, and test it:
   reacts to power and isn't the build's (the player's door, lamp, piston or TNT); doors, lamps and buttons are fine
   anywhere. check_build lists what breaks this as piston, powers_outside and feeds_dispenser; whatever still breaks it
   when you finish is taken out. A dispenser may hold only what it would simply drop, and no hopper, dropper or crafter
-  of the build may face into one.
+  of the build may face into one, nor anything else's into one of the build's.
 - Test before you finish. Call test_redstone with what a player would do (set a lever, press a button), waits long
   enough for the machine (a piston moves in 2 ticks, a torch turns in 2, a repeater adds 2 to 8 a step, a lamp goes
   out in 4), and reads of what should change. Test every case that matters: each input combination of a small

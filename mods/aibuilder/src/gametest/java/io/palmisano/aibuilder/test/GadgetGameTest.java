@@ -262,6 +262,25 @@ public class GadgetGameTest {
 				.thenSucceed();
 	}
 
+	/**
+	 * A latch of 8 bits, the most, in every facing: hold reaches bit 0 last, through every bit's bus repeater, and the
+	 * latch still keeps what it had after its settle ticks (the v2 pull request's review).
+	 */
+	@GameTest(structure = GADGETS_BIG, maxTicks = 1200)
+	public void anEightBitLatchHoldsWhatItHad(GameTestHelper helper) {
+		Gadget latch = make("latch", "{\"bits\": 8}");
+		GadgetRig.Rig rig = GadgetRig.build(helper, GadgetRig.Space.BIG, latch, false);
+		int wait = latch.settleTicks();
+		int hold = 1 << 8;
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, rig.build()))
+				.thenExecute(() -> GadgetRig.drive(rig, 0b01)).thenIdle(wait).thenExecute(() -> latched(helper, rig, Set.of("q0"), "d0 on"))
+				.thenExecute(() -> GadgetRig.drive(rig, hold | 0b01)).thenIdle(wait)
+				.thenExecute(() -> GadgetRig.drive(rig, hold | 0b10)).thenIdle(wait).thenExecute(() -> latched(helper, rig, Set.of("q0"), "held, d1 on"))
+				.thenExecute(() -> GadgetRig.drive(rig, 0b10)).thenIdle(wait).thenExecute(() -> latched(helper, rig, Set.of("q1"), "let go"))
+				.thenSucceed();
+	}
+
 	private static void latched(GameTestHelper helper, GadgetRig.Rig rig, Set<String> expected, String when) {
 		for (int i = 0; i < rig.placed().size(); i++) {
 			GadgetPlacement.Placed one = rig.placed().get(i);
@@ -271,7 +290,7 @@ public class GadgetGameTest {
 					on.add(p.name());
 				}
 			}
-			helper.assertValueEqual(on, expected, GadgetRig.FACINGS.get(i / 2) + ", " + when);
+			helper.assertValueEqual(on, expected, GadgetRig.FACINGS.get(i * GadgetRig.FACINGS.size() / rig.placed().size()) + ", " + when);
 		}
 	}
 

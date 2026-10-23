@@ -99,6 +99,11 @@ public final class AnimationStore extends SavedData {
 	static final class LivePart {
 		MovingPart motion;
 		final List<PartDisplay> displays = new ArrayList<>();
+		/**
+		 * Of a part that stands still, the displays the engine has yet to put back at rest; null for all of them, as once
+		 * loaded or given back its stillness. Server thread.
+		 */
+		Set<UUID> unrested;
 
 		LivePart(MovingPart motion) {
 			this.motion = motion;
@@ -259,7 +264,10 @@ public final class AnimationStore extends SavedData {
 	public void restore(UUID build, MovingPart motion) {
 		Live live = builds.get(build);
 		if (live != null && live.parts.containsKey(motion.name())) {
-			live.parts.get(motion.name()).motion = motion;
+			LivePart part = live.parts.get(motion.name());
+			part.motion = motion;
+			// Given back its stillness, the part is put back at rest from wherever its motion had got it to.
+			part.unrested = null;
 			live.motions = null;
 			setDirty();
 		}

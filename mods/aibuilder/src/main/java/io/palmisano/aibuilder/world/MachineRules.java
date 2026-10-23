@@ -34,7 +34,8 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
  * the build's blocks, inside the allowed box, and never slime or honey, which carry what they touch away; nothing of the
  * build that gives power by itself (dust, torches, diodes, levers…; not a door or a button, M8 review) is within
  * {@link Tunables#MACHINE_POWER_REACH} blocks of something that reacts to power and isn't the build's; and no hopper,
- * dropper or crafter of the build feeds a dispenser, which would fire what the dispenser rule keeps out of it. The
+ * dropper or crafter of the build feeds a dispenser, nor one that isn't the build's (an earlier build's, the player's:
+ * it may hold anything) a dispenser of the build, which would fire what the dispenser rule keeps out of it. The
  * build's own block is one it journaled that still holds the block it wrote. A piece the power-up pass has started was
  * judged as placed, before it ran, and isn't judged again: the machine may have moved the build's blocks since. Reads
  * the world as it stands, loaded chunks only. Server thread.
@@ -175,16 +176,27 @@ public final class MachineRules {
 		return null;
 	}
 
-	/** Why a hopper, dropper or crafter facing into a dispenser breaks the rule (it would feed it what the dispenser rule keeps out), or null. */
+	/**
+	 * Why the build's block feeds a dispenser what the dispenser rule keeps out, or null: a hopper, dropper or crafter
+	 * facing into one, or a dispenser one that isn't the build's faces into (the build's own are judged where they stand).
+	 */
 	private String feeds(BlockPos pos, BlockState state) {
-		Direction out;
-		if (state.getBlock() instanceof HopperBlock) {
-			out = state.getValue(HopperBlock.FACING);
-		} else if (state.getBlock() instanceof DropperBlock) {
-			out = state.getValue(DispenserBlock.FACING);
-		} else if (state.getBlock() instanceof CrafterBlock && state.hasProperty(BlockStateProperties.ORIENTATION)) {
-			out = state.getValue(BlockStateProperties.ORIENTATION).front();
-		} else {
+		if (state.getBlock() instanceof DispenserBlock && !(state.getBlock() instanceof DropperBlock)) {
+			for (Direction side : Direction.values()) {
+				BlockPos from = pos.relative(side);
+				if (!level.isLoaded(from) || journal.has(Positions.toPos(from))) {
+					continue;
+				}
+				BlockState feeder = level.getBlockState(from);
+				Direction out = output(feeder);
+				if (out != null && from.relative(out).equals(pos)) {
+					return name(state) + ": the " + name(feeder) + " at " + local(from) + ", not this build's, faces into it, so it would fire what it's fed";
+				}
+			}
+			return null;
+		}
+		Direction out = output(state);
+		if (out == null) {
 			return null;
 		}
 		BlockPos into = pos.relative(out);
@@ -195,6 +207,20 @@ public final class MachineRules {
 		return target.getBlock() instanceof DispenserBlock && !(target.getBlock() instanceof DropperBlock)
 				? name(state) + ": it faces into the dispenser at " + local(into) + ", which would fire what it's fed"
 				: null;
+	}
+
+	/** The side a hopper, dropper or crafter gives out of, or null for any other block. */
+	private static Direction output(BlockState state) {
+		if (state.getBlock() instanceof HopperBlock) {
+			return state.getValue(HopperBlock.FACING);
+		}
+		if (state.getBlock() instanceof DropperBlock) {
+			return state.getValue(DispenserBlock.FACING);
+		}
+		if (state.getBlock() instanceof CrafterBlock && state.hasProperty(BlockStateProperties.ORIENTATION)) {
+			return state.getValue(BlockStateProperties.ORIENTATION).front();
+		}
+		return null;
 	}
 
 	/**
