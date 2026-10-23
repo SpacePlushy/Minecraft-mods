@@ -336,6 +336,50 @@ public class MovingBuildGameTest {
 				.thenSucceed();
 	}
 
+	/** Air written with a part hides that block's display; undoing the refinement that did it shows the block again. */
+	@GameTest(structure = ARENA, maxTicks = 800)
+	public void airHidesAPartsBlockUntilItsUndone(GameTestHelper helper) {
+		ArenaBuild first = start(helper, Facing.SOUTH, FLAP);
+		AtomicReference<ArenaBuild> second = new AtomicReference<>();
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> moving(helper, first))
+				.thenExecute(() -> second.set(ArenaBuilds.refine(helper, first, """
+						{"calls": [
+						  {"tool": "submit_brief", "args": {"title": "a shorter wing", "style": "test"}},
+						  {"tool": "set_blocks", "args": {"blocks": [{"pos": [3, 3, 4], "block": "air"}], "part": "wing"}},
+						  {"tool": "finish", "args": {"summary": "a wing a block shorter"}}
+						]}""")))
+				.thenWaitUntil(() -> {
+					ArenaBuilds.assertDone(helper, second.get());
+					helper.assertTrue(state(byCorner(helper, first).get(first.world(new Pos(3, 3, 4)))).isAir(), "the wing's tip still shows");
+				})
+				.thenExecute(() -> {
+					UndoRunner runner = new UndoRunner(first.level(), second.get().journal(), Tunables.BLOCKS_PER_TICK, first.animations());
+					JobScheduler.add(runner);
+					undo.set(runner);
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> helper.assertValueEqual(state(byCorner(helper, first).get(first.world(new Pos(3, 3, 4)))).getBlock(),
+						Blocks.WOOL.pick(DyeColor.GRAY), "the tip after the undo"))
+				.thenSucceed();
+	}
+
+	/** A hollow fill as a part spawns displays for its shell only: none for the air inside. */
+	@GameTest(structure = ARENA, maxTicks = 400)
+	public void aHollowPartHasNoAirDisplays(GameTestHelper helper) {
+		ArenaBuild build = start(helper, Facing.SOUTH, """
+				{"calls": [
+				  {"tool": "submit_brief", "args": {"title": "a cage", "style": "test"}},
+				  {"tool": "fill", "args": {"box": [-2, 1, 4, 2, 3, 6], "block": "oak_planks", "mode": "hollow", "part": "cage"}},
+				  {"tool": "finish", "args": {"summary": "a hollow cage"}}
+				]}""");
+		helper.succeedWhen(() -> {
+			ArenaBuilds.assertDone(helper, build);
+			helper.assertValueEqual(byCorner(helper, build).size(), 42, "displays");
+		});
+	}
+
 	/** A saved moving build that can't be read (a facing that isn't one) costs only itself. */
 	@GameTest
 	public void aStoredBuildThatCantBeReadIsSkipped(GameTestHelper helper) {

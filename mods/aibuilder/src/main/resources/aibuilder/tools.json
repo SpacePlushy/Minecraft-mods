@@ -246,6 +246,7 @@
 		"input_schema": {
 			"type": "object",
 			"properties": {
+				"part": {"type": "string", "description": "Optional: take a moving part's blocks in the box out (its displays there go) and leave the world's blocks as they are. Without it, clear leaves moving parts alone."},
 				"box": {"type": "array", "items": {"type": "integer"}, "minItems": 6, "maxItems": 6},
 				"include_protected": {"type": "boolean", "description": "Also remove blocks that look player-made. Only when the player asked for it."}
 			},

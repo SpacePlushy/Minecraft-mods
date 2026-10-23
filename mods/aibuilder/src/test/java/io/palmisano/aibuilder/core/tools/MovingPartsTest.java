@@ -123,6 +123,43 @@ class MovingPartsTest {
 		assertTrue(tail.isError() && tail.text().contains("0 left"), tail.text());
 	}
 
+	/** Air written with a part takes that spot out of the part (its display hides); air where the part has nothing is skipped. */
+	@Test
+	void airTakesABlockOutOfAPart() {
+		ToolExecutor tools = tools();
+		tools.call("fill", json(WING));
+		ToolResult out = tools.call("set_blocks", json("{\"blocks\":[{\"pos\":[0,1,2],\"block\":\"air\"},{\"pos\":[5,1,5],\"block\":\"air\"}],"
+				+ "\"part\":\"wing\"}"));
+		assertFalse(out.isError(), out.text());
+		assertEquals(5, tools.parts().get("wing").blocks().size());
+		List<Placement> batch = sink.batches.getLast();
+		assertEquals(1, batch.size(), "only the spot the wing had: " + batch);
+		assertEquals("minecraft:air", batch.getFirst().block().info().id());
+		assertEquals("wing", batch.getFirst().part());
+		assertTrue(out.text().contains("5 moving blocks in this build"), out.text());
+	}
+
+	/** A hollow fill as a part is only its shell: its inside is air, and a part holds no air. */
+	@Test
+	void aHollowFillPartIsItsShell() {
+		ToolExecutor tools = tools();
+		ToolResult cage = tools.call("fill", json("{\"box\":[0,1,2,4,5,6],\"block\":\"oak_planks\",\"mode\":\"hollow\",\"part\":\"cage\"}"));
+		assertFalse(cage.isError(), cage.text());
+		assertEquals(98, tools.parts().get("cage").blocks().size());
+		assertEquals(98, sink.batches.getLast().size());
+	}
+
+	/** clear with a part takes the part's blocks in its box out, and writes no block of the world's. */
+	@Test
+	void clearTakesAPartsBlocksOut() {
+		ToolExecutor tools = tools();
+		tools.call("fill", json(WING));
+		ToolResult cleared = tools.call("clear", json("{\"box\":[0,1,2,2,1,2],\"part\":\"wing\"}"));
+		assertFalse(cleared.isError(), cleared.text());
+		assertEquals(3, tools.parts().get("wing").blocks().size());
+		assertTrue(sink.batches.getLast().stream().allMatch(p -> p.part().equals("wing")), "a part's clear wrote a block");
+	}
+
 	@Test
 	void displaysDontCountAsChangedBlocks() {
 		ToolExecutor tools = tools();

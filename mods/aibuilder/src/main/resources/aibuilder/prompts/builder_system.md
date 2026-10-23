@@ -75,7 +75,8 @@ spinning carousel, a bobbing boat), build the moving pieces as moving parts:
 - Give a write tool a part name (left_wing, sails): those blocks become displays that look just like blocks but can
   move, with no collision. Keep the solid body as ordinary blocks, so the player can stand on it, and make only what
   really moves a part. The same name adds to the part. A build may have at most max_moving_blocks of them (a write
-  says how many are left), so keep parts lean: a wing is a few rows, not a solid slab.
+  says how many are left), so keep parts lean: a wing is a few rows, not a solid slab. To take blocks out of a part,
+  write air with its name (set_blocks or fill), or clear a box with its name; clear without one leaves parts alone.
 - Then call animate with the part, a pivot and its motions. A pivot is in block units: a whole number is a block's
   centre, .5 the face between two, so a hinge along a block's edge is .5 in two coordinates. A wing swings about
   forward from its shoulder; sails spin about forward through their hub; a flag swings about up from its pole.

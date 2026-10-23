@@ -57,9 +57,9 @@ public final class ToolExecutor {
 	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
 			"set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof", "staircase", "clear", "terraform",
 			"place_block_entity", "checkpoint", "check_build", "animate", "check_motion", "finish");
-	/** The write tools that can make a moving part (spec v2 §4.1). */
+	/** The write tools that can make a moving part (spec v2 §4.1), and clear, which takes a part's blocks out. */
 	private static final Set<String> MOVABLE = Set.of("set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof",
-			"staircase");
+			"staircase", "clear");
 	private static final int REJECTION_LINES = 10;
 	private static final BlockSpec AIR = BlockSpec.of("minecraft:air");
 	private static final String BRIEF_FIRST = "Call submit_brief first: title, style, size, palette and phases, before placing any block.";
@@ -817,7 +817,8 @@ public final class ToolExecutor {
 			Set<Pos> already = parts.containsKey(part) ? parts.get(part).blocks : Set.of();
 			int adding = 0;
 			for (int n = 0; n < fitCount; n++) {
-				if (!already.contains(blocks.get(fit[n]).pos())) {
+				LocalBlock block = blocks.get(fit[n]);
+				if (!air(((Validation.Valid) checked.get(block.block())).block()) && !already.contains(block.pos())) {
 					adding++;
 				}
 			}
@@ -831,12 +832,22 @@ public final class ToolExecutor {
 		FireRule fire = moving ? null : fire();
 		List<Placement> batch = new ArrayList<>(fitCount);
 		List<Pos> claimed = new ArrayList<>(fitCount);
+		// Air in a part takes that spot out of it (its display hides); where the part has nothing, there's nothing to do.
+		int nothingToTakeOut = 0;
 		for (int n = 0; n < fitCount; n++) {
 			LocalBlock block = blocks.get(fit[n]);
 			ResolvedBlock resolved = ((Validation.Valid) checked.get(block.block())).block();
 			if (moving) {
+				if (air(resolved)) {
+					PartState state = parts.get(part);
+					if (state == null || !state.blocks.remove(block.pos())) {
+						nothingToTakeOut++;
+						continue;
+					}
+				} else {
+					parts.computeIfAbsent(part, p -> new PartState()).blocks.add(block.pos());
+				}
 				batch.add(new Placement(frame.toWorld(block.pos()), resolved, null, null, part));
-				parts.computeIfAbsent(part, p -> new PartState()).blocks.add(block.pos());
 				continue;
 			}
 			FireRule.Kind kind = FireRule.Kind.of(resolved.info());
@@ -853,7 +864,7 @@ public final class ToolExecutor {
 			claimed.addAll(others);
 			batch.add(new Placement(frame.toWorld(block.pos()), resolved, block.onlyReplacing(), block.data()));
 		}
-		int rejected = blocks.size() - supersededCount - batch.size();
+		int rejected = blocks.size() - supersededCount - batch.size() - nothingToTakeOut;
 		// Those spots are the build's own from now on, even where it may clear a protected block.
 		claimed.forEach(mask::release);
 		grouped.forEach((problem, count) -> lines.add(blocks(count) + " — " + problem));
@@ -874,6 +885,10 @@ public final class ToolExecutor {
 			}
 		}
 		return new ToolResult(text.toString(), batch.isEmpty() && rejected > 0, List.copyOf(lines));
+	}
+
+	private static boolean air(ResolvedBlock block) {
+		return block.info().id().equals("minecraft:air");
 	}
 
 	private int movingBlocks() {

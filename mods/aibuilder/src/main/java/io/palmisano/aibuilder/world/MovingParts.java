@@ -9,9 +9,11 @@ import io.palmisano.aibuilder.core.anim.MovingPart;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.place.UndoJournal;
 import io.palmisano.aibuilder.core.tools.PartInfo;
+import io.palmisano.aibuilder.mixin.BlockDisplayAccessor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Display;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
@@ -66,15 +68,23 @@ public final class MovingParts {
 		return key;
 	}
 
-	/** The earlier parts as the tools are told of them: their blocks, and their motions (none while one stands still). */
+	/**
+	 * The earlier parts as the tools are told of them: their blocks, those a display hides (air written into the part)
+	 * aside, and their motions (none while one stands still). Server thread.
+	 */
 	public Map<String, PartInfo> earlierParts() {
 		Map<String, PartInfo> out = new LinkedHashMap<>();
 		earlier.forEach((name, part) -> {
 			MovingPart motion = part.motion();
 			boolean still = motion.motions().isEmpty() && motion.parent().isEmpty();
-			out.put(name, new PartInfo(part.displays().stream().map(AnimationStore.PartDisplay::block).toList(), still ? null : motion));
+			out.put(name, new PartInfo(part.displays().stream().filter(d -> !hidden(d)).map(AnimationStore.PartDisplay::block).toList(),
+					still ? null : motion));
 		});
 		return out;
+	}
+
+	private boolean hidden(AnimationStore.PartDisplay display) {
+		return level.getEntity(display.id()) instanceof Display.BlockDisplay entity && ((BlockDisplayAccessor) entity).aibuilder$blockState().isAir();
 	}
 
 	/** Whether the store has the moving build (it has a part): the session remembers it then. Server thread. */

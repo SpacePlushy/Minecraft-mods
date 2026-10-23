@@ -412,6 +412,10 @@ public final class PlacementJob implements Tickable {
 				journal.reshown(shown, before);
 			}
 			if (before == null) {
+				if (entry.getValue().isAir()) {
+					// Nothing of the part's here to take out, and a display of air would be nothing to see.
+					continue;
+				}
 				Display.BlockDisplay display = Displays.spawn(level, entry.getKey(), entry.getValue());
 				if (display == null) {
 					if (failures++ == 0) {
