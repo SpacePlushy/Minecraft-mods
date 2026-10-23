@@ -110,10 +110,16 @@ public class WireGameTest {
 
 	/** The lamp is off, lights once the lever's pulled, and goes off once it's pulled back. */
 	private static GameTestSequence carries(GameTestHelper helper, GameTestSequence sequence, ArenaBuild build, Pos lever, Pos lamp, String what) {
+		return carries(helper, sequence, build, lever, lamp, what, SETTLE);
+	}
+
+	/** The same, waiting {@code settle} ticks after each pull (a gadget on the way takes its own). */
+	private static GameTestSequence carries(GameTestHelper helper, GameTestSequence sequence, ArenaBuild build, Pos lever, Pos lamp, String what,
+			int settle) {
 		return sequence.thenExecute(() -> helper.assertFalse(lit(build, lamp), what + ": lit before the lever's pulled"))
-				.thenExecute(() -> pull(build, lever)).thenIdle(SETTLE)
+				.thenExecute(() -> pull(build, lever)).thenIdle(settle)
 				.thenExecute(() -> helper.assertTrue(lit(build, lamp), what + ": not lit with the lever on"))
-				.thenExecute(() -> pull(build, lever)).thenIdle(SETTLE)
+				.thenExecute(() -> pull(build, lever)).thenIdle(settle)
 				.thenExecute(() -> helper.assertFalse(lit(build, lamp), what + ": still lit with the lever off"));
 	}
 
@@ -220,5 +226,23 @@ public class WireGameTest {
 					}
 				})
 				.thenSucceed();
+	}
+
+	/** A wire of 15 dust arrives at strength 1: an adder's input still takes it, through its buffer (M9 review). */
+	@GameTest(structure = GADGETS, maxTicks = 1200)
+	public void aWeakWireStillDrivesAnAdder(GameTestHelper helper) {
+		Placed lever = gadget("lever_row", "{\"bits\": 1}", new Pos(-6, 1, 0), "forward");
+		Placed adder = gadget("adder", "{\"bits\": 1}", new Pos(-10, 1, 18), "forward");
+		Placed lamp = gadget("lamp_row", "{\"bits\": 1}", new Pos(-8, 1, 45), "forward");
+		Pos a0 = adder.where().ports().stream().filter(p -> p.name().equals("a0")).map(Port::at).findFirst().orElseThrow();
+		Pos s0 = adder.where().ports().stream().filter(p -> p.name().equals("s0")).map(Port::at).findFirst().orElseThrow();
+		List<JsonObject> wires = List.of(wire(lever.ports(), List.of(a0), List.of()), wire(List.of(s0), lamp.ports(), List.of()));
+		ArenaBuild build = build(helper, List.of(lever, adder, lamp), wires);
+		// The adder starts up as the build ends (its torches all lit at first): it settles before the lamp is looked at.
+		int settle = SETTLE + Gadgets.make("adder", JsonParser.parseString("{\"bits\": 1}").getAsJsonObject()).settleTicks();
+		GameTestSequence sequence = wired(helper, build).thenIdle(settle)
+				.thenExecute(() -> helper.assertTrue(build.reply("wire").isEmpty() || build.replies("wire").getFirst().contains(": 15 dust,"),
+						"the first wire isn't 15 dust: " + build.replies("wire")));
+		carries(helper, sequence, build, lever.mark("lever in0"), lamp.mark("lamp 0"), "through the adder", settle).thenSucceed();
 	}
 }

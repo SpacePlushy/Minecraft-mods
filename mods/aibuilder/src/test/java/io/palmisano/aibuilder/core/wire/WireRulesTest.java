@@ -93,4 +93,22 @@ class WireRulesTest {
 		assertEquals("blocked", low.code());
 		assertEquals("the wire climbs from (0, 1, 0) to (0, 2, 1), which needs (0, 2, 0) empty", low.getMessage());
 	}
+
+	/** A block beside the wire that something powers strongly (a lever on it, a torch under it) would power the wire: refused (M9 review). */
+	@Test
+	void aWireBesideAPoweredBlockIsRefused() {
+		Map<Pos, Cell> post = world();
+		post.put(new Pos(1, 1, 4), Cell.SOLID);
+		post.put(new Pos(1, 2, 4), Cell.COMPONENT);
+		assertEquals("(1, 2, 4) is redstone, beside the block at (1, 1, 4) next to the wire at (0, 1, 4): keep a block between them (to cross a wire,"
+				+ " go over it: a via point 2 above)", refusal(post));
+		Map<Pos, Cell> roof = world();
+		roof.put(new Pos(0, 2, 6), Cell.SOLID);
+		roof.put(new Pos(0, 3, 6), Cell.COMPONENT);
+		assertEquals("(0, 3, 6) is redstone, beside the block at (0, 2, 6) next to the wire at (0, 1, 6): keep a block between them (to cross a wire,"
+				+ " go over it: a via point 2 above)", refusal(roof));
+		Map<Pos, Cell> wall = world();
+		wall.put(new Pos(-1, 1, 9), Cell.SOLID);
+		assertEquals(5, WireRules.supports(SPOTS, wall, Set.of(), ALLOWED, ProtectionMask.none()).size(), "a block with nothing redstone by it is fine");
+	}
 }

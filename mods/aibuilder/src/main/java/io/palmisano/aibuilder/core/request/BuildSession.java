@@ -37,6 +37,13 @@ public record BuildSession(String dimension, String title, Pos origin, Facing fa
 		return new BuildSession(dimension, title, origin, facing, size, changed, claudeSession, prompts, builds, lastUndone, movingBuild, all);
 	}
 
+	/** The same session without {@code gone}, gadgets cleared away. */
+	public BuildSession withoutGadgets(List<GadgetUse> gone) {
+		List<GadgetUse> left = new ArrayList<>(gadgets);
+		left.removeAll(gone);
+		return new BuildSession(dimension, title, origin, facing, size, changed, claudeSession, prompts, builds, lastUndone, movingBuild, left);
+	}
+
 	/** The same session, its moving parts in the moving build {@code id}. */
 	public BuildSession withMovingBuild(String id) {
 		return new BuildSession(dimension, title, origin, facing, size, changed, claudeSession, prompts, builds, lastUndone, id, gadgets);

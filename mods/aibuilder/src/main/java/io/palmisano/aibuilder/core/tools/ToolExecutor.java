@@ -226,6 +226,7 @@ public final class ToolExecutor {
 				case "test_redstone" -> testRedstone(a);
 				case "terraform" -> terraform(a);
 				case "wire" -> wire(a);
+				case "place_gadget" -> placeGadget(a);
 				default -> locked(name, a);
 			};
 		} catch (IllegalArgumentException e) {
@@ -524,9 +525,6 @@ public final class ToolExecutor {
 		if (name.equals("animate")) {
 			return animate(a);
 		}
-		if (name.equals("place_gadget")) {
-			return placeGadget(a);
-		}
 		String part = a.has("part") ? partName(a.string("part")) : "";
 		if (!part.isEmpty() && !MOVABLE.contains(name)) {
 			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + name + " can't make a moving part");
@@ -569,7 +567,30 @@ public final class ToolExecutor {
 			case "staircase" -> staircase(a);
 			default -> throw new IllegalStateException(name);
 		};
-		return queue(blocks, false, name.equals("clear") && a.optBool("include_protected", false), part);
+		ToolResult queued = queue(blocks, false, name.equals("clear") && a.optBool("include_protected", false), part);
+		if (name.equals("clear") && part.isEmpty() && !queued.isError()) {
+			String gone = forgetCleared(a.box("box"));
+			if (!gone.isEmpty()) {
+				return new ToolResult(queued.text() + "\n" + gone, false, queued.rejections());
+			}
+		}
+		return queued;
+	}
+
+	/** Forgets the session's gadgets whose whole box {@code cleared} takes in (they may be placed again); says which. */
+	private String forgetCleared(Box cleared) {
+		List<String> gone = new ArrayList<>();
+		for (List<GadgetUse> list : List.of(gadgets, earlierGadgets)) {
+			for (GadgetUse use : List.copyOf(list)) {
+				Box box = use.placed().box();
+				if (cleared.contains(box.min()) && cleared.contains(box.max())) {
+					list.remove(use);
+					sink.gadgetGone(use);
+					gone.add(Gadgets.describe(use.kind(), JsonParser.parseString(use.options()).getAsJsonObject()) + " at " + spot(use.at()) + " is gone");
+				}
+			}
+		}
+		return gone.isEmpty() ? "" : String.join("; ", gone) + ": a gadget may go there again.";
 	}
 
 	/**
@@ -587,6 +608,48 @@ public final class ToolExecutor {
 		GadgetPlacement.Placed placed = GadgetPlacement.place(gadget, at, facing);
 		Box box = placed.box();
 		String what = Gadgets.describe(kind, options);
+		synchronized (this) {
+			if (!briefed) {
+				return ToolResult.error(BRIEF_FIRST);
+			}
+			ToolResult refused = gadgetRefused(placed, what);
+			if (refused != null) {
+				return refused;
+			}
+		}
+		// What the build has placed so far, in the box and a block round it: its redstone would be erased, or join the gadget's.
+		ToolResult waiting = placedFirst("place_gadget");
+		if (waiting != null) {
+			return waiting;
+		}
+		Set<Pos> around = new LinkedHashSet<>();
+		for (int x = box.min().x() - 1; x <= box.max().x() + 1; x++) {
+			for (int y = box.min().y() - 1; y <= box.max().y() + 1; y++) {
+				for (int z = box.min().z() - 1; z <= box.max().z() + 1; z++) {
+					around.add(new Pos(x, y, z));
+				}
+			}
+		}
+		Map<Pos, Cell> cells = world.cells(around);
+		for (Pos p : around) {
+			Cell c = cells.getOrDefault(p, Cell.FREE);
+			if (c == Cell.DUST || c == Cell.COMPONENT) {
+				boolean inside = box.contains(p);
+				return ToolResult.error("touches_redstone: " + spot(p) + " is " + (c == Cell.DUST ? "dust" : "redstone") + (inside ? ", inside where " : ", beside where ")
+						+ what + " would go" + (inside ? ": placing it would clear that away" : ": a gadget keeps a block from other redstone")
+						+ "; place it elsewhere, or clear that first; nothing was placed");
+			}
+		}
+		synchronized (this) {
+			// Another gadget may have gone in while this one waited.
+			ToolResult refused = gadgetRefused(placed, what);
+			return refused != null ? refused : placeGadget(gadget, placed, kind, options, at, facing, what);
+		}
+	}
+
+	/** Why the gadget {@code placed} can't go where it would, or null: past the box, a port past it, too close to another, or over the player's blocks. */
+	private ToolResult gadgetRefused(GadgetPlacement.Placed placed, String what) {
+		Box box = placed.box();
 		if (!allowed.contains(box.min()) || !allowed.contains(box.max())) {
 			return ToolResult.error(RejectReason.OUT_OF_BOUNDS.wireName() + ": " + what + " there would fill " + describe(box) + ", past the allowed box "
 					+ describe(allowed) + "; nothing was placed");
@@ -608,9 +671,6 @@ public final class ToolExecutor {
 			}
 		}
 		ProtectionMask mask = protection();
-		Set<Pos> filled = new HashSet<>();
-		placed.blocks().forEach(b -> filled.add(b.pos()));
-		List<LocalBlock> blocks = new ArrayList<>(placed.blocks());
 		for (int x = box.min().x(); x <= box.max().x(); x++) {
 			for (int y = box.min().y(); y <= box.max().y(); y++) {
 				for (int z = box.min().z(); z <= box.max().z(); z++) {
@@ -619,6 +679,22 @@ public final class ToolExecutor {
 						return ToolResult.error(RejectReason.PROTECTED.wireName() + ": something player-made (or unbreakable) is at " + spot(p) + ", inside where "
 								+ what + " would go; place it elsewhere; nothing was placed");
 					}
+				}
+			}
+		}
+		return null;
+	}
+
+	/** Places the checked gadget: its blocks and air in the rest of its box, through the queue; the answer lists its ports and marks. */
+	private ToolResult placeGadget(Gadget gadget, GadgetPlacement.Placed placed, String kind, JsonObject options, Pos at, String facing, String what) {
+		Box box = placed.box();
+		Set<Pos> filled = new HashSet<>();
+		placed.blocks().forEach(b -> filled.add(b.pos()));
+		List<LocalBlock> blocks = new ArrayList<>(placed.blocks());
+		for (int x = box.min().x(); x <= box.max().x(); x++) {
+			for (int y = box.min().y(); y <= box.max().y(); y++) {
+				for (int z = box.min().z(); z <= box.max().z(); z++) {
+					Pos p = new Pos(x, y, z);
 					if (!filled.contains(p)) {
 						blocks.add(new LocalBlock(p, AIR));
 					}

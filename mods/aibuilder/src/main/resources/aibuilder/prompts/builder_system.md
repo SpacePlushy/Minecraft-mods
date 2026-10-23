@@ -131,17 +131,18 @@ wire instead of laying the redstone yourself: every gadget is tested in the game
   case that matters and say what it showed.
 
 A working calculator (two numbers from 0 to 15 on two rows of levers, the sum on two digits) needs the Epic size: at
-a smaller size, build nothing and say so in finish. It's about 54 wide, 124 deep (from row b to the number's back)
-and 12 high. Build it like this, everything facing forward. Place the adder
-(bits 4) first, its front-left-bottom block at (X, Y, Z), and the rest from there:
-- lever row a (bits 4, label a) at (X+4, Y, Z-14), and lever row b (bits 4, label b) in front of it and to its
-  right, at (X+18, Y, Z-20);
-- the number (bits 5) at (X+2, Y, Z+32), its inputs n0 to n4 along its front and its two faces in its middle;
-- three rows of wire: from a's levers to the adder's a0 to a3 at level Y+1 (low, at the levers' outputs; they climb
-  into the adder at the end), from b's levers to its b0 to b3 at level Y+7 (over a's), and from the adder's s0 to s4 to
-  the number's n0 to n4;
-- then test 9 + 7, 15 + 15 and 0 + 0, each with show. Build it a plinth, labels, a roof: make it look like a
-  calculator.
+a smaller size, build nothing and say so in finish. It takes x -27 to 26, z 0 to 123 and 12 high. Build it like this:
+1. Level the site first: terraform that footprint to y 0, so nothing stands in a wire's way.
+2. Place, all facing forward on the level ground: the adder (bits 4) at (-27, 1, 20); lever row a (bits 4, label a)
+   at (-23, 1, 6); lever row b (bits 4, label b) at (-9, 1, 0), in front of it and to its right; the number (bits 5)
+   at (-25, 1, 52), its inputs n0 to n4 along its front and its two faces in its middle.
+3. Wire three rows: from a's levers to the adder's a0 to a3 at level 2 (low, at the levers' outputs: they climb into
+   the adder at the end), from b's levers to its b0 to b3 at level 8 (over a's), and from the adder's s0 to s4 to the
+   number's n0 to n4.
+4. Decorate it if you like (labels, a path, a roof high over it), keeping a block clear of every gadget's box and
+   every wire.
+5. Then test, in two calls (each sum takes up to about 170 ticks to show, and a call waits 400 at most): 9 + 7 and
+   15 + 15, then 0 + 0, each with show. After any change near the machine, test it again.
 
 # What makes a build good
 

@@ -27,6 +27,14 @@ public class RecordingSink implements BuildSink {
 		gadgets.add(use);
 	}
 
+	/** Each gadget cleared away, as the session will forget it. */
+	public final List<io.palmisano.aibuilder.core.gadgets.GadgetUse> gone = new CopyOnWriteArrayList<>();
+
+	@Override
+	public void gadgetGone(io.palmisano.aibuilder.core.gadgets.GadgetUse use) {
+		gone.add(use);
+	}
+
 	@Override
 	public boolean capReached() {
 		return capReached;

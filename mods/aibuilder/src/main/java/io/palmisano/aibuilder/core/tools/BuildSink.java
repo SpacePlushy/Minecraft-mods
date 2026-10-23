@@ -31,5 +31,9 @@ public interface BuildSink {
 	default void gadget(io.palmisano.aibuilder.core.gadgets.GadgetUse use) {
 	}
 
+	/** A gadget of the session cleared away (its whole box), for its session to forget. */
+	default void gadgetGone(io.palmisano.aibuilder.core.gadgets.GadgetUse use) {
+	}
+
 	void finish(String summary);
 }

@@ -14,8 +14,8 @@ import io.palmisano.aibuilder.core.shapes.LocalBlock;
  * A ripple-carry adder (spec v2 §5.3): a full-adder logic array a bit, side by side {@value #PITCH} apart, each with
  * inputs c, a and b. A cell's carry leaves through its front and hops up a dust staircase, in the row in front of the
  * cells, into the next cell's c; the last cell's carry leaves through the back as the top bit of the sum. Inputs a0…,
- * b0… and the carry in c0 enter at gy 5, a block out from the cells, through one dust into each cell's buffer; the
- * sum s0…s{bits} leaves at the back, gy 1. Pure.
+ * b0… and the carry in c0 enter at gy 5, a block out from the cells, through a buffer repeater into each cell's own, as
+ * every port has one (a wire may arrive at strength 1); the sum s0…s{bits} leaves at the back, gy 1. Pure.
  */
 final class Adder {
 	static final int PITCH = 14;
@@ -66,15 +66,15 @@ final class Adder {
 		ports.addAll(bs);
 		ports.add(carryIn);
 		ports.addAll(sums);
-		// Each cell waits on the carry from the one before.
-		int settle = bits * cell.settleTicks() + 4;
+		// Each cell waits on the carry from the one before; the inputs' buffers add a step.
+		int settle = bits * cell.settleTicks() + 6;
 		return new Gadget("adder", new Pos(PITCH * (bits - 1) + cell.size().x(), 6, depth), blocks, ports, Map.of(), settle);
 	}
 
-	/** An input at gy 5 a block in front of the cells: the port there, one dust (on stone) between it and the cell's buffer. */
+	/** An input at gy 5 a block in front of the cells: the port there, a buffer repeater (on stone) between it and the cell's. */
 	private static Port input(List<LocalBlock> blocks, String name, int x, String what) {
 		blocks.add(new LocalBlock(new Pos(x, 4, 0), BlockSpec.of("stone")));
-		blocks.add(new LocalBlock(new Pos(x, 5, 0), BlockSpec.of("redstone_wire")));
+		blocks.add(new LocalBlock(new Pos(x, 5, 0), Pla.repeater("forward")));
 		return new Port(name, true, new Pos(x, 5, -1), what);
 	}
 }

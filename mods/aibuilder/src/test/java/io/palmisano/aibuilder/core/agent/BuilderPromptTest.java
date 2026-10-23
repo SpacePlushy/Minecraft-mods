@@ -37,7 +37,17 @@ class BuilderPromptTest {
 		String prompt = prompt();
 		assertTrue(prompt.contains("# Gadgets"), "a gadgets section");
 		assertTrue(prompt.contains("needs the Epic size"), "the calculator's size");
-		assertTrue(prompt.contains("level Y+7"), "the second row of wires over the first");
+		assertTrue(prompt.contains("at level 8"), "the second row of wires over the first");
 		assertTrue(prompt.contains("{\"show\": true}"), "how to read the digits");
+	}
+
+	/** The recipe can be followed as it stands (M9 review): its spots given, the site levelled first, decorations before the tests, the tests split to fit. */
+	@Test
+	void theCalculatorRecipeIsSafeToFollow() throws IOException {
+		String prompt = prompt();
+		assertTrue(prompt.contains("the adder (bits 4) at (-27, 1, 20)"), "the adder's spot");
+		assertTrue(prompt.contains("Level the site first"), "the site levelled first");
+		assertTrue(prompt.indexOf("Decorate it") > 0 && prompt.indexOf("Decorate it") < prompt.indexOf("Then test"), "decorations before the tests");
+		assertTrue(prompt.contains("in two calls"), "the tests split to fit a call's 400 ticks");
 	}
 }

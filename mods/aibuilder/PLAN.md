@@ -192,4 +192,10 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   points, and refuses whole, saying where, a wire that would touch other redstone. `test_redstone` gains `show`, which
   reads each digit and number. A calculator from gadgets and wires adds in the game (9 + 7 = 16, 15 + 15 = 30).
   Found on the way: a logic array's OR taps must sit within 14 blocks of every AND tap (the digit's first slot was a
-  block too far); arrays now keep to that and can be laid in sections.
+  block too far); arrays now keep to that and can be laid in sections. The final review (a fresh Opus 5.5 reviewer)
+  found five things to fix, each fixed test-first: the adder's inputs had a dust where every other port has a buffer
+  repeater, so a wire arriving at strength 1 went unseen; `place_gadget` now refuses a box over or beside the build's
+  redstone; clearing a gadget's whole box forgets it, so it can go elsewhere; `wire` refuses redstone beside a block
+  next to its dust (a lever's post powers the dust beside it); the calculator recipe gives its spots, levels the site
+  first, decorates before testing and tests in two calls. Its minors are deferred in the ledger,
+  `docs/superpowers/plans/2026-10-22-aibuilder-m9-progress.md`.

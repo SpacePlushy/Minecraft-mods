@@ -14,9 +14,9 @@ import io.palmisano.aibuilder.core.shapes.Box;
 
 /**
  * What a wire may touch (spec v2 §5.4), so nothing of it joins or sets off anything but its two ports: its dust goes
- * only into free spots, on ground or on stone it places, with nothing redstone beside it (but the ports' buffers) or
- * beside what it stands on, no other dust a step from it, and room for its climbs. Under what it stands on is fine:
- * that's going over another wire. Pure.
+ * only into free spots, on ground or on stone it places, with nothing redstone beside it (but the ports' buffers),
+ * beside what it stands on or beside a block next to it (which that redstone might power), no other dust a step from
+ * it, and room for its climbs. Under what it stands on is fine: that's going over another wire. Pure.
  */
 public final class WireRules {
 	/** A wire refused: {@code code} for Claude (out_of_bounds, protected, blocked, touches_redstone, bad_argument), and where. */
@@ -45,7 +45,10 @@ public final class WireRules {
 			Pos under = below(s);
 			out.add(s);
 			out.add(under);
-			out.addAll(beside(s));
+			for (Pos n : beside(s)) {
+				out.add(n);
+				out.addAll(beside(n));
+			}
 			out.addAll(beside(under));
 			out.addAll(steps(s));
 		}
@@ -119,6 +122,18 @@ public final class WireRules {
 				Cell c = cell(cells, n);
 				if (!ours.contains(n) && !exempt.contains(n) && (c == Cell.DUST || c == Cell.COMPONENT)) {
 					throw new Refused("touches_redstone", spot(n) + " is " + name(c) + ", beside the wire at " + spot(s) + APART);
+				}
+			}
+			// A block beside the dust that redstone beside it powers strongly (a lever on it, a torch under it, a repeater into
+			// it) powers the dust too (M9 review).
+			for (Pos n : beside(s)) {
+				if (ours.contains(n) || cell(cells, n) != Cell.SOLID) {
+					continue;
+				}
+				for (Pos m : beside(n)) {
+					if (!ours.contains(m) && !exempt.contains(m) && cell(cells, m) == Cell.COMPONENT) {
+						throw new Refused("touches_redstone", spot(m) + " is redstone, beside the block at " + spot(n) + " next to the wire at " + spot(s) + APART);
+					}
 				}
 			}
 			Pos under = below(s);

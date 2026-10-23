@@ -188,8 +188,8 @@ public class FakeClaude {
 						+ "[-11,6,51]]}");
 				call("checkpoint", "{\"phase\":\"wires\"}");
 				call("test_redstone", "{\"steps\":[{\"set\":[-23,2,7],\"on\":true},{\"set\":[-11,2,7],\"on\":true},{\"set\":[-9,2,1],\"on\":true},"
-						+ "{\"set\":[-5,2,1],\"on\":true},{\"set\":[-1,2,1],\"on\":true},{\"wait\":166},{\"show\":true},{\"set\":[-19,2,7],\"on\":true},"
-						+ "{\"set\":[-15,2,7],\"on\":true},{\"set\":[3,2,1],\"on\":true},{\"wait\":166},{\"show\":true}]}");
+						+ "{\"set\":[-5,2,1],\"on\":true},{\"set\":[-1,2,1],\"on\":true},{\"wait\":168},{\"show\":true},{\"set\":[-19,2,7],\"on\":true},"
+						+ "{\"set\":[-15,2,7],\"on\":true},{\"set\":[3,2,1],\"on\":true},{\"wait\":168},{\"show\":true}]}");
 				call("finish", "{\"summary\":\"A calculator: 9 + 7 shows 16 and 15 + 15 shows 30.\"}");
 				result(false, "success", "Built a calculator.", "completed", 0);
 			}

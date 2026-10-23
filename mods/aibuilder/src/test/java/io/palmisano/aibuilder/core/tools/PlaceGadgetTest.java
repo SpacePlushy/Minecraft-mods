@@ -154,4 +154,41 @@ class PlaceGadgetTest {
 				&& refused.text().contains("nothing was placed"), refused.text());
 		assertEquals(before, sink.queuedCount());
 	}
+
+	/** A gadget would erase the build's redstone in its box and join any beside it: refused whole, saying where (M9 review). */
+	@Test
+	void aGadgetOverOrBesideRedstoneIsRefusedWhole() {
+		ToolExecutor tools = briefed();
+		String row = "{\"kind\":\"lamp_row\",\"at\":[0,0,2],\"options\":{\"bits\":1}}";
+		world.cells.put(new Pos(0, 1, 3), io.palmisano.aibuilder.core.wire.Cell.DUST);
+		ToolResult over = tools.call("place_gadget", json(row));
+		assertTrue(over.isError() && over.text().startsWith("touches_redstone: (0, 1, 3) is dust, inside where a row of 1 lamp would go")
+				&& over.text().contains("nothing was placed"), over.text());
+		world.cells.clear();
+		world.cells.put(new Pos(1, 1, 2), io.palmisano.aibuilder.core.wire.Cell.COMPONENT);
+		ToolResult beside = tools.call("place_gadget", json(row));
+		assertTrue(beside.isError() && beside.text().startsWith("touches_redstone: (1, 1, 2) is redstone, beside where a row of 1 lamp would go"),
+				beside.text());
+		assertEquals(0, sink.queuedCount());
+		assertTrue(sink.gadgets.isEmpty());
+		world.cells.clear();
+		assertFalse(tools.call("place_gadget", json(row)).isError());
+	}
+
+	/** Clearing a gadget's whole box takes it out of the session, so one may go there again; a part cleared doesn't (M9 review). */
+	@Test
+	void clearingAGadgetsBoxLetsItBePlacedAgain() {
+		ToolExecutor tools = briefed();
+		assertFalse(tools.call("place_gadget", json("{\"kind\":\"lamp_row\",\"at\":[0,0,2],\"options\":{\"bits\":1}}")).isError());
+		String next = "{\"kind\":\"lamp_row\",\"at\":[1,0,2],\"options\":{\"bits\":1}}";
+		assertTrue(tools.call("place_gadget", json(next)).text().startsWith("too_close:"));
+		assertFalse(tools.call("clear", json("{\"box\":[0,1,3,0,1,3]}")).isError());
+		assertTrue(sink.gone.isEmpty(), "a lamp taken out leaves the gadget");
+		assertTrue(tools.call("place_gadget", json(next)).text().startsWith("too_close:"));
+		ToolResult cleared = tools.call("clear", json("{\"box\":[-1,0,1,0,1,3]}"));
+		assertFalse(cleared.isError(), cleared.text());
+		assertEquals(1, sink.gone.size());
+		assertTrue(cleared.text().contains("a row of 1 lamp at (0, 0, 2) is gone"), cleared.text());
+		assertFalse(tools.call("place_gadget", json(next)).isError());
+	}
 }

@@ -5,12 +5,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.palmisano.aibuilder.core.blocks.BlockEntityData;
+import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.core.shapes.LocalBlock;
 import org.junit.jupiter.api.Test;
 
@@ -137,5 +140,42 @@ class GadgetsTest {
 		assertEquals(one.size().x() + 3 * 14, four.size().x(), "cells 14 apart");
 		assertTrue(four.settleTicks() > one.settleTicks(), "the carry ripples through every cell");
 		assertEquals("an adder (4 bits)", Gadgets.describe("adder", options("{\"bits\": 4}")));
+	}
+
+	/**
+	 * Every port of every kind, at its smallest and largest options, has a repeater one step inside it taking the signal
+	 * in from the port or giving it out to it, as a wire may arrive at strength 1 (M9 review: the adder's inputs had a dust
+	 * there, which a weak wire leaves at 0).
+	 */
+	@Test
+	void everyPortHasABufferRepeaterInside() {
+		String[][] kinds = {{"lever_row", "{\"bits\": 1}"}, {"lever_row", "{\"bits\": 8}"}, {"lamp_row", "{\"bits\": 1}"}, {"lamp_row", "{\"bits\": 8}"},
+				{"adder", "{\"bits\": 1}"}, {"adder", "{\"bits\": 4}"}, {"digit", "{}"}, {"number", "{\"bits\": 2}"}, {"number", "{\"bits\": 5}"},
+				{"clock", "{\"period\": 12}"}, {"clock", "{\"period\": 64}"}, {"pulse", "{\"length\": 2}"}, {"pulse", "{\"length\": 8}"}, {"toggle", "{}"},
+				{"latch", "{\"bits\": 1}"}, {"latch", "{\"bits\": 8}"}, {"counter", "{\"bits\": 1}"}, {"counter", "{\"bits\": 8}"}, {"piston_door", "{}"}};
+		String[] words = {"right", "left", "forward", "back"};
+		int[][] steps = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+		for (String[] kind : kinds) {
+			Gadget gadget = Gadgets.make(kind[0], options(kind[1]));
+			Map<Pos, LocalBlock> at = new HashMap<>();
+			gadget.blocks().forEach(b -> at.put(b.pos(), b));
+			for (Port port : gadget.ports()) {
+				String what = kind[0] + " " + kind[1] + ", " + port.name();
+				int found = -1;
+				for (int d = 0; d < 4; d++) {
+					Pos in = new Pos(port.at().x() + steps[d][0], port.at().y(), port.at().z() + steps[d][1]);
+					if (in.x() >= 0 && in.x() < gadget.size().x() && in.y() >= 0 && in.y() < gadget.size().y() && in.z() >= 0 && in.z() < gadget.size().z()) {
+						found = d;
+					}
+				}
+				assertTrue(found >= 0, what + ": no block inside it");
+				LocalBlock buffer = at.get(new Pos(port.at().x() + steps[found][0], port.at().y(), port.at().z() + steps[found][1]));
+				assertTrue(buffer != null && buffer.block().id().equals("repeater"), what + ": inside it is " + buffer);
+				// A repeater's facing names its input side: an input's faces back at the port, an output's on into the gadget.
+				String into = words[found];
+				String back = words[found ^ 1];
+				assertEquals(port.input() ? back : into, buffer.block().state().get("facing"), what + ": its buffer's facing");
+			}
+		}
 	}
 }

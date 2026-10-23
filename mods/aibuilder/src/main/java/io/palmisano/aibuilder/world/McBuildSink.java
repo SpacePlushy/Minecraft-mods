@@ -26,6 +26,8 @@ public final class McBuildSink implements BuildSink {
 	private final Consumer<MovingPart> onAnimate;
 	/** The gadgets placed, in order; written by the backend's thread, read when the build ends. */
 	private final List<GadgetUse> gadgets = new CopyOnWriteArrayList<>();
+	/** The earlier builds' gadgets this build cleared away, for the session to forget; the same threads. */
+	private final List<GadgetUse> gone = new CopyOnWriteArrayList<>();
 	/** Written by the backend's thread, read by the status line. */
 	private volatile PhaseProgress phases = PhaseProgress.of(List.of());
 
@@ -110,5 +112,18 @@ public final class McBuildSink implements BuildSink {
 	/** The gadgets this build placed. */
 	public List<GadgetUse> gadgets() {
 		return List.copyOf(gadgets);
+	}
+
+	/** A gadget cleared away: this build's is no longer one it placed; an earlier build's goes on the list. */
+	@Override
+	public void gadgetGone(GadgetUse use) {
+		if (!gadgets.remove(use)) {
+			gone.add(use);
+		}
+	}
+
+	/** The earlier builds' gadgets this build cleared away. */
+	public List<GadgetUse> gone() {
+		return List.copyOf(gone);
 	}
 }
