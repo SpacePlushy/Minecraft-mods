@@ -821,6 +821,7 @@ public final class BuildManager {
 			if (refines != null) {
 				tools.refining(refines.title().isBlank() ? Messages.untitledBuild() : refines.title(), refines.changed());
 				tools.refiningParts(moving.earlierParts());
+				tools.refiningGadgets(refines.gadgets(), refines.builds() + 1);
 			}
 			if (logging != null) {
 				logging.log().request(playerPrompt, request.size().label(), refines != null, refines == null ? "" : refines.title(), cfg.model(),
@@ -936,7 +937,7 @@ public final class BuildManager {
 			String movingBuild = moving.inStore() ? moving.key().id().toString() : refines != null ? refines.movingBuild() : "";
 			sessions.put(owner, (refines != null ? refines.refined(playerPrompt, changes == null ? refines.changed() : changes, session, title)
 					: new BuildSession(level.dimension().identifier().toString(), title, frame.origin(), frame.facing(), request.size(), changes,
-							session, List.of(playerPrompt), 1, false, "")).withMovingBuild(movingBuild));
+							session, List.of(playerPrompt), 1, false, "")).withMovingBuild(movingBuild).withGadgets(sink.gadgets()));
 		}
 
 		/** What this build changed (its frames and displays included), as a local box; null when it changed no position. */

@@ -18,7 +18,7 @@ class GadgetPlacementTest {
 			List.of(new LocalBlock(new Pos(0, 0, 0), new BlockSpec("repeater", Map.of("facing", "back"))),
 					new LocalBlock(new Pos(2, 0, 1), new BlockSpec("oak_log", Map.of("axis", "x"))),
 					new LocalBlock(new Pos(1, 0, 1), new BlockSpec("observer", Map.of("facing", "up")))),
-			List.of(new Port("in", true, new Pos(0, 0, -1), "a signal")), 2);
+			List.of(new Port("in", true, new Pos(0, 0, -1), "a signal")), Map.of("lever", new Pos(1, 0, 0)), 2);
 
 	private static GadgetPlacement.Placed at(String facing) {
 		return GadgetPlacement.place(SMALL, new Pos(10, 0, 20), facing);
@@ -40,6 +40,7 @@ class GadgetPlacementTest {
 				new LocalBlock(new Pos(11, 0, 19), new BlockSpec("observer", Map.of("facing", "up")))), right.blocks());
 		assertEquals(new Pos(9, 0, 20), right.ports().getFirst().at());
 		assertEquals(Box.of(10, 0, 18, 11, 0, 20), right.box());
+		assertEquals(Map.of("lever", new Pos(10, 0, 19)), right.marks());
 
 		GadgetPlacement.Placed back = at("back");
 		assertEquals(new LocalBlock(new Pos(10, 0, 20), new BlockSpec("repeater", Map.of("facing", "forward"))), back.blocks().getFirst());

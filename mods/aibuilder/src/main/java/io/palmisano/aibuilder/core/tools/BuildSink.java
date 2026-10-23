@@ -27,5 +27,9 @@ public interface BuildSink {
 	/** A moving part's motion, as animate gave it (replacing any it had). */
 	void animate(MovingPart part);
 
+	/** A gadget the build placed (spec v2 §5.3), for its session to keep. */
+	default void gadget(io.palmisano.aibuilder.core.gadgets.GadgetUse use) {
+	}
+
 	void finish(String summary);
 }

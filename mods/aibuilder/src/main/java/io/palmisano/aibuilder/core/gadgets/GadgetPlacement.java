@@ -17,8 +17,8 @@ import io.palmisano.aibuilder.core.shapes.LocalBlock;
  * turning with it. Pure.
  */
 public final class GadgetPlacement {
-	/** The gadget's blocks and ports in the build's frame, and the box it fills. */
-	public record Placed(List<LocalBlock> blocks, List<Port> ports, Box box) {
+	/** The gadget's blocks, ports and named spots in the build's frame, and the box it fills. */
+	public record Placed(List<LocalBlock> blocks, List<Port> ports, Map<String, Pos> marks, Box box) {
 	}
 
 	/** Relative directions round the compass, clockwise seen from above: a turn moves each word on by its own steps. */
@@ -40,10 +40,12 @@ public final class GadgetPlacement {
 		for (Port port : gadget.ports()) {
 			ports.add(new Port(port.name(), port.input(), move(at, port.at(), turn), port.what()));
 		}
+		Map<String, Pos> marks = new LinkedHashMap<>();
+		gadget.marks().forEach((name, p) -> marks.put(name, move(at, p, turn)));
 		Pos size = gadget.size();
 		Pos a = move(at, new Pos(0, 0, 0), turn);
 		Pos b = move(at, new Pos(Math.max(0, size.x() - 1), Math.max(0, size.y() - 1), Math.max(0, size.z() - 1)), turn);
-		return new Placed(blocks, ports, Box.of(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()));
+		return new Placed(blocks, ports, marks, Box.of(a.x(), a.y(), a.z(), b.x(), b.y(), b.z()));
 	}
 
 	/** Where the gadget's {@code p} lands: its forward goes the way it faces, its right a quarter turn clockwise from that. */

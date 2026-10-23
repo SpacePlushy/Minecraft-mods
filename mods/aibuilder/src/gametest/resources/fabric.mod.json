@@ -22,7 +22,8 @@
 			"io.palmisano.aibuilder.test.RefinementGameTest",
 			"io.palmisano.aibuilder.test.MovingBuildGameTest",
 			"io.palmisano.aibuilder.test.MachineGameTest",
-			"io.palmisano.aibuilder.test.PlaGameTest"
+			"io.palmisano.aibuilder.test.PlaGameTest",
+			"io.palmisano.aibuilder.test.GadgetGameTest"
 		],
 		"fabric-client-gametest": [
 			"io.palmisano.aibuilder.test.SmokeClientGameTest",

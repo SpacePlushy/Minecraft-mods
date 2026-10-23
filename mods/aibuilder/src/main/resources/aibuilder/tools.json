@@ -389,6 +389,20 @@
 		}
 	},
 	{
+		"name": "place_gadget",
+		"description": "Place a ready-made, tested redstone part (a gadget) and join its ports with wire. Kinds and options: lever_row {bits 1-8 (default 4), label (a short lowercase word, default in)}: levers on posts, a sign on each saying the row and what the bit is worth, an output behind each; lamp_row {bits}: an input before each lamp; adder {bits 1-8}: adds a and b, inputs a0…, b0… and the carry in c0 on its front, the sum s0…s<bits> out its back. at: the gadget's front-left-bottom block; facing: the way its outputs run (forward, right, back or left; default forward); its inputs are on the opposite side, its front. It's placed whole or not at all: its box must be inside the allowed box, hold nothing player-made, and keep a block from every other gadget; it clears its box first. The answer gives its box, each port's spot (a wire's end dust goes there), the spots to test (its levers, its lamps) and how many ticks it takes to settle after an input changes; wait at least that long in test_redstone.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"kind": {"type": "string", "enum": ["lever_row", "lamp_row", "adder"]},
+				"at": {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3},
+				"facing": {"type": "string", "enum": ["forward", "right", "back", "left"]},
+				"options": {"type": "object"}
+			},
+			"required": ["kind", "at"]
+		}
+	},
+	{
 		"name": "finish",
 		"description": "End the build. The summary is shown to the player.",
 		"input_schema": {

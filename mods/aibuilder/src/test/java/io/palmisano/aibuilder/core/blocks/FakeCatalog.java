@@ -25,6 +25,15 @@ public final class FakeCatalog implements BlockCatalog {
 		c.add("minecraft:bedrock", Map.of(), true, PlacementPass.STRUCTURE, false);
 		c.add("minecraft:tnt", Map.of("unstable", BOOL), false, PlacementPass.STRUCTURE, true);
 		c.add("minecraft:oak_log", Map.of("axis", List.of("x", "y", "z")), false, PlacementPass.STRUCTURE, true);
+		c.add("minecraft:redstone_wire", ordered("power", List.of("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15")),
+				false, PlacementPass.ATTACHED, false);
+		c.add("minecraft:repeater", ordered("facing", FOUR_WAYS, "delay", List.of("1", "2", "3", "4"), "locked", BOOL, "powered", BOOL), false,
+				PlacementPass.ATTACHED, false);
+		c.add("minecraft:redstone_wall_torch", ordered("facing", FOUR_WAYS, "lit", BOOL), false, PlacementPass.ATTACHED, false);
+		c.add("minecraft:redstone_lamp", ordered("lit", BOOL), false, PlacementPass.STRUCTURE, false);
+		c.add("minecraft:lever", ordered("face", List.of("floor", "wall", "ceiling"), "facing", FOUR_WAYS, "powered", BOOL), false,
+				PlacementPass.ATTACHED, false);
+		c.add("minecraft:oak_wall_sign", ordered("facing", FOUR_WAYS, "waterlogged", BOOL), false, PlacementPass.ATTACHED, true);
 		c.add("minecraft:oak_stairs", ordered(
 				"facing", FOUR_WAYS,
 				"half", List.of("top", "bottom"),

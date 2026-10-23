@@ -1,11 +1,13 @@
 package io.palmisano.aibuilder.world;
 
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
+import io.palmisano.aibuilder.core.gadgets.GadgetUse;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.anim.MovingPart;
 import io.palmisano.aibuilder.core.place.Placement;
@@ -22,6 +24,8 @@ public final class McBuildSink implements BuildSink {
 	private final Consumer<Brief> onBrief;
 	private final Consumer<String> onFinish;
 	private final Consumer<MovingPart> onAnimate;
+	/** The gadgets placed, in order; written by the backend's thread, read when the build ends. */
+	private final List<GadgetUse> gadgets = new CopyOnWriteArrayList<>();
 	/** Written by the backend's thread, read by the status line. */
 	private volatile PhaseProgress phases = PhaseProgress.of(List.of());
 
@@ -96,5 +100,15 @@ public final class McBuildSink implements BuildSink {
 	@Override
 	public void finish(String summary) {
 		onFinish.accept(summary);
+	}
+
+	@Override
+	public void gadget(GadgetUse use) {
+		gadgets.add(use);
+	}
+
+	/** The gadgets this build placed. */
+	public List<GadgetUse> gadgets() {
+		return List.copyOf(gadgets);
 	}
 }

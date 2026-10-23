@@ -143,7 +143,7 @@ public final class Pla {
 		blocks.forEach((pos, spec) -> out.add(new LocalBlock(pos, spec)));
 		// In: the buffer, the inverter, the line's repeaters; then the AND and OR torches; out: the line's repeaters and the buffer.
 		int settle = STEP * (1 + longestIn + 2 + longestOut + 1) + 2 * STEP;
-		return new Gadget(layout.kind(), new Pos(width, 6, depth), out, ports, settle);
+		return new Gadget(layout.kind(), new Pos(width, 6, depth), out, ports, Map.of(), settle);
 	}
 
 	/** Dust along gz at ({@code x}, 5) from {@code from} to {@code to}, on stone, with repeaters where {@code allowed}; how many. */

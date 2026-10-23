@@ -1,6 +1,7 @@
 package io.palmisano.aibuilder.core.tools;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -12,6 +13,11 @@ import java.util.Set;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.palmisano.aibuilder.core.gadgets.Gadget;
+import io.palmisano.aibuilder.core.gadgets.GadgetPlacement;
+import io.palmisano.aibuilder.core.gadgets.GadgetUse;
+import io.palmisano.aibuilder.core.gadgets.Gadgets;
+import io.palmisano.aibuilder.core.gadgets.Port;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.anim.Motion;
 import io.palmisano.aibuilder.core.anim.MotionCheck;
@@ -56,7 +62,7 @@ import io.palmisano.aibuilder.core.survey.TerrainSnapshot;
 public final class ToolExecutor {
 	private static final Set<String> TOOLS = Set.of("get_context", "survey_area", "inspect_region", "search_blocks", "submit_brief",
 			"set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof", "staircase", "clear", "terraform",
-			"place_block_entity", "checkpoint", "check_build", "animate", "check_motion", "test_redstone", "finish");
+			"place_block_entity", "checkpoint", "check_build", "animate", "check_motion", "test_redstone", "place_gadget", "finish");
 	/** The write tools that can make a moving part (spec v2 §4.1), and clear, which takes a part's blocks out. */
 	private static final Set<String> MOVABLE = Set.of("set_blocks", "fill", "line", "wall", "cylinder", "sphere", "cone", "arch", "roof",
 			"staircase", "clear");
@@ -78,6 +84,11 @@ public final class ToolExecutor {
 	private final long maxChangedBlocks;
 	private final BuildSink sink;
 	private final Budget budget;
+	/** The gadgets this build placed (spec v2 §5.3), and the session's earlier builds' ones. Guarded by the executor. */
+	private final List<GadgetUse> gadgets = new ArrayList<>();
+	private final List<GadgetUse> earlierGadgets = new ArrayList<>();
+	/** Which of its session's builds this is: 1 for a new build. */
+	private int build = 1;
 	private final WorldReader world;
 	private ProtectionMask protection;
 	private FireRule fire;
@@ -134,6 +145,15 @@ public final class ToolExecutor {
 	 * A refinement's earlier moving parts (spec v2 §4.4): get_context lists them, animate may give one another motion,
 	 * and a write naming one adds to it (its blocks count against max_moving_blocks).
 	 */
+	/**
+	 * A refinement's session: the gadgets its earlier builds placed (a new one keeps a block from them), and which of the
+	 * session's builds this one is (the gadgets it places are kept as that build's).
+	 */
+	public synchronized void refiningGadgets(List<GadgetUse> earlier, int build) {
+		earlierGadgets.addAll(earlier);
+		this.build = build;
+	}
+
 	public synchronized void refiningParts(Map<String, PartInfo> earlier) {
 		earlier.forEach((name, info) -> {
 			PartState state = parts.computeIfAbsent(name, n -> new PartState());
@@ -482,6 +502,9 @@ public final class ToolExecutor {
 		if (name.equals("animate")) {
 			return animate(a);
 		}
+		if (name.equals("place_gadget")) {
+			return placeGadget(a);
+		}
 		String part = a.has("part") ? partName(a.string("part")) : "";
 		if (!part.isEmpty() && !MOVABLE.contains(name)) {
 			return ToolResult.error(RejectReason.BAD_ARGUMENT.wireName() + ": " + name + " can't make a moving part");
@@ -525,6 +548,90 @@ public final class ToolExecutor {
 			default -> throw new IllegalStateException(name);
 		};
 		return queue(blocks, false, name.equals("clear") && a.optBool("include_protected", false), part);
+	}
+
+	/**
+	 * Places a gadget from the library (spec v2 §5.3), whole or not at all: its box must be inside the allowed box, hold
+	 * nothing player-made or unbreakable, and keep a block from every other gadget of the session (their redstone mustn't
+	 * touch); its ports' spots must be inside the box too. It writes its blocks and air in the rest of its box (what
+	 * stood there could touch its redstone), through the queue as any write.
+	 */
+	private ToolResult placeGadget(Args a) {
+		String kind = a.string("kind");
+		Pos at = a.pos("at");
+		String facing = a.optString("facing", "forward");
+		JsonObject options = a.has("options") ? a.object("options") : new JsonObject();
+		Gadget gadget = Gadgets.make(kind, options);
+		GadgetPlacement.Placed placed = GadgetPlacement.place(gadget, at, facing);
+		Box box = placed.box();
+		String what = Gadgets.describe(kind, options);
+		if (!allowed.contains(box.min()) || !allowed.contains(box.max())) {
+			return ToolResult.error(RejectReason.OUT_OF_BOUNDS.wireName() + ": " + what + " there would fill " + describe(box) + ", past the allowed box "
+					+ describe(allowed) + "; nothing was placed");
+		}
+		for (Port port : placed.ports()) {
+			if (!allowed.contains(port.at())) {
+				return ToolResult.error(RejectReason.OUT_OF_BOUNDS.wireName() + ": " + what + "'s port " + port.name() + " would be at " + spot(port.at())
+						+ ", past the allowed box " + describe(allowed) + ", where no wire can reach it; nothing was placed");
+			}
+		}
+		List<GadgetUse> others = new ArrayList<>(earlierGadgets);
+		others.addAll(gadgets);
+		for (GadgetUse other : others) {
+			Box near = other.placed().box();
+			if (box.max().x() >= near.min().x() - 1 && box.min().x() <= near.max().x() + 1 && box.max().y() >= near.min().y() - 1
+					&& box.min().y() <= near.max().y() + 1 && box.max().z() >= near.min().z() - 1 && box.min().z() <= near.max().z() + 1) {
+				return ToolResult.error("too_close: " + what + " there would fill " + describe(box) + ", touching the " + other.kind() + " at "
+						+ describe(near) + ": leave a block between gadgets (their redstone mustn't touch); nothing was placed");
+			}
+		}
+		ProtectionMask mask = protection();
+		Set<Pos> filled = new HashSet<>();
+		placed.blocks().forEach(b -> filled.add(b.pos()));
+		List<LocalBlock> blocks = new ArrayList<>(placed.blocks());
+		for (int x = box.min().x(); x <= box.max().x(); x++) {
+			for (int y = box.min().y(); y <= box.max().y(); y++) {
+				for (int z = box.min().z(); z <= box.max().z(); z++) {
+					Pos p = new Pos(x, y, z);
+					if (mask.isProtected(p) || mask.isUnbreakable(p)) {
+						return ToolResult.error(RejectReason.PROTECTED.wireName() + ": something player-made (or unbreakable) is at " + spot(p) + ", inside where "
+								+ what + " would go; place it elsewhere; nothing was placed");
+					}
+					if (!filled.contains(p)) {
+						blocks.add(new LocalBlock(p, AIR));
+					}
+				}
+			}
+		}
+		ToolResult queued = queue(blocks, false, false, "");
+		if (queued.isError()) {
+			return queued;
+		}
+		GadgetUse use = new GadgetUse(kind, options.toString(), at, facing.toLowerCase(Locale.ROOT), build);
+		gadgets.add(use);
+		sink.gadget(use);
+		StringBuilder answer = new StringBuilder("Placed ").append(what).append(" facing ").append(use.facing()).append(", its front-left-bottom block at ")
+				.append(spot(at)).append(": it fills ").append(describe(box)).append(", ").append(String.format(Locale.ROOT, "%,d", placed.blocks().size()))
+				.append(" blocks.");
+		List<String> in = placed.ports().stream().filter(Port::input).map(p -> p.name() + " " + spot(p.at())).toList();
+		List<String> out = placed.ports().stream().filter(p -> !p.input()).map(p -> p.name() + " " + spot(p.at())).toList();
+		if (!in.isEmpty()) {
+			answer.append("\nInputs (a wire's last dust goes on the spot): ").append(String.join(", ", in)).append('.');
+		}
+		if (!out.isEmpty()) {
+			answer.append("\nOutputs (a wire's first dust goes on the spot): ").append(String.join(", ", out)).append('.');
+		}
+		if (!placed.marks().isEmpty()) {
+			List<String> marks = new ArrayList<>();
+			placed.marks().forEach((name, p) -> marks.add(name + " " + spot(p)));
+			answer.append("\nTo test it: ").append(String.join(", ", marks)).append('.');
+		}
+		answer.append("\nIt settles within ").append(gadget.settleTicks()).append(" ticks of a change at its inputs.");
+		return ToolResult.ok(answer.toString());
+	}
+
+	private static String spot(Pos p) {
+		return "(" + p.x() + ", " + p.y() + ", " + p.z() + ")";
 	}
 
 	/** A part's name: a short word, as Claude will use it again in animate and in later builds. */
