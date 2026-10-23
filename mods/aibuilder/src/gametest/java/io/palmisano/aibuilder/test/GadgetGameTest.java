@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.test;
 
 import static io.palmisano.aibuilder.test.GadgetRig.GADGETS;
 import static io.palmisano.aibuilder.test.GadgetRig.GADGETS_BIG;
+import static io.palmisano.aibuilder.test.GadgetRig.GADGETS_HUGE;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -324,5 +325,22 @@ public class GadgetGameTest {
 				helper.assertValueEqual(state.isAir(), open, GadgetRig.FACINGS.get(i / 2) + ", " + when + ", " + cell + " is " + state + ": empty");
 			}
 		}
+	}
+
+	/** A number of 5 bits shows samples from 0 to 31 in every facing: the tens blank under 10. */
+	@GameTest(structure = GADGETS_HUGE, maxTicks = 6000)
+	public void aNumberShowsSamples(GameTestHelper helper) {
+		GadgetRig.display(helper, GadgetRig.Space.HUGE, make("number", "{\"bits\": 5}"), false, List.of(0, 1, 9, 10, 16, 19, 25, 30, 31),
+				String::valueOf);
+	}
+
+	/** Every value 0 to 31, facing forward. */
+	@GameTest(structure = GADGETS_HUGE, maxTicks = 12000)
+	public void aNumberShowsEveryValue(GameTestHelper helper) {
+		List<Integer> all = new ArrayList<>();
+		for (int v = 0; v < 32; v++) {
+			all.add(v);
+		}
+		GadgetRig.display(helper, GadgetRig.Space.HUGE, make("number", "{\"bits\": 5}"), false, List.of("forward"), all, String::valueOf);
 	}
 }

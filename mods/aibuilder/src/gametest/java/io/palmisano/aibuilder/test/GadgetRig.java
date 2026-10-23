@@ -38,11 +38,12 @@ import net.minecraft.world.level.block.state.BlockState;
 final class GadgetRig {
 	static final String GADGETS = "aibuilder-test:gadgets";
 	static final String GADGETS_BIG = "aibuilder-test:gadgets_big";
+	static final String GADGETS_HUGE = "aibuilder-test:gadgets_huge";
 	static final List<String> FACINGS = List.of("forward", "right", "back", "left");
 
 	/** A gadgets structure: its size across and deep (square), and so its frame, allowed box and quarters. */
 	enum Space {
-		SMALL(64), BIG(128);
+		SMALL(64), BIG(128), HUGE(160);
 
 		private final int size;
 
@@ -86,10 +87,18 @@ final class GadgetRig {
 
 	/** The gadget once in each facing (and its twin a block to its right), built. */
 	static Rig build(GameTestHelper helper, Space space, Gadget gadget, boolean twin) {
+		return build(helper, space, gadget, twin, FACINGS);
+	}
+
+	/** The gadget once in each of {@code facings}, each in its facing's quarter (and its twin), built. */
+	static Rig build(GameTestHelper helper, Space space, Gadget gadget, boolean twin, List<String> facings) {
 		List<GadgetPlacement.Placed> placed = new ArrayList<>();
 		List<LocalBlock> blocks = new ArrayList<>();
 		for (int i = 0; i < FACINGS.size(); i++) {
 			String facing = FACINGS.get(i);
+			if (!facings.contains(facing)) {
+				continue;
+			}
 			Pos side = right(facing);
 			int apart = gadget.size().x() + 1;
 			List<Pos> spots = new ArrayList<>(List.of(new Pos(0, 0, 0)));
@@ -191,17 +200,26 @@ final class GadgetRig {
 
 	/** Each of {@code values} driven as for {@link #samples}; each placement's digit read off its face against {@code shown}. */
 	static void display(GameTestHelper helper, Space space, Gadget gadget, boolean twin, List<Integer> values, IntFunction<String> shown) {
-		Rig rig = build(helper, space, gadget, twin);
+		display(helper, space, gadget, twin, FACINGS, values, shown);
+	}
+
+	/** The same, in {@code facings} only; a number reads its tens and its ones. */
+	static void display(GameTestHelper helper, Space space, Gadget gadget, boolean twin, List<String> facings, List<Integer> values,
+			IntFunction<String> shown) {
+		Rig rig = build(helper, space, gadget, twin, facings);
 		GameTestSequence sequence = helper.startSequence().thenWaitUntil(() -> ArenaBuilds.assertDone(helper, rig.build()));
 		int copies = twin ? 2 : 1;
+		List<String> used = FACINGS.stream().filter(facings::contains).toList();
 		for (int value : values) {
 			sequence = sequence.thenExecute(() -> drive(rig, value)).thenIdle(gadget.settleTicks()).thenExecute(() -> {
 				for (int i = 0; i < rig.placed().size(); i++) {
-					String read = Display.read(rig.placed().get(i).marks(), p -> {
+					java.util.function.Predicate<Pos> lit = p -> {
 						BlockState lamp = rig.build().level().getBlockState(rig.build().world(p));
 						return lamp.is(Blocks.REDSTONE_LAMP) && lamp.getValue(RedstoneLampBlock.LIT);
-					});
-					helper.assertValueEqual(read, shown.apply(value), FACINGS.get(i / copies) + (i % copies == 1 ? " (the twin)" : "") + ", code " + value);
+					};
+					Map<String, Pos> marks = rig.placed().get(i).marks();
+					String read = marks.containsKey("segment a") ? Display.read(marks, lit) : Display.number(marks, lit);
+					helper.assertValueEqual(read, shown.apply(value), used.get(i / copies) + (i % copies == 1 ? " (the twin)" : "") + ", code " + value);
 				}
 			});
 		}

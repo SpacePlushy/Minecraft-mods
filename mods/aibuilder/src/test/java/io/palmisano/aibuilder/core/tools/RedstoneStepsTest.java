@@ -32,6 +32,13 @@ class RedstoneStepsTest {
 				parse("[{\"set\": [0, 2, 4], \"on\": true}, {\"press\": [1, 1, 4]}, {\"wait\": 10}, {\"read\": [[0, 1, 6], [1, 1, 6]]}]"));
 	}
 
+	/** show reads each digit and number of the build; which they are and where, test_redstone fills in. */
+	@Test
+	void showIsParsed() {
+		assertEquals(List.of(new RedstoneSteps.Wait(5), new RedstoneSteps.Show(List.of())), parse("[{\"wait\": 5}, {\"show\": true}]"));
+		assertEquals("show takes true: {\"show\": true}", refusal("[{\"show\": 3}]"));
+	}
+
 	@Test
 	void stepsAreHeldToTheirLimits() {
 		StringBuilder many = new StringBuilder("[");
@@ -46,7 +53,7 @@ class RedstoneStepsTest {
 		}
 		assertTrue(refusal(spots.append("]}]").toString()).contains("32 spots"));
 		assertTrue(refusal("[{\"set\": [0, 1, 40], \"on\": true}]").contains("allowed box"));
-		assertTrue(refusal("[{\"jump\": 3}]").contains("set, press, wait or read"));
+		assertTrue(refusal("[{\"jump\": 3}]").contains("set, press, wait, read or show"));
 		assertTrue(refusal("[{\"wait\": 0}]").contains("wait"));
 		assertTrue(refusal("[{\"set\": [0, 1, 4]}]").contains("on"));
 		assertTrue(refusal("[]").contains("at least one"));

@@ -221,6 +221,21 @@ final class RedstoneTest implements Tickable {
 					waitUntil = 0;
 					report.append("waited ").append(wait.ticks()).append(wait.ticks() == 1 ? " tick" : " ticks").append('\n');
 				}
+				case RedstoneSteps.Show show -> {
+					List<String> each = new ArrayList<>();
+					for (RedstoneSteps.Shown shown : show.displays()) {
+						java.util.function.Predicate<Pos> lit = p -> {
+							BlockState lamp = block(p);
+							return lamp.is(net.minecraft.world.level.block.Blocks.REDSTONE_LAMP)
+									&& lamp.getValue(net.minecraft.world.level.block.RedstoneLampBlock.LIT);
+						};
+						String reads = shown.what().equals("number") ? io.palmisano.aibuilder.core.gadgets.Display.number(shown.marks(), lit)
+								: io.palmisano.aibuilder.core.gadgets.Display.read(shown.marks(), lit);
+						each.add("the " + shown.what() + " at " + local(shown.at()) + " shows " + reads);
+					}
+					report.append("after ").append(level.getGameTime() - began).append(" ticks: ")
+							.append(each.isEmpty() ? "this build has no digit or number to show" : String.join("; ", each)).append('\n');
+				}
 				case RedstoneSteps.Read read -> {
 					List<String> each = new ArrayList<>();
 					for (Pos spot : read.spots()) {

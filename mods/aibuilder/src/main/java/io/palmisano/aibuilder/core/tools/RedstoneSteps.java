@@ -2,6 +2,7 @@ package io.palmisano.aibuilder.core.tools;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -17,10 +18,10 @@ import io.palmisano.aibuilder.core.shapes.Box;
  * reason Claude is told.
  */
 public final class RedstoneSteps {
-	private static final String ONE_OF = "a step is one of set, press, wait or read: {\"set\": [x, y, z], \"on\": true}, {\"press\": [x, y, z]},"
-			+ " {\"wait\": ticks} or {\"read\": [[x, y, z], …]}";
+	private static final String ONE_OF = "a step is one of set, press, wait, read or show: {\"set\": [x, y, z], \"on\": true}, {\"press\": [x, y, z]},"
+			+ " {\"wait\": ticks}, {\"read\": [[x, y, z], …]} or {\"show\": true}";
 
-	public sealed interface Step permits Set, Press, Wait, Read {
+	public sealed interface Step permits Set, Press, Wait, Read, Show {
 	}
 
 	/** Flip the build's lever at {@code lever} on or off. */
@@ -40,6 +41,17 @@ public final class RedstoneSteps {
 		public Read {
 			spots = List.copyOf(spots);
 		}
+	}
+
+	/** Say what each digit and number of the build shows; test_redstone fills in which they are. */
+	public record Show(List<Shown> displays) implements Step {
+		public Show {
+			displays = List.copyOf(displays);
+		}
+	}
+
+	/** A display to read: "digit" or "number", its front-left-bottom block, and its segments' centre lamps as placed. */
+	public record Shown(String what, Pos at, Map<String, Pos> marks) {
 	}
 
 	private RedstoneSteps() {
@@ -84,6 +96,12 @@ public final class RedstoneSteps {
 				List<Pos> read = new ArrayList<>(spots.size());
 				spots.forEach(spot -> read.add(spot(spot, allowed)));
 				parsed = new Read(read);
+			} else if (step.has("show")) {
+				JsonElement show = step.get("show");
+				if (!show.isJsonPrimitive() || !show.getAsJsonPrimitive().isBoolean() || !show.getAsBoolean()) {
+					throw new IllegalArgumentException("show takes true: {\"show\": true}");
+				}
+				parsed = new Show(List.of());
 			} else {
 				throw new IllegalArgumentException(ONE_OF);
 			}

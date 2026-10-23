@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
 import io.palmisano.aibuilder.core.blocks.FakeCatalog;
 import io.palmisano.aibuilder.core.blocks.Validator;
 import io.palmisano.aibuilder.core.frame.Facing;
@@ -110,6 +112,35 @@ class PlaceGadgetTest {
 		assertTrue(nowhere.isError() && nowhere.text().startsWith("bad_argument: to (9, 1, 9) isn't a port of a gadget this build placed"),
 				nowhere.text());
 		assertEquals(before, sink.queuedCount());
+	}
+
+	/** A show step names each digit and number of the build, the earlier builds' too, with the spots to read them by. */
+	@Test
+	void aShowStepNamesTheBuildsDisplays() {
+		ToolExecutor tools = briefed();
+		tools.refiningGadgets(List.of(new io.palmisano.aibuilder.core.gadgets.GadgetUse("number", "{\"bits\":2}", new Pos(-6, 0, 2), "forward", 1),
+				new io.palmisano.aibuilder.core.gadgets.GadgetUse("lamp_row", "{\"bits\":1}", new Pos(-6, 0, 30), "forward", 1)), 2);
+		ToolResult result = tools.call("test_redstone", json("{\"steps\":[{\"show\":true}]}"));
+		assertFalse(result.isError(), result.text());
+		RedstoneSteps.Show show = (RedstoneSteps.Show) world.tested.getLast().getFirst();
+		assertEquals(1, show.displays().size(), "a lamp row isn't a display");
+		assertEquals("number", show.displays().getFirst().what());
+		assertEquals(new Pos(-6, 0, 2), show.displays().getFirst().at());
+		assertTrue(show.displays().getFirst().marks().containsKey("ones segment a"));
+	}
+
+	/** A row given a level runs at it: its dust goes no higher. */
+	@Test
+	void aRowOfWiresRunsAtItsLevel() {
+		ToolExecutor tools = leverAndLamp();
+		int before = sink.batches.size();
+		ToolResult wired = tools.call("wire", json("{\"from\":[[0,1,5]],\"to\":[[4,1,13]],\"level\":4}"));
+		assertFalse(wired.isError(), wired.text());
+		int top = sink.batches.subList(before, sink.batches.size()).stream().flatMap(List::stream).filter(p -> p.block().info().id().contains("redstone_wire"))
+				.mapToInt(p -> p.pos().y()).max().orElseThrow();
+		assertEquals(64 + 4, top);
+		ToolResult via = tools.call("wire", json("{\"from\":[[0,1,5]],\"to\":[[4,1,13]],\"via\":[[0,3,9]],\"level\":4}"));
+		assertTrue(via.isError() && via.text().contains("level is for a row of wires"), via.text());
 	}
 
 	/** Touching other redstone, a wire is refused whole: nothing of it is queued. */

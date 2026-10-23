@@ -1,10 +1,12 @@
 package io.palmisano.aibuilder.core.gadgets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Set;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -31,7 +33,8 @@ class GadgetsTest {
 		assertRefused("adder", "{\"bits\": 2, \"speed\": 3}", "adder takes bits, not speed");
 		assertRefused("lever_row", "{\"bits\": 2, \"label\": \"Way too long\"}", "label must be 1 to 8 lowercase letters, digits or _, starting with a letter");
 		assertRefused("flux_capacitor", "{}", "there's no gadget called \"flux_capacitor\": the kinds are lever_row, lamp_row, adder, digit,"
-				+ " clock, pulse, toggle, latch, counter, piston_door");
+				+ " number, clock, pulse, toggle, latch, counter, piston_door");
+		assertRefused("number", "{\"bits\": 6}", "bits must be a whole number from 1 to 5, not 6");
 		assertRefused("clock", "{\"period\": 10}", "period must be a whole number from 12 to 64, a multiple of 4, not 10");
 		assertRefused("pulse", "{\"length\": 3}", "length must be a whole number from 2 to 8, a multiple of 2, not 3");
 		assertRefused("digit", "{\"bits\": 4}", "digit takes no options, not bits");
@@ -93,6 +96,29 @@ class GadgetsTest {
 			assertEquals(period / 4 - 1, delay - 2, "period " + period);
 			assertEquals(shortest.size(), clock.size(), "period " + period);
 		}
+	}
+
+	/** A number: its inputs n0… left to right in a row along its front, and the segments of its faces to read, tens on the left. */
+	@Test
+	void aNumberNamesItsInputsAndFaces() {
+		Gadget number = Gadgets.make("number", options("{\"bits\": 5}"));
+		List<Port> inputs = number.ports();
+		assertEquals(List.of("n0", "n1", "n2", "n3", "n4"), inputs.stream().map(Port::name).toList());
+		assertTrue(inputs.stream().allMatch(Port::input), "a number only takes signals");
+		for (int i = 1; i < inputs.size(); i++) {
+			assertTrue(inputs.get(i).at().x() > inputs.get(i - 1).at().x(), "the inputs run left to right");
+			assertEquals(inputs.getFirst().at().y(), inputs.get(i).at().y());
+			assertEquals(inputs.getFirst().at().z(), inputs.get(i).at().z());
+		}
+		for (char s : "abcdefg".toCharArray()) {
+			assertTrue(number.marks().containsKey("tens segment " + s) && number.marks().containsKey("ones segment " + s), "segment " + s);
+		}
+		assertTrue(number.marks().get("tens segment b").x() < number.marks().get("ones segment f").x(), "the tens on the left");
+		assertEquals(number.marks().get("tens segment a").z(), number.marks().get("ones segment a").z(), "the faces side by side");
+		Gadget small = Gadgets.make("number", options("{\"bits\": 3}"));
+		assertEquals(Set.of("ones segment a", "ones segment b", "ones segment c", "ones segment d", "ones segment e", "ones segment f",
+				"ones segment g"), small.marks().keySet(), "0 to 7 take one digit");
+		assertEquals("a number (5 bits)", Gadgets.describe("number", options("{}")));
 	}
 
 	/** Each lever's sign says its row and what the bit is worth. */

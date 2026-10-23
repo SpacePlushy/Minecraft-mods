@@ -486,9 +486,24 @@ public final class ToolExecutor {
 
 	/** Tries the build's machine in the world (spec v2 §5.2), once what's queued is in. */
 	private ToolResult testRedstone(Args a) {
-		List<RedstoneSteps.Step> steps = RedstoneSteps.parse(a.array("steps"), allowed);
+		List<RedstoneSteps.Shown> displays = displays();
+		List<RedstoneSteps.Step> steps = RedstoneSteps.parse(a.array("steps"), allowed).stream()
+				.map(step -> step instanceof RedstoneSteps.Show ? new RedstoneSteps.Show(displays) : step).toList();
 		ToolResult waiting = placedFirst("test_redstone");
 		return waiting != null ? waiting : ToolResult.ok(world.testRedstone(steps));
+	}
+
+	/** The session's digits and numbers (the earlier builds' here too), for a show step to read. */
+	private synchronized List<RedstoneSteps.Shown> displays() {
+		List<RedstoneSteps.Shown> out = new ArrayList<>();
+		List<GadgetUse> all = new ArrayList<>(earlierGadgets);
+		all.addAll(gadgets);
+		for (GadgetUse use : all) {
+			if (use.kind().equals("digit") || use.kind().equals("number")) {
+				out.add(new RedstoneSteps.Shown(use.kind(), use.at(), use.placed().marks()));
+			}
+		}
+		return out;
 	}
 
 	/** Waits for what's queued; null once it's all in, else the answer that blocks are still going in (half a build looks half right). */
@@ -655,6 +670,10 @@ public final class ToolExecutor {
 		List<Pos> from = a.positions("from");
 		List<Pos> to = a.positions("to");
 		List<Pos> via = a.has("via") ? a.positions("via") : List.of();
+		Integer level = a.has("level") ? a.integer("level") : null;
+		if (level != null && !via.isEmpty()) {
+			throw new IllegalArgumentException("level is for a row of wires; with via points, the points give the heights");
+		}
 		Map<Pos, End> ends;
 		ProtectionMask mask;
 		synchronized (this) {
@@ -673,9 +692,7 @@ public final class ToolExecutor {
 		}
 		List<List<Pos>> ways = new ArrayList<>();
 		if (via.isEmpty()) {
-			for (List<Pos> points : WireRows.points(from, to)) {
-				ways.add(WirePath.trace(points));
-			}
+			ways.addAll(WireRows.trace(from, to, level));
 		} else {
 			if (from.size() != 1 || to.size() != 1) {
 				throw new IllegalArgumentException("via points shape one wire: give one port in from and one in to");

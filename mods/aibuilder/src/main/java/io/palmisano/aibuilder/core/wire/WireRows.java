@@ -9,7 +9,9 @@ import io.palmisano.aibuilder.core.frame.Pos;
 
 /**
  * A row of wires (spec v2 §5.4), from a row of output ports to a row of input ports along z: each runs along z to a
- * turning row of its own, along x, then along z into its port, climbing or dropping a level a block from its start.
+ * turning row of its own, along x, then along z into its port. Between them it runs at a level (the inputs' height
+ * unless given): to it a level a block from its start, and on its last stretch to the inputs' height, so a row given a
+ * level 2 or more above another's goes over it.
  * The turning rows are 2 apart from 2 past the outputs; a wire shifting right turns before every wire to its left that
  * also does (rightmost first), and one shifting left before every one to its right, so no two cross or come within a
  * block of each other. Pure.
@@ -48,23 +50,47 @@ public final class WireRows {
 		return turns;
 	}
 
-	/** Each wire's points: its output port, where it turns onto its row and off it (climbing from the start), its input port. */
-	public static List<List<Pos>> points(List<Pos> from, List<Pos> to) {
+	/** Each wire's spots, from its output port to its input port, at {@code level} between them (null: the inputs' height). */
+	public static List<List<Pos>> trace(List<Pos> from, List<Pos> to, Integer level) {
 		List<Integer> turns = turns(from, to);
 		List<List<Pos>> out = new ArrayList<>();
 		for (int i = 0; i < from.size(); i++) {
 			Pos a = from.get(i);
 			Pos b = to.get(i);
-			if (a.x() == b.x()) {
-				out.add(List.of(a, b));
-				continue;
+			// Along z to the turning row (straight on if it doesn't shift), along x, along z.
+			int turn = a.x() == b.x() ? b.z() : turns.get(i);
+			List<int[]> plan = new ArrayList<>(List.of(new int[] {a.x(), a.z()}));
+			int x = a.x();
+			int z = a.z();
+			while (z != turn) {
+				z += Integer.signum(turn - z);
+				plan.add(new int[] {x, z});
 			}
-			int turn = turns.get(i);
-			int climb = Math.abs(b.y() - a.y());
-			int up = Integer.signum(b.y() - a.y());
-			int first = Math.abs(turn - a.z());
-			int across = Math.abs(b.x() - a.x());
-			out.add(List.of(a, new Pos(a.x(), a.y() + up * Math.min(first, climb), turn), new Pos(b.x(), a.y() + up * Math.min(first + across, climb), turn), b));
+			while (x != b.x()) {
+				x += Integer.signum(b.x() - x);
+				plan.add(new int[] {x, z});
+			}
+			while (z != b.z()) {
+				z += Integer.signum(b.z() - z);
+				plan.add(new int[] {x, z});
+			}
+			int length = plan.size() - 1;
+			if (length > Tunables.WIRE_LENGTH_MAX) {
+				throw new IllegalArgumentException("the wire from " + WirePath.spot(a) + " would be " + length + " blocks long, more than " + Tunables.WIRE_LENGTH_MAX);
+			}
+			int run = level == null ? b.y() : level;
+			int up = Math.abs(run - a.y());
+			int down = Math.abs(run - b.y());
+			if (up + down > length) {
+				throw new IllegalArgumentException("the wire from " + WirePath.spot(a) + " to " + WirePath.spot(b) + " would change height " + (up + down)
+						+ " levels (to level " + run + ", then to its input) in " + length + " blocks: a wire changes a level a block");
+			}
+			List<Pos> spots = new ArrayList<>();
+			for (int k = 0; k <= length; k++) {
+				int y = k <= up ? a.y() + Integer.signum(run - a.y()) * k : k >= length - down ? b.y() + Integer.signum(run - b.y()) * (length - k) : run;
+				spots.add(new Pos(plan.get(k)[0], y, plan.get(k)[1]));
+			}
+			out.add(spots);
 		}
 		return out;
 	}

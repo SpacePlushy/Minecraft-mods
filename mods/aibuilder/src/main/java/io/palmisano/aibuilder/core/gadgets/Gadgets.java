@@ -10,11 +10,11 @@ import com.google.gson.JsonPrimitive;
 
 /** The library place_gadget makes from (spec v2 §5.3): each kind and the options it takes. Pure. */
 public final class Gadgets {
-	public static final List<String> KINDS = List.of("lever_row", "lamp_row", "adder", "digit", "clock", "pulse", "toggle", "latch", "counter",
+	public static final List<String> KINDS = List.of("lever_row", "lamp_row", "adder", "digit", "number", "clock", "pulse", "toggle", "latch", "counter",
 			"piston_door");
 	/** The options each kind takes. */
 	private static final Map<String, Set<String>> OPTIONS = Map.ofEntries(Map.entry("lever_row", Set.of("bits", "label")),
-			Map.entry("lamp_row", Set.of("bits")), Map.entry("adder", Set.of("bits")), Map.entry("digit", Set.of()),
+			Map.entry("lamp_row", Set.of("bits")), Map.entry("adder", Set.of("bits")), Map.entry("digit", Set.of()), Map.entry("number", Set.of("bits")),
 			Map.entry("clock", Set.of("period")), Map.entry("pulse", Set.of("length")), Map.entry("toggle", Set.of()),
 			Map.entry("latch", Set.of("bits")), Map.entry("counter", Set.of("bits")), Map.entry("piston_door", Set.of()));
 
@@ -29,6 +29,7 @@ public final class Gadgets {
 			case "lamp_row" -> LampRow.make(bits(options, 4));
 			case "adder" -> Adder.make(bits(options, 4));
 			case "digit" -> Digit.make();
+			case "number" -> Number.make(numberBits(options));
 			case "clock" -> Clock.make(period(options));
 			case "pulse" -> Pulse.make(length(options));
 			case "toggle" -> Toggle.make();
@@ -49,6 +50,7 @@ public final class Gadgets {
 			case "lamp_row" -> "a row of " + bits + (bits == 1 ? " lamp" : " lamps");
 			case "adder" -> "an adder (" + count + ")";
 			case "digit" -> "a digit";
+			case "number" -> "a number (" + numberBits(options) + (numberBits(options) == 1 ? " bit)" : " bits)");
 			case "clock" -> "a clock (every " + period(options) + " ticks)";
 			case "pulse" -> "a pulse maker (" + length(options) + " ticks)";
 			case "toggle" -> "a toggle";
@@ -84,6 +86,11 @@ public final class Gadgets {
 			throw new IllegalArgumentException("bits must be a whole number from 1 to 8, not " + text);
 		}
 		return p.getAsInt();
+	}
+
+	/** A number's bits, 5 unless given: 1 to 5 (0 to 31 on two digits). */
+	static int numberBits(JsonObject options) {
+		return whole(options, "bits", 1, 5, 1, 5);
 	}
 
 	/** A clock's period in ticks, 20 unless given: 12 to 64, a multiple of 4 (see {@link Clock}). */
