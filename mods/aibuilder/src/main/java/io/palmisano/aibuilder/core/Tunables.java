@@ -125,6 +125,22 @@ public final class Tunables {
 	public static final float FEEL_VOLUME = 0.5f;
 	public static final int FEEL_PARTICLES = 4;
 
+	/** Moving parts (spec v2 §4): a new pose every this many ticks, which the game glides over in as many. */
+	public static final int ANIMATION_STEP_TICKS = 4;
+	/** A motion's cycle, in ticks (a spin may be negative to turn the other way). */
+	public static final int MOTION_PERIOD_MIN = 10;
+	public static final int MOTION_PERIOD_MAX = 2400;
+	/** A swing's angles, in degrees either way. */
+	public static final double MOTION_ANGLE_MAX = 180;
+	/** How far a bob goes, in blocks. */
+	public static final double MOTION_DISTANCE_MAX = 16;
+	/** The game glides the short way between two poses: a motion must turn less than this between them. */
+	public static final double STEP_DEGREES_MAX = 180;
+	public static final int MOTIONS_PER_PART_MAX = 8;
+	public static final int PARTS_PER_BUILD_MAX = 32;
+	/** How many parts deep a part may ride (a wing on a body on a ship). */
+	public static final int PART_DEPTH_MAX = 4;
+
 	private Tunables() {
 	}
 }
