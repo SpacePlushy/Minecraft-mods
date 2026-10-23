@@ -27,13 +27,15 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
  * {@code AIBUILDER_LIVE=1} on the Gradle command, and then it's the only client gametest that does:
  * {@code AIBUILDER_LIVE=1 ./gradlew runClientGameTest --no-daemon}. {@code AIBUILDER_LIVE_PROMPT} and
  * {@code AIBUILDER_LIVE_SIZE} pick the build (a small cozy cabin, Small); {@code AIBUILDER_LIVE_REFINE}, a second
- * prompt that refines it from where the player stood ("add a moat", spec §5.4). It saves screenshots along the way and
- * from three viewpoints after each prompt; the logs are in build/run/clientGameTest/logs/aibuilder/.
+ * prompt that refines it from where the player stood ("add a moat", spec §5.4); {@code AIBUILDER_LIVE_CAPS}, the run's
+ * caps as config/aibuilder.json takes them (a calculator: {"max_tool_iterations": 400, "max_build_minutes": 90}), written
+ * for the run and put back after. It saves screenshots along the way and from three viewpoints after each prompt; the
+ * logs are in build/run/clientGameTest/logs/aibuilder/.
  */
 @SuppressWarnings("UnstableApiUsage")
 public class LiveBuildClientGameTest implements FabricClientGameTest {
-	/** The build's own time cap is 45 minutes. */
-	private static final int MAX_TICKS = 20 * 60 * 50;
+	/** The build's own time cap is 45 minutes unless the run's caps say otherwise; this waits 5 more. */
+	private static final int MINUTES = 45;
 	private static final int SCREENSHOT_EVERY_TICKS = 20 * 60 * 2;
 
 	@Override
@@ -44,6 +46,38 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 		String prompt = System.getenv().getOrDefault("AIBUILDER_LIVE_PROMPT", "a small cozy cabin");
 		SizeTier size = SizeTier.parse(System.getenv().getOrDefault("AIBUILDER_LIVE_SIZE", "small"));
 		String refine = System.getenv().getOrDefault("AIBUILDER_LIVE_REFINE", "");
+		String caps = System.getenv().getOrDefault("AIBUILDER_LIVE_CAPS", "");
+		java.nio.file.Path config = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("aibuilder.json");
+		String before;
+		try {
+			before = java.nio.file.Files.exists(config) ? java.nio.file.Files.readString(config) : null;
+			if (!caps.isEmpty()) {
+				java.nio.file.Files.writeString(config, caps);
+			}
+		} catch (java.io.IOException e) {
+			throw new java.io.UncheckedIOException(e);
+		}
+		int minutes = caps.isEmpty() ? MINUTES : com.google.gson.JsonParser.parseString(caps).getAsJsonObject().has("max_build_minutes")
+				? com.google.gson.JsonParser.parseString(caps).getAsJsonObject().get("max_build_minutes").getAsInt() : MINUTES;
+		int maxTicks = 20 * 60 * (minutes + 5);
+		try {
+			run(ctx, prompt, size, refine, maxTicks);
+		} finally {
+			try {
+				if (!caps.isEmpty()) {
+					if (before == null) {
+						java.nio.file.Files.deleteIfExists(config);
+					} else {
+						java.nio.file.Files.writeString(config, before);
+					}
+				}
+			} catch (java.io.IOException e) {
+				AiBuilderMod.LOG.warn("Couldn't put config/aibuilder.json back: {}", e.toString());
+			}
+		}
+	}
+
+	private static void run(ClientGameTestContext ctx, String prompt, SizeTier size, String refine, int maxTicks) {
 		try (TestSingleplayerContext singleplayer = GameTestSupport.world(ctx)) {
 			TestServerContext server = singleplayer.getServer();
 			// Noon for the whole build, no weather, nothing hostile walking up to the player.
@@ -58,7 +92,7 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 
 			ctx.runOnClient(mc -> ClientPlayNetworking.send(new BuildPromptPayload(prompt, size)));
 			GameTestSupport.awaitChat(ctx, Messages.accepted(prompt, size), 200);
-			String end = GameTestSupport.awaitBuildEnd(ctx, 0, MAX_TICKS, SCREENSHOT_EVERY_TICKS, n -> ctx.takeScreenshot("aibuilder-live-progress-" + n));
+			String end = GameTestSupport.awaitBuildEnd(ctx, 0, maxTicks, SCREENSHOT_EVERY_TICKS, n -> ctx.takeScreenshot("aibuilder-live-progress-" + n));
 			AiBuilderMod.LOG.info("Live build ended: {}", end);
 			AiBuilderMod.LOG.info("Live build chat: {}", GameTestSupport.chat());
 			ctx.waitTicks(40);
@@ -67,6 +101,7 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 			viewpoints(ctx, singleplayer, feetY, span, refine.isEmpty() ? "" : "-before");
 			moments(ctx, singleplayer, feetY, span, refine.isEmpty() ? "" : "-before");
 			machine(ctx, singleplayer, feetY, span, refine.isEmpty() ? "" : "-before");
+			calculator(ctx, singleplayer, refine.isEmpty() ? "" : "-before");
 			if (refine.isEmpty()) {
 				return;
 			}
@@ -78,7 +113,7 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 			int from = GameTestSupport.chat().size();
 			ctx.runOnClient(mc -> ClientPlayNetworking.send(new BuildPromptPayload(refine, size, false)));
 			GameTestSupport.awaitChatStartingWith(ctx, "AI Builder: changing ", 200);
-			String refined = GameTestSupport.awaitBuildEnd(ctx, from, MAX_TICKS, SCREENSHOT_EVERY_TICKS,
+			String refined = GameTestSupport.awaitBuildEnd(ctx, from, maxTicks, SCREENSHOT_EVERY_TICKS,
 					n -> ctx.takeScreenshot("aibuilder-live-refine-progress-" + n));
 			AiBuilderMod.LOG.info("Live refinement ended: {}", refined);
 			AiBuilderMod.LOG.info("Live refinement chat: {}", GameTestSupport.chat().subList(from, GameTestSupport.chat().size()));
@@ -88,7 +123,42 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 			viewpoints(ctx, singleplayer, feetY, span + 24, "-refined");
 			moments(ctx, singleplayer, feetY, span + 24, "-refined");
 			machine(ctx, singleplayer, feetY, span + 24, "-refined");
+			calculator(ctx, singleplayer, "-refined");
 		}
+	}
+
+	/**
+	 * A calculator (the M9 plan's check): found from the session's gadgets (two lever rows and a number), it's set to
+	 * 0 + 0, 6 + 3, 9 + 7, 12 + 5 and 15 + 15 in turn, each waited out and read off its digits by this test itself, and
+	 * pictured; the verdict is logged, "it works" only if all five are right. Nothing for a build with no calculator.
+	 */
+	private static void calculator(ClientGameTestContext ctx, TestSingleplayerContext singleplayer, String suffix) {
+		TestServerContext server = singleplayer.getServer();
+		UUID owner = server.computeOnServer(s -> s.getPlayerList().getPlayers().getFirst().getUUID());
+		java.util.Optional<FoundCalculator> found = server.computeOnServer(s -> io.palmisano.aibuilder.world.SessionStore.get(s).get(owner)
+				.flatMap(FoundCalculator::of));
+		if (found.isEmpty()) {
+			return;
+		}
+		FoundCalculator calculator = found.get();
+		io.palmisano.aibuilder.core.frame.Pos[] view = calculator.view();
+		io.palmisano.aibuilder.core.frame.Pos from = calculator.frame().toWorld(view[0]);
+		io.palmisano.aibuilder.core.frame.Pos at = calculator.frame().toWorld(view[1]);
+		server.runCommand("tp @a " + (from.x() + 0.5) + " " + from.y() + " " + (from.z() + 0.5) + " facing " + (at.x() + 0.5) + " " + (at.y() + 0.5)
+				+ " " + (at.z() + 0.5));
+		ctx.waitTicks(80);
+		singleplayer.getConnection().waitForChunksRender();
+		List<String> sums = new java.util.ArrayList<>();
+		boolean works = true;
+		for (int[] sum : new int[][] {{0, 0}, {6, 3}, {9, 7}, {12, 5}, {15, 15}}) {
+			server.runOnServer(s -> calculator.set(s, sum[0], sum[1]));
+			ctx.waitTicks(calculator.settle());
+			String shown = server.computeOnServer(calculator::shows);
+			ctx.takeScreenshot("aibuilder-live-calculator-" + sum[0] + "-plus-" + sum[1] + suffix);
+			sums.add(sum[0] + " + " + sum[1] + " shows " + shown);
+			works &= shown.equals(String.valueOf(sum[0] + sum[1]));
+		}
+		AiBuilderMod.LOG.info("Live calculator: {}: {}", String.join(", ", sums), works ? "it works" : "it doesn't work");
 	}
 
 	/**

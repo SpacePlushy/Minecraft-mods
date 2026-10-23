@@ -30,4 +30,14 @@ class BuilderPromptTest {
 	void aDiodesFacingPointsAtItsInput() throws IOException {
 		assertTrue(prompt().contains("facing points back at its input"), "which way a repeater faces");
 	}
+
+	/** The calculator is put together from gadgets and wire (the M9 plan): the prompt says how, and that it needs the Epic size. */
+	@Test
+	void theCalculatorIsBuiltFromGadgets() throws IOException {
+		String prompt = prompt();
+		assertTrue(prompt.contains("# Gadgets"), "a gadgets section");
+		assertTrue(prompt.contains("needs the Epic size"), "the calculator's size");
+		assertTrue(prompt.contains("level Y+7"), "the second row of wires over the first");
+		assertTrue(prompt.contains("{\"show\": true}"), "how to read the digits");
+	}
 }

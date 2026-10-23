@@ -184,3 +184,12 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   its own blocks passes its checks; undo takes back comparators and dispensers the machine changed; no hopper or
   dropper may feed a dispenser; one test at a time, stopped with its build. The live door passed first try. Its ledger
   is `docs/superpowers/plans/2026-10-22-aibuilder-m8-progress.md`. M9 (gadgets, wiring, the calculator) is next.
+- **2026-10-23:** M9 built from `docs/superpowers/plans/2026-10-22-aibuilder-m9-plan.md`, test-first: `place_gadget`
+  places a ready-made part whole (lever and lamp rows, an adder, a digit, a two-digit number, a clock, a pulse maker, a
+  toggle, a latch, a counter, a 2 × 2 piston door), each tested in the game in all four facings; the combinational ones
+  come from one logic-array generator (Quine-McCluskey, taps that are right by construction). `wire` lays dust between
+  ports, a row at once (each on a turning row of its own, a level to cross another row) or one wire through via
+  points, and refuses whole, saying where, a wire that would touch other redstone. `test_redstone` gains `show`, which
+  reads each digit and number. A calculator from gadgets and wires adds in the game (9 + 7 = 16, 15 + 15 = 30).
+  Found on the way: a logic array's OR taps must sit within 14 blocks of every AND tap (the digit's first slot was a
+  block too far); arrays now keep to that and can be laid in sections.

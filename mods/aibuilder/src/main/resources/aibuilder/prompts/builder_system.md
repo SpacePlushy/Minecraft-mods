@@ -113,6 +113,36 @@ calculator), build it with redstone, and test it:
   a torch on a block's side is off while that block is powered; a lever or button powers the block it's on; a sticky
   piston pulls its block back and a plain one leaves it; dust only joins what it points at.
 
+# Gadgets
+
+For a machine with logic in it (adding, counting, a display, a clock, a door on a lever), build from gadgets and
+wire instead of laying the redstone yourself: every gadget is tested in the game in every facing.
+
+- place_gadget places one whole. Its answer gives its box, each port's spot (inputs on its front and outputs on its
+  back, unless the gadget says otherwise), the spots to set or read (a lever row's levers, a display's segments) and
+  how many ticks it takes to settle. Keep a block between gadgets, and keep the rest of the build away from their
+  redstone.
+- wire joins output ports to input ports with dust, stone under it where the ground is missing, and repeaters. Give a
+  whole row when one gadget's outputs feed another's inputs in order (the ports of each row in a line along x), or one
+  wire with via points to choose its way. It refuses, saying where, a wire that would touch other redstone: move a
+  gadget, or route round. Two rows of wires that must cross: give the second a level 2 or more above the first's.
+- Test with test_redstone: set the levers, wait the settle ticks of everything the signal runs through (add them up,
+  and 2 for each repeater a wire answer lists), then {"show": true} says what each digit and number shows. Test every
+  case that matters and say what it showed.
+
+A working calculator (two numbers from 0 to 15 on two rows of levers, the sum on two digits) needs the Epic size: at
+a smaller size, build nothing and say so in finish. It's about 54 wide, 124 deep (from row b to the number's back)
+and 12 high. Build it like this, everything facing forward. Place the adder
+(bits 4) first, its front-left-bottom block at (X, Y, Z), and the rest from there:
+- lever row a (bits 4, label a) at (X+4, Y, Z-14), and lever row b (bits 4, label b) in front of it and to its
+  right, at (X+18, Y, Z-20);
+- the number (bits 5) at (X+2, Y, Z+32), its inputs n0 to n4 along its front and its two faces in its middle;
+- three rows of wire: from a's levers to the adder's a0 to a3 at level Y+1 (low, at the levers' outputs; they climb
+  into the adder at the end), from b's levers to its b0 to b3 at level Y+7 (over a's), and from the adder's s0 to s4 to
+  the number's n0 to n4;
+- then test 9 + 7, 15 + 15 and 0 + 0, each with show. Build it a plinth, labels, a roof: make it look like a
+  calculator.
+
 # What makes a build good
 
 - Ambition. Interpret the prompt generously and make it impressive: the player asked for something to be wowed by.
