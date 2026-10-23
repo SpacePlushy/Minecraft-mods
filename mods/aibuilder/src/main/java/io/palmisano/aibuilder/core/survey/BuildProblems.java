@@ -19,7 +19,11 @@ public final class BuildProblems {
 		DARK("dark", "walkable, under a roof, block light 0: monsters can spawn here; add light"),
 		DOOR("door", "can't be walked through: a solid block at head height on a side, or one higher than a step at the feet"),
 		LOW("low", "walkable but less than 2 blocks of headroom"),
-		SPILL("spill", "fluid beside an open side or over air: it would flow if anything disturbed it");
+		SPILL("spill", "fluid beside an open side or over air: it would flow if anything disturbed it"),
+		PISTON("piston", "a piston of the build would push or break something that isn't the build's, push slime or honey, or push past"
+				+ " the allowed box; change it, or it's taken out when the build ends"),
+		POWERS_OUTSIDE("powers_outside", "redstone of the build within 2 blocks of something that reacts to power and isn't the build's (a"
+				+ " door, a lamp, a piston, TNT…); move it away, or it's taken out when the build ends");
 
 		private final String label;
 		private final String meaning;

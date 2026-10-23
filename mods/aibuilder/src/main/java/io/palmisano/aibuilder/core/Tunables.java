@@ -113,6 +113,10 @@ public final class Tunables {
 	/** check_motion's look at each part over its longest cycle: this many poses, and this many solid blocks listed. */
 	public static final int CHECK_MOTION_SAMPLES = 32;
 	public static final int CHECK_MOTION_LISTED = 8;
+	/** A build's redstone may be no nearer than this to something that reacts to power and isn't the build's (spec v2 §5.5). */
+	public static final int MACHINE_POWER_REACH = 2;
+	/** A piston's push reads up to 12 blocks out and a sticky block's neighbours: the chunks this far round it must be loaded. */
+	public static final int PISTON_READ_REACH = 14;
 	/** check_build's look over the build (read over ticks), after terraform's wait for placement: inside the MCP timeout. */
 	public static final int CHECK_BUILD_TIMEOUT_SECONDS = 60;
 	/** How long check_build waits for the light engine to catch up with what was placed before it reads light. */

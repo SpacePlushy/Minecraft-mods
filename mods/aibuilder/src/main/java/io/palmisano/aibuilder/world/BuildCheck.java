@@ -49,6 +49,8 @@ public final class BuildCheck implements Tickable {
 	private final Box allowed;
 	private final UndoJournal<BlockState, CompoundTag> journal;
 	private final long budgetNanos;
+	/** What a machine may touch (spec v2 §5.5): its pistons and redstone, looked over with the rest. */
+	private final MachineRules machines;
 	private final CompletableFuture<List<Problem>> result = new CompletableFuture<>();
 	private final List<Problem> problems = new ArrayList<>();
 	/** Spots already looked at for darkness, as {@link BlockPos#asLong()}. */
@@ -67,6 +69,7 @@ public final class BuildCheck implements Tickable {
 		this.allowed = allowed;
 		this.journal = journal;
 		this.budgetNanos = budgetNanos;
+		this.machines = new MachineRules(level, frame, allowed, journal);
 	}
 
 	/** Completes on the server thread with the problems, local positions. */
@@ -132,6 +135,10 @@ public final class BuildCheck implements Tickable {
 			unsupported(pos, state);
 			door(pos, state);
 			low(pos, state);
+			MachineRules.Breaker breaker = machines.broken(pos, state);
+			if (breaker != null) {
+				report(breaker.kind(), pos, breaker.detail());
+			}
 		}
 		spill(pos, state);
 		dark(pos);
