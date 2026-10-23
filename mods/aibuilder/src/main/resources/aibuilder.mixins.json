@@ -5,6 +5,7 @@
 	"mixins": [
 		"BlockDisplayAccessor",
 		"CommandSourceStackAccessor",
+		"DispenserBlockInvoker",
 		"DisplayAccessor"
 	],
 	"injectors": {

@@ -45,6 +45,10 @@ public final class FakeCatalog implements BlockCatalog {
 		c.addEntity("minecraft:oak_sign", ordered("rotation", LEVELS, "waterlogged", BOOL), PlacementPass.ATTACHED, BlockEntityKind.SIGN);
 		c.addEntity("minecraft:chest", ordered("facing", FOUR_WAYS, "type", List.of("single", "left", "right"), "waterlogged", BOOL),
 				PlacementPass.PARTIAL, BlockEntityKind.CONTAINER);
+		c.addEntity("minecraft:dispenser", ordered("facing", List.of("north", "east", "south", "west", "up", "down"), "triggered", BOOL),
+				PlacementPass.PARTIAL, BlockEntityKind.CONTAINER);
+		c.addEntity("minecraft:dropper", ordered("facing", List.of("north", "east", "south", "west", "up", "down"), "triggered", BOOL),
+				PlacementPass.PARTIAL, BlockEntityKind.CONTAINER);
 		c.addEntity("minecraft:lectern", ordered("facing", FOUR_WAYS, "has_book", BOOL, "powered", BOOL), PlacementPass.PARTIAL, BlockEntityKind.LECTERN);
 		c.addEntity("minecraft:white_banner", ordered("rotation", LEVELS), PlacementPass.ATTACHED, BlockEntityKind.BANNER);
 		return c;

@@ -730,7 +730,19 @@ public final class ToolExecutor {
 			return queueFrame(pos, itemFrame);
 		}
 		BlockSpec spec = a.block("block");
-		if (validator.validate(spec) instanceof Validation.Valid valid && valid.block().info().entity() != data.kind()) {
+		Validation checked = validator.validate(spec);
+		if (checked instanceof Validation.Valid valid && valid.block().info().id().equals("minecraft:dispenser")
+				&& data instanceof BlockEntityData.Container container) {
+			// A machine moves and harms nothing that isn't the build's (spec v2 §5.5): a dispenser holds only what it drops.
+			for (BlockEntityData.Stack stack : container.items()) {
+				if (world.items().dispenses(stack.item())) {
+					return ToolResult.error(RejectReason.BAD_VALUE.wireName() + ": a dispenser holds only what it would simply drop, and it would use "
+							+ stack.item() + " (pour it, fire it, place it or put it on), which could reach what isn't the build's; a dropper only"
+							+ " ever drops, so it can hold it");
+				}
+			}
+		}
+		if (checked instanceof Validation.Valid valid && valid.block().info().entity() != data.kind()) {
 			return ToolResult.error(RejectReason.NOT_A_BLOCK_ENTITY.wireName() + ": " + valid.block().info().id() + " can't hold "
 					+ data.kind().name().toLowerCase(Locale.ROOT) + " data; use " + switch (data.kind()) {
 						case SIGN -> "a sign (oak_sign, oak_wall_sign, oak_hanging_sign…)";
