@@ -62,6 +62,13 @@ public final class UndoStore extends SavedData {
 				return new UndoJournal.Reshown<>(display, new Pos(at.getX(), at.getY(), at.getZ()), before);
 			}));
 
+	/** A lever the build placed, and whether it was placed on. */
+	private record SavedLever(long pos, boolean on) {
+		static final Codec<SavedLever> CODEC = RecordCodecBuilder.create(i -> i.group(
+				Codec.LONG.fieldOf("pos").forGetter(SavedLever::pos),
+				Codec.BOOL.fieldOf("on").forGetter(SavedLever::on)).apply(i, SavedLever::new));
+	}
+
 	/** An earlier build's part a refinement gave another motion, and the motion it had. */
 	private static final Codec<UndoJournal.Reanimated> REANIMATED_CODEC = RecordCodecBuilder.create(i -> i.group(
 			UUIDUtil.CODEC.fieldOf("build").forGetter(UndoJournal.Reanimated::build),
@@ -74,7 +81,7 @@ public final class UndoStore extends SavedData {
 	 */
 	private record PackedJournal(long[] positions, List<BlockState> states, int[] stateIndex, List<String> written,
 			int[] writtenIndex, int[] hashes, List<DataEntry> data, List<UndoJournal.Spawned> entities, List<UndoJournal.Reshown<BlockState>> reshown,
-			List<UndoJournal.Reanimated> reanimated) {
+			List<UndoJournal.Reanimated> reanimated, List<SavedLever> levers) {
 		static final Codec<long[]> LONGS = Codec.LONG_STREAM.xmap(LongStream::toArray, LongStream::of);
 		static final Codec<int[]> INTS = Codec.INT_STREAM.xmap(IntStream::toArray, IntStream::of);
 		static final Codec<PackedJournal> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -87,7 +94,8 @@ public final class UndoStore extends SavedData {
 				DataEntry.CODEC.listOf().fieldOf("data").forGetter(PackedJournal::data),
 				SPAWNED_CODEC.listOf().optionalFieldOf("entities", List.of()).forGetter(PackedJournal::entities),
 				RESHOWN_CODEC.listOf().optionalFieldOf("reshown", List.of()).forGetter(PackedJournal::reshown),
-				REANIMATED_CODEC.listOf().optionalFieldOf("reanimated", List.of()).forGetter(PackedJournal::reanimated)).apply(i, PackedJournal::new));
+				REANIMATED_CODEC.listOf().optionalFieldOf("reanimated", List.of()).forGetter(PackedJournal::reanimated),
+				SavedLever.CODEC.listOf().optionalFieldOf("levers", List.of()).forGetter(PackedJournal::levers)).apply(i, PackedJournal::new));
 
 		static PackedJournal pack(UndoJournal<BlockState, CompoundTag> journal) {
 			List<UndoJournal.Entry<BlockState, CompoundTag>> entries = journal.entries();
@@ -111,7 +119,8 @@ public final class UndoStore extends SavedData {
 				}
 			}
 			return new PackedJournal(positions, List.copyOf(states.keySet()), stateIndex, List.copyOf(written.keySet()), writtenIndex,
-					hashes, data, journal.spawned(), journal.reshown(), journal.reanimated());
+					hashes, data, journal.spawned(), journal.reshown(), journal.reanimated(), journal.levers().entrySet().stream()
+					.map(e -> new SavedLever(BlockPos.asLong(e.getKey().x(), e.getKey().y(), e.getKey().z()), e.getValue())).toList());
 		}
 
 		/** The journal, or an error when the arrays don't add up (a palette read in part lacks the block it couldn't read). */
@@ -134,7 +143,12 @@ public final class UndoStore extends SavedData {
 				entries.add(new UndoJournal.Entry<>(new Pos(pos.getX(), pos.getY(), pos.getZ()), states.get(stateIndex[k]),
 						dataByIndex.get(k), block.isEmpty() ? null : block, hashes[k]));
 			}
-			return DataResult.success(UndoJournal.of(entries, entities, reshown, reanimated));
+			UndoJournal<BlockState, CompoundTag> journal = UndoJournal.of(entries, entities, reshown, reanimated);
+			for (SavedLever lever : levers) {
+				BlockPos at = BlockPos.of(lever.pos());
+				journal.lever(new Pos(at.getX(), at.getY(), at.getZ()), lever.on());
+			}
+			return DataResult.success(journal);
 		}
 	}
 

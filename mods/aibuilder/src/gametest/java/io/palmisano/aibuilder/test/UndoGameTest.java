@@ -355,7 +355,9 @@ public class UndoGameTest {
 		UndoJournal<BlockState, CompoundTag> second = new UndoJournal<>();
 		second.beforeWrite(new Pos(5, 5, 5), Blocks.AIR.defaultBlockState(), null);
 		second.afterWrite(new Pos(5, 5, 5), "minecraft:glass", 0);
-		// A refinement's changes to an earlier build's moving parts (spec v2 §4.4).
+		// The build's levers as placed (spec v2 §5.1), and a refinement's changes to an earlier build's moving parts (§4.4).
+		second.lever(new Pos(5, 5, 6), true);
+		second.lever(new Pos(5, 5, 7), false);
 		second.reshown(UUID.randomUUID(), new Pos(30, 64, -9), Blocks.STONE.defaultBlockState());
 		second.reanimated(UUID.randomUUID(), new MovingPart("wing", new Vec3(0.5, 3, 4), List.of(new Motion.Swing("forward", -30, 40, 40, 0.25)), "body"));
 
@@ -371,7 +373,9 @@ public class UndoGameTest {
 		helper.assertValueEqual(newest.journal().entries(), second.entries(), "newest journal");
 		helper.assertValueEqual(newest.journal().reshown(), second.reshown(), "the displays a refinement showed another block on");
 		helper.assertValueEqual(newest.journal().reanimated(), second.reanimated(), "the motions a refinement replaced");
+		helper.assertValueEqual(newest.journal().levers(), second.levers(), "the levers as placed");
 		UndoStore.StoredBuild older = loaded.pop(player).orElseThrow();
+		helper.assertValueEqual(older.journal().levers(), java.util.Map.of(), "a journal with no levers");
 		helper.assertValueEqual(older.dimension(), Level.NETHER, "dimension");
 		helper.assertValueEqual(older.title(), "a tower", "title");
 		helper.assertValueEqual(older.journal().entries(), first.entries(), "journal");

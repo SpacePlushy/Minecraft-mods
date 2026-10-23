@@ -30,6 +30,7 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -483,6 +484,9 @@ public final class PlacementJob implements Tickable {
 		BlockState now = level.getBlockState(pos);
 		BlockEntity after = level.getBlockEntity(pos);
 		journal.afterWrite(at, id(now.getBlock()), BlockEntityHash.of(after, level.registryAccess()));
+		if (now.getBlock() instanceof LeverBlock) {
+			journal.lever(at, now.getValue(LeverBlock.POWERED));
+		}
 		if (journal.size() >= maxChanged) {
 			capReached = true;
 		}

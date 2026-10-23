@@ -4,13 +4,16 @@ import static io.palmisano.aibuilder.test.ArenaBuilds.ARENA;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.mojang.logging.LogUtils;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.Pos;
 import io.palmisano.aibuilder.test.ArenaBuilds.ArenaBuild;
+import io.palmisano.aibuilder.world.JobScheduler;
 import io.palmisano.aibuilder.world.Occupancy;
+import io.palmisano.aibuilder.world.UndoRunner;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -209,6 +212,36 @@ public class MachineGameTest {
 					helper.assertTrue(build.state(0, 1, 4).isAir(), "the lever beside the TNT is still there: " + build.state(0, 1, 4));
 					helper.assertTrue(build.state(1, 1, 4).is(Blocks.TNT), "the TNT went: " + build.state(1, 1, 4));
 					helper.assertValueEqual(build.job().takenOut(), List.of(build.world(new Pos(0, 1, 4))), "what was taken out");
+				})
+				.thenSucceed();
+	}
+
+	/**
+	 * Undo of a piston door left open: its lever goes back as it was placed (off), the door closes, and then every
+	 * block goes back, with no piston head or moved block left behind (spec v2 §5.1).
+	 */
+	@GameTest(structure = ARENA, maxTicks = 800)
+	public void undoOfAnOpenPistonDoorClosesItFirst(GameTestHelper helper) {
+		Pos lever = new Pos(-1, 1, 4);
+		ArenaBuild build = built(helper, """
+				{"tool": "set_blocks", "args": {"blocks": [{"pos": [0, 1, 4], "block": "sticky_piston", "state": {"facing": "forward"}},
+				  {"pos": [0, 1, 5], "block": "stone"}, {"pos": [-1, 1, 4], "block": "lever", "state": {"face": "floor", "facing": "forward"}}]}}""");
+		AtomicReference<UndoRunner> undo = new AtomicReference<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> ArenaBuilds.assertDone(helper, build))
+				.thenExecute(() -> pull(build, lever))
+				.thenWaitUntil(() -> helper.assertTrue(build.state(0, 1, 6).is(Blocks.STONE), "the door didn't open: " + build.state(0, 1, 6)))
+				.thenExecute(() -> {
+					UndoRunner runner = new UndoRunner(build.level(), build.journal(), Tunables.BLOCKS_PER_TICK, build.animations());
+					JobScheduler.add(runner);
+					undo.set(runner);
+				})
+				.thenWaitUntil(() -> helper.assertTrue(undo.get().result().isDone(), "the undo hasn't finished"))
+				.thenExecute(() -> {
+					for (int z = 4; z <= 6; z++) {
+						helper.assertTrue(build.state(0, 1, z).isAir(), "left at (0, 1, " + z + "): " + build.state(0, 1, z));
+					}
+					helper.assertTrue(build.state(-1, 1, 4).isAir(), "the lever is still there: " + build.state(-1, 1, 4));
 				})
 				.thenSucceed();
 	}

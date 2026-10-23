@@ -186,8 +186,9 @@ public class MovingBuildGameTest {
 					tickAStep(engine, start + 8);
 					long early = assertPosed(helper, build, moving, start + 8);
 					List<Transformation> earlyPoses = transformations(build, moving);
-					tickAStep(engine, start + 20);
-					long later = assertPosed(helper, build, moving, start + 20);
+					// 20 ticks on, whatever the part's turn in the step: never mirrored about the swing's middle, which looks the same.
+					tickAStep(engine, start + 28);
+					long later = assertPosed(helper, build, moving, start + 28);
 					helper.assertTrue(later > early, "posed for " + early + " then " + later);
 					helper.assertFalse(earlyPoses.equals(transformations(build, moving)), "the wing didn't move");
 				})

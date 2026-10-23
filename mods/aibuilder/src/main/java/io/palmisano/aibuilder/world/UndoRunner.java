@@ -26,6 +26,7 @@ import net.minecraft.world.entity.Display;
 import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.TagValueInput;
@@ -60,6 +61,8 @@ public final class UndoRunner implements Tickable {
 	private int restored;
 	private int kept;
 	private int unreached;
+	/** 0 before the levers go back; then the game time the machine has settled by (-1: none flipped). */
+	private long settleUntil;
 	private boolean loggedFailure;
 
 	/** Server thread: the tickets go on here. The build's moving parts are the world's. */
@@ -97,6 +100,13 @@ public final class UndoRunner implements Tickable {
 			return true;
 		}
 		if (!loaded.isDone()) {
+			return false;
+		}
+		if (settleUntil == 0) {
+			// The build's levers back as placed, and the machine left to settle: a door someone opened closes first.
+			settleUntil = putLeversBack() > 0 ? level.getGameTime() + Tunables.UNDO_SETTLE_TICKS : -1;
+		}
+		if (level.getGameTime() < settleUntil) {
 			return false;
 		}
 		if (!framesDown) {
@@ -165,6 +175,24 @@ public final class UndoRunner implements Tickable {
 		if (!gone.isEmpty()) {
 			animations.forget(gone);
 		}
+	}
+
+	/** Flips each of the build's levers that's still the build's back to how it was placed; how many it flipped. */
+	private int putLeversBack() {
+		int flipped = 0;
+		for (Map.Entry<Pos, Boolean> lever : journal.levers().entrySet()) {
+			BlockPos pos = Positions.toBlockPos(lever.getKey());
+			if (!level.isLoaded(pos) || !journal.has(lever.getKey())) {
+				continue;
+			}
+			BlockState state = level.getBlockState(pos);
+			if (state.getBlock() instanceof LeverBlock block && "minecraft:lever".equals(journal.writtenBlock(lever.getKey()))
+					&& state.getValue(LeverBlock.POWERED) != lever.getValue()) {
+				block.pull(state, level, pos, null);
+				flipped++;
+			}
+		}
+		return flipped;
 	}
 
 	private boolean entitiesLoaded(Pos pos) {

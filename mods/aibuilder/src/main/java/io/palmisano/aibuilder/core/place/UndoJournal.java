@@ -57,6 +57,7 @@ public final class UndoJournal<S, D> {
 	private final List<Spawned> spawned = new ArrayList<>();
 	private final Map<UUID, Reshown<S>> reshown = new LinkedHashMap<>();
 	private final Map<PartOf, MovingPart> reanimated = new LinkedHashMap<>();
+	private final Map<Pos, Boolean> levers = new LinkedHashMap<>();
 
 	public static <S, D> UndoJournal<S, D> of(List<Entry<S, D>> entries) {
 		return of(entries, List.of());
@@ -86,6 +87,16 @@ public final class UndoJournal<S, D> {
 	/** In the order they were first shown another block. */
 	public List<Reshown<S>> reshown() {
 		return List.copyOf(reshown.values());
+	}
+
+	/** A lever the build placed, on or off as placed (spec v2 §5.1): undo puts it back so before the machine is taken down. */
+	public void lever(Pos pos, boolean on) {
+		levers.putIfAbsent(pos, on);
+	}
+
+	/** The build's levers as placed, in the order placed. */
+	public Map<Pos, Boolean> levers() {
+		return java.util.Collections.unmodifiableMap(new LinkedHashMap<>(levers));
 	}
 
 	/** An earlier part's motion before this build gave it another; the first wins, as for blocks. */
