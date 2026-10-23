@@ -161,19 +161,18 @@ public final class Pla {
 	}
 
 	/**
-	 * Where a line needs repeaters, its spots in the order the signal flows: the first spot gets full strength, as does
-	 * one under a torch ({@code full}); dust loses one a block; a repeater goes where {@code allowed} once the signal is
-	 * down to 4, never on the first spot or under a torch, and gives the next spot full strength again.
+	 * Where a line needs repeaters, its spots in the order the signal flows: the first spot gets full strength and dust
+	 * loses one a block. A tap's torch gives full strength only while its product holds, so the first spot's signal must
+	 * reach the end alone (M9 Task 3: a digit's segment fed only by its first row went dark). A repeater goes where
+	 * {@code allowed} once the signal is down to 4, never on the first spot or under a torch ({@code never}), and gives the
+	 * next spot full strength again.
 	 */
-	static Set<Integer> repeaters(List<Integer> run, Set<Integer> full, IntPredicate allowed) {
+	static Set<Integer> repeaters(List<Integer> run, Set<Integer> never, IntPredicate allowed) {
 		Set<Integer> out = new HashSet<>();
 		int strength = 15;
 		for (int k = 0; k < run.size(); k++) {
 			int z = run.get(k);
-			if (full.contains(z)) {
-				strength = 15;
-			}
-			if (k > 0 && strength <= 4 && allowed.test(z) && !full.contains(z) && k + 1 < run.size()) {
+			if (k > 0 && strength <= 4 && allowed.test(z) && !never.contains(z) && k + 1 < run.size()) {
 				out.add(z);
 				strength = 15;
 			} else {

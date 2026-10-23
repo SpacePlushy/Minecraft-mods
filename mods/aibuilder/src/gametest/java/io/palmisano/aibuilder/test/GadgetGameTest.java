@@ -109,6 +109,12 @@ public class GadgetGameTest {
 		}
 	}
 
+	/** A digit shows every BCD code, 0 to 9, in every facing, beside a twin of itself a block away. */
+	@GameTest(structure = GADGETS_BIG, maxTicks = 3000)
+	public void aDigitShowsEveryBcdCode(GameTestHelper helper) {
+		GadgetRig.display(helper, GadgetRig.Space.BIG, make("digit", "{}"), true, List.of(0, 1, 2, 3, 4, 5, 6, 7, 8, 9), String::valueOf);
+	}
+
 	/** A 2-bit adder adds every pair, with a carry in, in every facing, beside a twin of itself a block away. */
 	@GameTest(structure = GADGETS_BIG, maxTicks = 6000)
 	public void anAdderAddsEveryPairOf2Bits(GameTestHelper helper) {

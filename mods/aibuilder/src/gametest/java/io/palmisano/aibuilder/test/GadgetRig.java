@@ -15,6 +15,7 @@ import io.palmisano.aibuilder.core.blocks.BlockSpec;
 import io.palmisano.aibuilder.core.frame.Facing;
 import io.palmisano.aibuilder.core.frame.LocalFrame;
 import io.palmisano.aibuilder.core.frame.Pos;
+import io.palmisano.aibuilder.core.gadgets.Display;
 import io.palmisano.aibuilder.core.gadgets.Gadget;
 import io.palmisano.aibuilder.core.gadgets.GadgetPlacement;
 import io.palmisano.aibuilder.core.gadgets.Port;
@@ -183,6 +184,25 @@ final class GadgetRig {
 		GameTestSequence sequence = helper.startSequence().thenWaitUntil(() -> ArenaBuilds.assertDone(helper, rig.build()));
 		for (int value : values) {
 			sequence = sequence.thenExecute(() -> drive(rig, value)).thenIdle(gadget.settleTicks()).thenExecute(() -> check(helper, rig, value, lit));
+		}
+		sequence.thenSucceed();
+	}
+
+	/** Each of {@code values} driven as for {@link #samples}; each placement's digit read off its face against {@code shown}. */
+	static void display(GameTestHelper helper, Space space, Gadget gadget, boolean twin, List<Integer> values, IntFunction<String> shown) {
+		Rig rig = build(helper, space, gadget, twin);
+		GameTestSequence sequence = helper.startSequence().thenWaitUntil(() -> ArenaBuilds.assertDone(helper, rig.build()));
+		int copies = twin ? 2 : 1;
+		for (int value : values) {
+			sequence = sequence.thenExecute(() -> drive(rig, value)).thenIdle(gadget.settleTicks()).thenExecute(() -> {
+				for (int i = 0; i < rig.placed().size(); i++) {
+					String read = Display.read(rig.placed().get(i).marks(), p -> {
+						BlockState lamp = rig.build().level().getBlockState(rig.build().world(p));
+						return lamp.is(Blocks.REDSTONE_LAMP) && lamp.getValue(RedstoneLampBlock.LIT);
+					});
+					helper.assertValueEqual(read, shown.apply(value), FACINGS.get(i / copies) + (i % copies == 1 ? " (the twin)" : "") + ", code " + value);
+				}
+			});
 		}
 		sequence.thenSucceed();
 	}

@@ -82,6 +82,33 @@ class PlaTest {
 		}
 	}
 
+	/**
+	 * A tap gives power only while its product holds, so an output line carries its first tap's signal alone to the exit:
+	 * walking from there, the dust between repeaters never runs out.
+	 */
+	@Test
+	void anOutputsFirstTapAloneReachesItsExit() {
+		Gadget decoder = digit();
+		Map<Pos, LocalBlock> at = index(decoder);
+		for (Port port : decoder.ports()) {
+			if (port.input()) {
+				continue;
+			}
+			int x = port.at().x();
+			int start = decoder.size().z() - 1;
+			while (at.containsKey(new Pos(x, 1, start - 1))) {
+				start--;
+			}
+			int strength = 15;
+			for (int z = start; z < decoder.size().z() - 1; z++) {
+				LocalBlock spot = at.get(new Pos(x, 1, z));
+				assertTrue(strength >= 1, port.name() + "'s line has run out at gz " + z);
+				strength = spot.block().id().equals("repeater") ? 15 : strength - 1;
+			}
+			assertTrue(strength >= 1, port.name() + "'s line reaches its buffer at " + strength);
+		}
+	}
+
 	/** Every port is outside the box, with a repeater one step in that takes the signal in or gives it out. */
 	@Test
 	void portsAreOutsideWithABufferInside() {

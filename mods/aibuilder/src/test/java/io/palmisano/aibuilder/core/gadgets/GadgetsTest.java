@@ -30,7 +30,8 @@ class GadgetsTest {
 		assertRefused("adder", "{\"bits\": 2.5}", "bits must be a whole number from 1 to 8, not 2.5");
 		assertRefused("adder", "{\"bits\": 2, \"speed\": 3}", "adder takes bits, not speed");
 		assertRefused("lever_row", "{\"bits\": 2, \"label\": \"Way too long\"}", "label must be 1 to 8 lowercase letters, digits or _, starting with a letter");
-		assertRefused("flux_capacitor", "{}", "there's no gadget called \"flux_capacitor\": the kinds are lever_row, lamp_row, adder");
+		assertRefused("flux_capacitor", "{}", "there's no gadget called \"flux_capacitor\": the kinds are lever_row, lamp_row, adder, digit");
+		assertRefused("digit", "{\"bits\": 4}", "digit takes no options, not bits");
 	}
 
 	@Test

@@ -10,10 +10,10 @@ import com.google.gson.JsonPrimitive;
 
 /** The library place_gadget makes from (spec v2 §5.3): each kind and the options it takes. Pure. */
 public final class Gadgets {
-	public static final List<String> KINDS = List.of("lever_row", "lamp_row", "adder");
+	public static final List<String> KINDS = List.of("lever_row", "lamp_row", "adder", "digit");
 	/** The options each kind takes. */
 	private static final Map<String, Set<String>> OPTIONS = Map.of("lever_row", Set.of("bits", "label"), "lamp_row", Set.of("bits"), "adder",
-			Set.of("bits"));
+			Set.of("bits"), "digit", Set.of());
 
 	private Gadgets() {
 	}
@@ -25,6 +25,7 @@ public final class Gadgets {
 			case "lever_row" -> LeverRow.make(bits(options, 4), label(options));
 			case "lamp_row" -> LampRow.make(bits(options, 4));
 			case "adder" -> Adder.make(bits(options, 4));
+			case "digit" -> Digit.make();
 			default -> throw new IllegalStateException(kind);
 		};
 	}
@@ -38,6 +39,7 @@ public final class Gadgets {
 			case "lever_row" -> "a row of " + bits + (bits == 1 ? " lever" : " levers") + " (" + label(options) + ")";
 			case "lamp_row" -> "a row of " + bits + (bits == 1 ? " lamp" : " lamps");
 			case "adder" -> "an adder (" + count + ")";
+			case "digit" -> "a digit";
 			default -> kind;
 		};
 	}
@@ -49,7 +51,8 @@ public final class Gadgets {
 		}
 		for (String name : options.keySet()) {
 			if (!takes.contains(name)) {
-				throw new IllegalArgumentException(kind + " takes " + String.join(" and ", takes.stream().sorted().toList()) + ", not " + name);
+				throw new IllegalArgumentException(kind + (takes.isEmpty() ? " takes no options" : " takes " + String.join(" and ", takes.stream().sorted().toList()))
+						+ ", not " + name);
 			}
 		}
 	}
