@@ -126,6 +126,27 @@ public class FakeClaude {
 				call("finish", "{\"summary\":\"A tiny oak hut.\"}");
 				result(false, "success", "Built a tiny oak hut.", "completed", 0);
 			}
+			case "flap" -> {
+				// A stone post with a wing either side, hinged at its top edges, flapping together: down at the start of
+				// each 40-tick flap, up half-way (MovingBuildClientGameTest).
+				rateLimit("allowed", false);
+				call("get_context", "{}");
+				call("submit_brief", "{\"title\":\"Test flapper\",\"style\":\"plain\",\"size\":{\"w\":9,\"h\":4,\"d\":1},"
+						+ "\"palette\":[{\"role\":\"primary\",\"block\":\"stone\"},{\"role\":\"wings\",\"block\":\"white_wool\"}],"
+						+ "\"phases\":[\"body\",\"wings\"]}");
+				call("fill", "{\"box\":[0,0,4,0,3,4],\"block\":\"stone\"}");
+				call("checkpoint", "{\"phase\":\"body\"}");
+				call("fill", "{\"box\":[1,3,4,4,3,4],\"block\":\"white_wool\",\"part\":\"right_wing\"}");
+				call("fill", "{\"box\":[-4,3,4,-1,3,4],\"block\":\"white_wool\",\"part\":\"left_wing\"}");
+				call("animate", "{\"part\":\"right_wing\",\"pivot\":[0.5,3.5,4],\"motions\":[{\"swing\":{\"axis\":\"forward\",\"from\":35,"
+						+ "\"to\":-45,\"period\":40}}]}");
+				call("animate", "{\"part\":\"left_wing\",\"pivot\":[-0.5,3.5,4],\"motions\":[{\"swing\":{\"axis\":\"forward\",\"from\":-35,"
+						+ "\"to\":45,\"period\":40}}]}");
+				call("check_motion", "{}");
+				call("checkpoint", "{\"phase\":\"wings\"}");
+				call("finish", "{\"summary\":\"A stone post with flapping wings.\"}");
+				result(false, "success", "Built a post with flapping wings.", "completed", 0);
+			}
 			case "echo" -> result(false, "success", prompt, "completed", 0);
 			case "slow_build" -> {
 				// The walls go in (stone, so they change what an earlier test hut left), then Claude takes its time: a build

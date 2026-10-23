@@ -1,5 +1,7 @@
 package io.palmisano.aibuilder.test;
 
+import io.palmisano.aibuilder.world.AnimationStore;
+import io.palmisano.aibuilder.core.anim.Motion;
 import io.palmisano.aibuilder.AiBuilderMod;
 import io.palmisano.aibuilder.core.Tunables;
 import io.palmisano.aibuilder.core.request.Messages;
@@ -54,6 +56,7 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 			ctx.takeScreenshot("aibuilder-live-player-view");
 			int span = size == SizeTier.AUTO ? SizeTier.LARGE.size() : size.size();
 			viewpoints(ctx, singleplayer, feetY, span, refine.isEmpty() ? "" : "-before");
+			moments(ctx, singleplayer, feetY, span, refine.isEmpty() ? "" : "-before");
 			if (refine.isEmpty()) {
 				return;
 			}
@@ -73,7 +76,45 @@ public class LiveBuildClientGameTest implements FabricClientGameTest {
 			ctx.takeScreenshot("aibuilder-live-refined-player-view");
 			// The refinement may build 16 blocks past the first build on every side: the views stand farther off.
 			viewpoints(ctx, singleplayer, feetY, span + 24, "-refined");
+			moments(ctx, singleplayer, feetY, span + 24, "-refined");
 		}
+	}
+
+	/**
+	 * A build that moves (spec v2 §5.6), pictured from the front-left at the start, a quarter, half and three quarters of
+	 * its longest cycle, so pictures half a cycle apart show its parts at both ends of their motion. Nothing for a build
+	 * with no moving parts.
+	 */
+	private static void moments(ClientGameTestContext ctx, TestSingleplayerContext singleplayer, int feetY, int span, String suffix) {
+		TestServerContext server = singleplayer.getServer();
+		long[] cycle = server.computeOnServer(s -> AnimationStore.get(s).builds().stream().findFirst().map(build -> new long[] {build.key().start(),
+				build.parts().stream().flatMap(part -> part.motion().motions().stream()).mapToInt(LiveBuildClientGameTest::period).max().orElse(0)})
+				.orElse(new long[] {0, 0}));
+		long start = cycle[0];
+		long period = cycle[1];
+		String moving = server.computeOnServer(s -> AnimationStore.get(s).builds().toString());
+		AiBuilderMod.LOG.info("Live build's moving parts: {}", moving);
+		if (period == 0) {
+			return;
+		}
+		double middleZ = Tunables.SITE_GAP + span / 2.0 - 0.5;
+		String middle = " facing 0.5 " + (feetY + span / 8) + " " + middleZ;
+		server.runCommand("tp @a " + (0.5 + Math.round(span * 0.75)) + " " + (feetY + Math.round(span * 0.36)) + " " + (0.5 - span / 5) + middle);
+		ctx.waitTicks(80);
+		singleplayer.getConnection().waitForChunksRender();
+		for (int quarter = 0; quarter < 4; quarter++) {
+			long at = quarter * period / 4;
+			server.waitFor(s -> Math.floorMod(s.overworld().getGameTime() - start, period) == at, (int) period + 20);
+			ctx.takeScreenshot("aibuilder-live-moving-" + quarter + suffix);
+		}
+	}
+
+	private static int period(Motion motion) {
+		return Math.abs(switch (motion) {
+			case Motion.Swing s -> s.period();
+			case Motion.Spin s -> s.period();
+			case Motion.Bob b -> b.period();
+		});
 	}
 
 	/**

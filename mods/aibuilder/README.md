@@ -9,7 +9,9 @@ login (Pro or Max). A panel in the top-left corner shows the build's plan as it 
 blocks placed and how much of its budget it has used. Claude checks its own work before it finishes (dark rooms,
 blocked doors, floating torches, low ceilings, water that would spill) and dresses builds with signs, stocked
 chests, a lectern with a book, banners and item frames. Lava never goes in next to anything that burns. Type a
-follow-up next to a build ("add a moat") and Claude changes that build. Every build leaves a log, and a settings
+follow-up next to a build ("add a moat") and Claude changes that build. Ask for something that moves ("a dragon with
+flapping wings", "a windmill") and its moving pieces move on their own: wings flap, sails turn, a flag waves, even
+after a restart. Every build leaves a log, and a settings
 file sets the caps, the speed and who may build. `/aibuild test` builds a demo house without Claude, `/aibuild
 survey` shows how Claude sees the land, and `/aibuild undo` takes any build back, item frames included. The plan,
 milestone by milestone, is in [`PLAN.md`](PLAN.md).
@@ -45,6 +47,7 @@ milestone by milestone, is in [`PLAN.md`](PLAN.md).
 | `/aibuild <prompt>` in chat | Same as Build, at Auto size |
 | Type another prompt near your last build | Claude changes that build ("add a moat", "make the towers taller"): it picks up its own plan where it left off and may build up to 16 blocks past what it built. The screen says **Refining: *name***; click that to make a new build there instead. Each change is its own undo |
 | `/aibuild new <prompt>` | A new build, even next to your last one |
+| Ask for something that moves | Claude builds what moves (wings, sails, a flag, a carousel) as moving parts: they look like blocks and move on their own, in step, after a restart too. You can't stand on a moving part (the body is solid). A follow-up next to it ("make the wings flap faster") changes the motion, and undoing that puts the old motion back |
 | `/aibuild test` | Builds the demo house 3 blocks in front of you, facing the way you face, slowly enough to watch (about 10 seconds). The action bar shows the phase and the block count; chat says `Done: …` with a clickable **[Undo]** |
 | `/aibuild undo` | Takes back your newest build (repeat for older ones: the last 5, or as many as `undo_history_size` says), even after the game crashed or restarted. Anything you changed since, like a chest you filled, stays |
 | `/aibuild cancel` | Stops your build at once (Claude too); what's placed stays and can be undone. On a server, only the player whose build it is can stop it |
@@ -75,6 +78,8 @@ warning in the log.
 | `undo_history_size` | 5 | Builds per player that `/aibuild undo` can take back (up to 50) |
 | `protect_player_blocks` | `true` | Builds leave blocks that look player-made alone; `false` lets them replace anything but unbreakable blocks |
 | `site_gap` | 3 | How far in front of you a build starts |
+| `max_moving_blocks` | 2,000 | Moving blocks one build may have (up to 10,000): each is an entity the game draws and sends |
+| `moving_parts` | `true` | `false` stops every moving part where it is, until it's `true` again |
 | `banned_blocks` | TNT, spawners, fire… | Blocks a build never places (unbreakable blocks never anyway). A list with no valid block id in it keeps the default; `[]` bans nothing |
 | `backend` | `claude_code` | `scripted` makes every prompt build the demo house, with no Claude |
 | `allowed_players`, `require_op`, `op_level`, `rate_limit_per_hour` | | Who may build on a server, and how often (see below) |

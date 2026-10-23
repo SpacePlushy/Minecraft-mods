@@ -45,6 +45,7 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
 | M4 Claude | ✅ done, play-tested | Real builds from your prompts | "small cabin", then "castle"; cancel one; undo; log out of Claude Code and read the message |
 | M5 Quality | ✅ done, play-tested | Better builds: phases, self-check, the HUD, signs, chests, books, banners and item frames; lava kept clear of wood | Builds have depth, lit interiors, working doors; the panel top left; a sign or a chest in a build reads right |
 | M6 Polish | ✅ done, play-tested | Config, refinement ("add a moat"), logs, error handling, permissions | "a stone castle", then "add a moat" next to it; edit `config/aibuilder.json`; turn the Wi-Fi off mid-build; a LAN friend is refused |
+| M7 Builds that move | 🔨 built | Moving parts: "a dragon with flapping wings", "a windmill", "a flag on a pole" | Ask for a dragon with flapping wings; then "make the wings flap faster" next to it; undo; `moving_parts: false` in the config |
 
 ## Good to know
 
@@ -159,3 +160,9 @@ Each milestone ends with a stop: you try it and tell me what's wrong before the 
   waiting on Claude Code's process itself, a build that only its owner stops or follows, and no key in an echo or a
   log's name. A fresh Opus 5.5 review found two more, both fixed: B while sprinting on a Mac, and another player
   reading a build's status. Pull request #2.
+- **2026-10-22:** AI Builder v2 begun (spec `docs/superpowers/specs/2026-10-22-aibuilder-v2-design.md`): builds that move
+  (M7), builds that work (M8, M9). M7 is built from `docs/superpowers/plans/2026-10-22-aibuilder-m7-plan.md`, test-first:
+  a `part` on the write tools makes block displays, `animate` gives a part its motion (swing, spin, bob, riding
+  another part), the game moves them on its own and keeps them in step after a restart, `check_motion` tells Claude
+  where each part goes and what it passes through, a follow-up next to a moving build changes its parts, and undo
+  takes them away (undoing a follow-up gives the old motion back).
